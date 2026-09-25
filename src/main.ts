@@ -6,8 +6,9 @@ import { mount } from 'svelte';
 
 import App from './App.svelte';
 import { uiReady } from './lib/herdr/client';
+import { keymap } from './lib/keys/keymap';
 import { session } from './lib/stores/session.svelte';
-import { ui } from './lib/stores/ui.svelte';
+import { settings } from './lib/stores/settings.svelte';
 
 declare global {
   interface Window {
@@ -25,8 +26,9 @@ async function boot(): Promise<void> {
     installHarness();
   }
 
-  ui.restore();
-  ui.applyGlass();
+  settings.load();
+  settings.applyTheme();
+  keymap.load();
 
   mount(App, { target: document.getElementById('app') as HTMLElement });
 

@@ -1,99 +1,100 @@
-// Estado de UI de la GUI (no viene de herdr). F0 solo cubre lo que el spike
-// necesita: nivel de glass, foco local (R11) y las líneas del scroll de rueda.
+// Estado efímero de la UI: qué está abierto, foco local (R11), toasts y menús
+// contextuales. Las preferencias persistentes viven en settings.svelte.ts.
 
 import { es } from '../i18n/es';
+import { settings } from './settings.svelte';
 
-export type GlassMode = 'auto' | 'full' | 'off';
+export interface ToastMessage {
+  id: number;
+  text: string;
+  kind: 'info' | 'warn' | 'error';
+}
 
-const STORAGE_KEY = 'herdr-desk.ui';
+export interface ContextMenuItem {
+  id: string;
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  danger?: boolean;
+  run: () => void | Promise<void>;
+}
 
-interface PersistedUi {
-  glassMode?: GlassMode;
-  syncFocusWithTui?: boolean;
-  mouseScrollLines?: number;
-  sidebarCollapsed?: boolean;
+export interface ContextMenuState {
+  x: number;
+  y: number;
+  items: ContextMenuItem[];
+}
+
+export interface ConfirmRequest {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** Exige escribir este texto para confirmar (borrados destructivos). */
+  requireText?: string;
+  danger?: boolean;
+}
+
+export interface PromptRequest {
+  title: string;
+  label: string;
+  value?: string;
+  placeholder?: string;
+  hint?: string;
+  submitLabel?: string;
+  /** Devuelve el mensaje de error, o null si el valor es válido. */
+  validate?: (value: string) => string | null;
+}
+
+export interface WorkspaceFormRequest {
+  title: string;
+  labelValue?: string;
+  cwdValue?: string;
+}
+
+interface PendingConfirm extends ConfirmRequest {
+  resolve: (value: boolean) => void;
+}
+
+interface PendingPrompt extends PromptRequest {
+  resolve: (value: string | null) => void;
+}
+
+interface PendingWorkspaceForm extends WorkspaceFormRequest {
+  resolve: (value: { label: string; cwd: string } | null) => void;
 }
 
 class UiStore {
-  /** R2: 'auto' respeta el sistema, 'full' fuerza el glass, 'off' lo apaga. */
-  glassMode = $state<GlassMode>('auto');
-  /** R11: off por defecto, la GUI usa foco local para no mover la TUI. */
-  syncFocusWithTui = $state(false);
-  mouseScrollLines = $state(3);
-  sidebarCollapsed = $state(false);
+  sidebarCollapsed = $state(settings.values.sidebar_start_collapsed);
   paletteOpen = $state(false);
-  /** Foco local: el panel que la GUI considera enfocado (no toca herdr). */
+  helpOpen = $state(false);
+  sessionsOpen = $state(false);
+  /** Modo prefix activo (T1.10). */
+  prefixActive = $state(false);
+  /** Chip con el último atajo resuelto, para feedback visual. */
+  lastAction = $state<string | null>(null);
+
+  /** Foco local: lo que la GUI considera enfocado (no toca herdr, R11). */
   localFocusedWorkspaceId = $state<string | null>(null);
   localFocusedPaneId = $state<string | null>(null);
-  /** false cuando el backend avisa que Mica no está disponible (Windows 10). */
-  micaAvailable = $state(true);
+  /** Historial de paneles para `last_pane` (T3.1 lo usará). */
+  paneHistory = $state<string[]>([]);
 
-  restore(): void {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as PersistedUi;
-      if (parsed.glassMode) this.glassMode = parsed.glassMode;
-      if (typeof parsed.syncFocusWithTui === 'boolean') {
-        this.syncFocusWithTui = parsed.syncFocusWithTui;
-      }
-      if (typeof parsed.mouseScrollLines === 'number') {
-        this.mouseScrollLines = parsed.mouseScrollLines;
-      }
-      if (typeof parsed.sidebarCollapsed === 'boolean') {
-        this.sidebarCollapsed = parsed.sidebarCollapsed;
-      }
-    } catch {
-      // Preferencias corruptas: se sigue con los valores por defecto.
-    }
-  }
+  toasts = $state<ToastMessage[]>([]);
+  contextMenu = $state<ContextMenuState | null>(null);
+  pendingConfirm = $state<PendingConfirm | null>(null);
+  pendingPrompt = $state<PendingPrompt | null>(null);
+  pendingWorkspaceForm = $state<PendingWorkspaceForm | null>(null);
 
-  persist(): void {
-    const data: PersistedUi = {
-      glassMode: this.glassMode,
-      syncFocusWithTui: this.syncFocusWithTui,
-      mouseScrollLines: this.mouseScrollLines,
-      sidebarCollapsed: this.sidebarCollapsed,
-    };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      // Sin localStorage la GUI funciona igual; solo no recuerda preferencias.
-    }
-  }
-
-  /** Escribe los atributos que consumen tokens.css y app.css. */
-  applyGlass(mica = this.micaAvailable): void {
-    this.micaAvailable = mica;
-    const root = document.documentElement;
-    root.dataset.glass =
-      this.glassMode === 'off' ? 'off' : this.glassMode === 'full' ? 'force' : 'on';
-    root.dataset.mica = mica ? 'on' : 'off';
-    root.lang = 'es';
-  }
-
-  setGlassMode(mode: GlassMode): void {
-    this.glassMode = mode;
-    this.applyGlass();
-    this.persist();
-  }
-
-  setSyncFocusWithTui(value: boolean): void {
-    this.syncFocusWithTui = value;
-    this.persist();
-  }
+  #toastId = 0;
+  #toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
   toggleSidebar(): void {
     this.sidebarCollapsed = !this.sidebarCollapsed;
-    this.persist();
   }
 
-  focusWorkspaceLocally(workspaceId: string): void {
-    this.localFocusedWorkspaceId = workspaceId;
-  }
-
-  focusPaneLocally(paneId: string): void {
-    this.localFocusedPaneId = paneId;
+  setSidebarCollapsed(value: boolean): void {
+    this.sidebarCollapsed = value;
   }
 
   openPalette(): void {
@@ -106,6 +107,99 @@ class UiStore {
 
   togglePalette(): void {
     this.paletteOpen = !this.paletteOpen;
+  }
+
+  toggleHelp(): void {
+    this.helpOpen = !this.helpOpen;
+  }
+
+  openSessions(): void {
+    this.sessionsOpen = true;
+  }
+
+  closeSessions(): void {
+    this.sessionsOpen = false;
+  }
+
+  focusWorkspaceLocally(workspaceId: string): void {
+    this.localFocusedWorkspaceId = workspaceId;
+  }
+
+  focusPaneLocally(paneId: string): void {
+    if (this.localFocusedPaneId && this.localFocusedPaneId !== paneId) {
+      this.paneHistory = [
+        this.localFocusedPaneId,
+        ...this.paneHistory.filter((id) => id !== paneId),
+      ].slice(0, 20);
+    }
+    this.localFocusedPaneId = paneId;
+  }
+
+  lastPane(): string | null {
+    return this.paneHistory.find((id) => id !== this.localFocusedPaneId) ?? null;
+  }
+
+  notify(text: string, kind: ToastMessage['kind'] = 'info'): void {
+    const id = (this.#toastId += 1);
+    this.toasts = [...this.toasts, { id, text, kind }];
+    const timer = setTimeout(() => this.dismissToast(id), settings.values.toast_ms);
+    this.#toastTimers.set(id, timer);
+  }
+
+  dismissToast(id: number): void {
+    const timer = this.#toastTimers.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.#toastTimers.delete(id);
+    }
+    this.toasts = this.toasts.filter((toast) => toast.id !== id);
+  }
+
+  /** Confirmación con promesa (patrón del skill: un solo diálogo montado). */
+  confirm(request: ConfirmRequest): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.pendingConfirm = { ...request, resolve };
+    });
+  }
+
+  resolveConfirm(value: boolean): void {
+    const pending = this.pendingConfirm;
+    this.pendingConfirm = null;
+    pending?.resolve(value);
+  }
+
+  /** Petición de un solo campo (renombrar, nueva pestaña, nueva sesión). */
+  prompt(request: PromptRequest): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.pendingPrompt = { ...request, resolve };
+    });
+  }
+
+  resolvePrompt(value: string | null): void {
+    const pending = this.pendingPrompt;
+    this.pendingPrompt = null;
+    pending?.resolve(value);
+  }
+
+  /** Formulario de dos campos del alta de espacio (label + cwd). */
+  workspaceForm(request: WorkspaceFormRequest): Promise<{ label: string; cwd: string } | null> {
+    return new Promise((resolve) => {
+      this.pendingWorkspaceForm = { ...request, resolve };
+    });
+  }
+
+  resolveWorkspaceForm(value: { label: string; cwd: string } | null): void {
+    const pending = this.pendingWorkspaceForm;
+    this.pendingWorkspaceForm = null;
+    pending?.resolve(value);
+  }
+
+  openContextMenu(state: ContextMenuState): void {
+    this.contextMenu = state;
+  }
+
+  closeContextMenu(): void {
+    this.contextMenu = null;
   }
 
   statusLabel(status: keyof typeof es.agentStatus): string {

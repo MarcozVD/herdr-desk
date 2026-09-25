@@ -1,0 +1,136 @@
+<!-- Sidebar glass (T1.6): espacios con número, label, rollup de estado, conteos y
+     activo; agentes ordenados por prioridad. Renombrar/cerrar por menú contextual. -->
+<script lang="ts">
+  import { flows } from '../../lib/actions/flows';
+  import { es } from '../../lib/i18n/es';
+  import { session } from '../../lib/stores/session.svelte';
+  import { settings } from '../../lib/stores/settings.svelte';
+  import { ui } from '../../lib/stores/ui.svelte';
+  import AgentDot from '../../lib/ui/AgentDot.svelte';
+
+  const collapsedMode = $derived(settings.values.sidebar_collapsed_mode);
+
+  function workspaceNumber(workspaceId: string): string {
+    const workspace = session.workspaces.find((item) => item.workspace_id === workspaceId);
+    return workspace ? String(workspace.number) : '';
+  }
+</script>
+
+<aside
+  class="sidebar glass"
+  data-testid="sidebar"
+  data-collapsed-mode={collapsedMode}
+  aria-label={es.sidebar.workspaces}
+>
+  <div class="sidebar__section">
+    <h2 class="sidebar__title">
+      <span>{es.sidebar.workspaces}</span>
+      <span class="sidebar__count" data-testid="workspaces-count">{session.workspaces.length}</span>
+    </h2>
+    {#if session.workspaces.length === 0}
+      <p class="empty-note" data-testid="workspaces-empty">
+        {session.connection === 'online' ? es.sidebar.noWorkspaces : es.sidebar.emptyState}
+      </p>
+    {:else}
+      {#each session.workspaces as workspace (workspace.workspace_id)}
+        <button
+          type="button"
+          class="workspace-row"
+          data-testid="workspace-row"
+          data-workspace-id={workspace.workspace_id}
+          data-status={workspace.agent_status}
+          aria-current={workspace.focused || ui.localFocusedWorkspaceId === workspace.workspace_id}
+          onclick={() => flows.focusWorkspace(workspace.workspace_id)}
+          ondblclick={() => void flows.renameWorkspace(workspace.workspace_id)}
+          oncontextmenu={(event) => flows.openWorkspaceMenu(event, workspace.workspace_id)}
+        >
+          <span class="workspace-row__number">{workspace.number}</span>
+          <AgentDot
+            status={workspace.agent_status}
+            label={es.agentStatus[workspace.agent_status]}
+          />
+          <span class="workspace-row__label">{workspace.label}</span>
+          <span
+            class="workspace-row__count"
+            title={es.sidebar.panesCount.replace('{n}', String(workspace.pane_count))}
+            >{workspace.pane_count}</span
+          >
+        </button>
+      {/each}
+    {/if}
+    <button
+      type="button"
+      class="sidebar__action"
+      data-testid="new-workspace"
+      onclick={() => void flows.createWorkspace()}
+    >
+      + {es.sidebar.newWorkspace}
+    </button>
+  </div>
+
+  <div class="sidebar__section">
+    <h2 class="sidebar__title">
+      <span>{es.sidebar.agents}</span>
+      <span class="sidebar__count" data-testid="agents-count"
+        >{session.agentsByPriority.length}</span
+      >
+    </h2>
+    {#if session.agentsByPriority.length === 0}
+      <p class="empty-note" data-testid="agents-empty">{es.sidebar.noAgents}</p>
+    {:else}
+      {#each session.agentsByPriority as agent (agent.pane_id)}
+        <button
+          type="button"
+          class="agent-row"
+          data-testid="agent-row"
+          data-pane-id={agent.pane_id}
+          data-status={agent.agent_status}
+          onclick={() => flows.focusPane(agent.pane_id)}
+        >
+          <AgentDot status={agent.agent_status} label={es.agentStatus[agent.agent_status]} />
+          <span class="agent-row__number">{workspaceNumber(agent.workspace_id)}</span>
+          <span class="agent-row__name">{agent.display_agent ?? agent.agent ?? agent.pane_id}</span>
+          <span class="agent-row__meta">{es.agentStatus[agent.agent_status]}</span>
+        </button>
+      {/each}
+    {/if}
+  </div>
+</aside>
+
+<style>
+  .sidebar__count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sidebar__action {
+    margin-block-start: var(--space-1);
+    padding: 5px var(--space-2);
+    border: 1px dashed var(--glass-border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .sidebar__action:hover {
+    color: var(--text);
+    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+  }
+
+  .agent-row {
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  .agent-row:hover {
+    background: color-mix(in oklab, var(--active-row-bg) 55%, transparent);
+  }
+</style>

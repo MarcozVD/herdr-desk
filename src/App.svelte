@@ -1,65 +1,132 @@
-<!-- Shell del spike F0: titlebar glass con drag region, sidebar glass con los
-     espacios del snapshot en vivo, un TerminalView del panel enfocado y status
-     bar glass. Solo tres superficies con backdrop-filter (titlebar, sidebar,
-     status bar): el §3 limita a 5 vivas a la vez. -->
+<!-- Shell completo de F1: titlebar con selector de sesión, franja de reconexión,
+     sidebar de espacios y agentes, tab bar, árbol de splits y status bar. Los
+     overlays (paleta, cheatsheet, diálogos, menú contextual y toasts) viven aquí
+     para que solo haya un diálogo de cada tipo montado. -->
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import SessionsDialog from './features/sessions/SessionsDialog.svelte';
+  import Sidebar from './features/sidebar/Sidebar.svelte';
+  import StatusBar from './features/statusbar/StatusBar.svelte';
+  import TabBar from './features/tabs/TabBar.svelte';
+  import ReconnectBanner from './features/titlebar/ReconnectBanner.svelte';
+  import Titlebar from './features/titlebar/Titlebar.svelte';
   import { es } from './lib/i18n/es';
-  import ConnectionPill from './lib/ui/ConnectionPill.svelte';
-  import WindowControls from './lib/ui/WindowControls.svelte';
-  import TerminalView from './lib/terminal/TerminalView.svelte';
+  import { runAction } from './lib/keys/actions';
+  import Cheatsheet from './lib/keys/Cheatsheet.svelte';
+  import { keymap } from './lib/keys/keymap';
+  import SplitTree from './lib/layout/SplitTree.svelte';
+  import { zoomedTree } from './lib/layout/tree';
+  import { layout } from './lib/stores/layout.svelte';
   import { session } from './lib/stores/session.svelte';
-  import { paneTitle, shortPath } from './lib/stores/snapshot';
+  import { settings } from './lib/stores/settings.svelte';
   import { ui } from './lib/stores/ui.svelte';
-  import type { WorkspaceInfo } from './lib/herdr/types';
+  import ConfirmDialog from './lib/ui/ConfirmDialog.svelte';
+  import ContextMenu from './lib/ui/ContextMenu.svelte';
+  import PromptDialog from './lib/ui/PromptDialog.svelte';
+  import ToastHost from './lib/ui/ToastHost.svelte';
+  import WorkspaceDialog from './lib/ui/WorkspaceDialog.svelte';
 
-  const focusedPane = $derived(session.focusedPane);
-  const paneStatus = $derived(focusedPane?.agent_status ?? 'unknown');
-  const scroll = $derived(focusedPane?.scroll ?? null);
-  const scrollLabel = $derived(
-    scroll
-      ? es.statusbar.scroll
-          .replace('{offset}', String(scroll.offset_from_bottom))
-          .replace('{max}', String(scroll.max_offset_from_bottom))
-      : es.statusbar.scroll.replace('{offset}', '0').replace('{max}', '0'),
+  const tree = $derived(
+    layout.zoomed ? zoomedTree(layout.tree, session.focusedPaneId) : layout.tree,
   );
-  const versionLabel = $derived(
-    session.version
-      ? es.app.version
-          .replace('{version}', session.version)
-          .replace('{protocol}', String(session.protocol ?? '?'))
-      : '',
+  const sidebarMode = $derived(
+    ui.sidebarCollapsed ? settings.values.sidebar_collapsed_mode : 'expanded',
   );
 
-  function focusWorkspace(workspace: WorkspaceInfo): void {
-    // R11: por defecto el foco es local y no mueve la TUI. Solo si el usuario
-    // activa «Sincronizar foco con TUI» se llama a workspace.focus.
-    ui.focusWorkspaceLocally(workspace.workspace_id);
-    if (ui.syncFocusWithTui) void session.focusWorkspace(workspace.workspace_id);
-  }
+  // El árbol del tab visible se pide al entrar al tab y se vuelve a pedir cuando
+  // el backend publica un snapshot nuevo (`revision` sube con cada refresco).
+  $effect(() => {
+    const tabId = session.focusedTabId;
+    void session.revision;
+    layout.request(tabId);
+  });
 
-  /** Número del espacio al que pertenece un agente (alinea las columnas). */
-  function workspaceNumber(workspaceId: string): string {
-    const workspace = session.workspaces.find((item) => item.workspace_id === workspaceId);
-    return workspace ? String(workspace.number) : '';
+  // Al (re)conectar se rehace el árbol: los paneles visibles reabren sus bridges.
+  $effect(() => {
+    const epoch = session.connectionEpoch;
+    if (epoch > 0) void layout.refreshNow();
+  });
+
+  $effect(() => {
+    document.documentElement.style.setProperty('--sidebar-width', `${settings.widthPx}px`);
+  });
+
+  function isTypingTarget(target: EventTarget | null): boolean {
+    const element = target as HTMLElement | null;
+    if (!element || typeof element.tagName !== 'string') return false;
+    if (element.closest('.xterm')) return false; // la terminal sí recibe las teclas
+    return element.tagName === 'INPUT' || element.tagName === 'TEXTAREA';
   }
 
   function onKeydown(event: KeyboardEvent): void {
-    // Únicos atajos globales de la GUI en F0 (§T1.10 los completa en F1). El
-    // listener va en fase de captura sobre window: si el atajo es de la GUI, se
-    // corta la propagación para que xterm no lo reciba.
-    if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'p') {
+    // 1. Atajos globales de la GUI (siempre activos).
+    const gui = keymap.resolveGuiShortcut(event);
+    if (gui) {
       event.preventDefault();
       event.stopPropagation();
-      ui.togglePalette();
+      void runAction(gui);
       return;
     }
-    if (event.key === 'Escape' && ui.paletteOpen) {
+
+    // Mientras se escribe en un campo, solo Escape sale del modo.
+    if (isTypingTarget(event.target)) return;
+
+    // 2. Escape cierra lo que esté abierto.
+    if (event.key === 'Escape') {
+      const somethingOpen =
+        ui.paletteOpen ||
+        ui.helpOpen ||
+        ui.contextMenu !== null ||
+        ui.sessionsOpen ||
+        ui.prefixActive;
+      if (somethingOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (ui.prefixActive) ui.prefixActive = false;
+        else if (ui.helpOpen) ui.helpOpen = false;
+        else if (ui.sessionsOpen) ui.closeSessions();
+        else if (ui.contextMenu) ui.closeContextMenu();
+        else ui.closePalette();
+      }
+      return;
+    }
+
+    // 3. La tecla de prefix entra y sale del modo prefix.
+    if (keymap.isPrefixKey(event)) {
       event.preventDefault();
       event.stopPropagation();
-      ui.closePalette();
+      ui.prefixActive = !ui.prefixActive;
+      return;
     }
+
+    // 4. Atajo resuelto por el motor.
+    const resolved = keymap.resolveForEvent(event, ui.prefixActive);
+    if (resolved) {
+      event.preventDefault();
+      event.stopPropagation();
+      if ('literalPrefix' in resolved) {
+        // prefix dos veces: se manda el ctrl+b literal al panel enfocado.
+        window.dispatchEvent(
+          new CustomEvent('herdr-desk:terminal', {
+            detail: { channel: 'input', detail: '\u0002' },
+          }),
+        );
+      } else {
+        void runAction(resolved.action);
+      }
+      ui.prefixActive = false;
+      return;
+    }
+
+    // 5. En modo prefix, una tecla sin acción avisa y sale del modo.
+    if (ui.prefixActive) {
+      event.preventDefault();
+      event.stopPropagation();
+      ui.prefixActive = false;
+      ui.notify(es.keys.unbound, 'warn');
+    }
+    // Todo lo demás sigue su camino a la terminal.
   }
 
   onMount(() => {
@@ -73,121 +140,27 @@
 <div class="bg-layer bg-noise"></div>
 
 <div class="shell">
-  <header class="titlebar glass" data-tauri-drag-region data-testid="titlebar">
-    <div class="titlebar__side">
-      <span class="titlebar__brand">herdr</span>
-      <span class="titlebar__session" data-testid="session-label">
-        {es.app.session}: {session.sessionName ?? es.app.sessionUnknown}
-      </span>
-    </div>
+  <Titlebar />
+  <ReconnectBanner />
 
-    <button
-      type="button"
-      class="titlebar__palette"
-      data-testid="palette-button"
-      onclick={() => ui.togglePalette()}
-    >
-      <span>{es.titlebar.palette}</span>
-      <span class="kbd">Ctrl+Shift+P</span>
-    </button>
+  <main class="body" data-sidebar={sidebarMode}>
+    <Sidebar />
 
-    <div class="titlebar__side titlebar__side--right">
-      <ConnectionPill />
-      <WindowControls />
-    </div>
-  </header>
-
-  <main class="body" data-sidebar={ui.sidebarCollapsed ? 'collapsed' : 'expanded'}>
-    <aside class="sidebar glass" data-testid="sidebar" aria-label={es.sidebar.workspaces}>
-      <div class="sidebar__section">
-        <h2 class="sidebar__title">
-          <span>{es.sidebar.workspaces}</span>
-          <span data-testid="workspaces-count">{session.workspaces.length}</span>
-        </h2>
-        {#if session.workspaces.length === 0}
-          <p class="empty-note" data-testid="workspaces-empty">
-            {session.connection === 'online' ? es.sidebar.noWorkspaces : es.sidebar.emptyState}
-          </p>
+    <section class="panes" data-testid="panes">
+      <TabBar />
+      <div class="panes__area" data-testid="split-area">
+        {#if tree}
+          <SplitTree node={tree} />
+        {:else if session.focusedTabId}
+          <p class="empty-note" data-testid="no-panes">{es.panes.noPanes}</p>
         {:else}
-          {#each session.workspaces as workspace (workspace.workspace_id)}
-            <button
-              type="button"
-              class="workspace-row"
-              data-testid="workspace-row"
-              data-workspace-id={workspace.workspace_id}
-              data-status={workspace.agent_status}
-              aria-current={workspace.focused ||
-                ui.localFocusedWorkspaceId === workspace.workspace_id}
-              onclick={() => focusWorkspace(workspace)}
-            >
-              <span class="workspace-row__number">{workspace.number}</span>
-              <span class="agent-dot" data-state={workspace.agent_status}></span>
-              <span class="workspace-row__label">{workspace.label}</span>
-              <span class="workspace-row__count">{workspace.pane_count}</span>
-            </button>
-          {/each}
+          <p class="empty-note" data-testid="no-pane">{es.terminal.noPane}</p>
         {/if}
       </div>
-
-      <div class="sidebar__section">
-        <h2 class="sidebar__title">
-          <span>{es.sidebar.agents}</span>
-          <span data-testid="agents-count">{session.agentsByPriority.length}</span>
-        </h2>
-        {#if session.agentsByPriority.length === 0}
-          <p class="empty-note" data-testid="agents-empty">{es.sidebar.noAgents}</p>
-        {:else}
-          {#each session.agentsByPriority as agent (agent.pane_id)}
-            <div
-              class="agent-row"
-              data-testid="agent-row"
-              data-pane-id={agent.pane_id}
-              data-status={agent.agent_status}
-            >
-              <span class="agent-dot" data-state={agent.agent_status}></span>
-              <span class="agent-row__number">{workspaceNumber(agent.workspace_id)}</span>
-              <span class="agent-row__name"
-                >{agent.display_agent ?? agent.agent ?? agent.pane_id}</span
-              >
-              <span class="agent-row__meta">{es.agentStatus[agent.agent_status]}</span>
-            </div>
-          {/each}
-        {/if}
-      </div>
-    </aside>
-
-    <section class="panes">
-      {#if session.focusedPaneId}
-        <article class="pane-frame" data-testid="pane-frame" data-pane-id={session.focusedPaneId}>
-          <header class="pane-header">
-            <span class="agent-dot" data-state={paneStatus}></span>
-            <span class="pane-header__title" data-testid="pane-title">
-              {paneTitle(focusedPane)}
-            </span>
-            <span data-testid="pane-status">{es.agentStatus[paneStatus]}</span>
-            <span class="pane-header__spacer"></span>
-            <span data-testid="pane-cwd">{shortPath(focusedPane?.cwd)}</span>
-          </header>
-          <TerminalView paneId={session.focusedPaneId} />
-        </article>
-      {:else}
-        <p class="empty-note" data-testid="no-pane">{es.terminal.noPane}</p>
-      {/if}
     </section>
   </main>
 
-  <footer class="statusbar glass" data-testid="statusbar">
-    <span class="statusbar__item" data-testid="status-pane">
-      {es.statusbar.pane}
-      {session.focusedPaneId ?? '—'}
-    </span>
-    <span class="statusbar__item" data-testid="status-cwd">
-      {shortPath(focusedPane?.cwd) || '—'}
-    </span>
-    <span class="statusbar__item" data-testid="status-scroll">{scrollLabel}</span>
-    <span class="statusbar__spacer"></span>
-    <span class="statusbar__item" data-testid="status-version">{versionLabel}</span>
-  </footer>
+  <StatusBar />
 </div>
 
 {#if ui.paletteOpen}
@@ -205,9 +178,21 @@
       aria-modal="true"
       aria-label={es.palette.title}
       tabindex="-1"
+      data-testid="palette"
     >
       <input class="palette__input" placeholder={es.titlebar.palette} readonly />
       <p class="palette__note">{es.palette.comingSoon}</p>
     </div>
   </div>
 {/if}
+
+{#if ui.helpOpen}
+  <Cheatsheet />
+{/if}
+
+<ConfirmDialog />
+<PromptDialog />
+<WorkspaceDialog />
+<SessionsDialog />
+<ContextMenu />
+<ToastHost />
