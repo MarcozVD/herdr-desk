@@ -80,3 +80,36 @@ pub fn session_list() -> Result<CliSessionList, crate::error::HerdrError> {
     serde_json::from_str(&out.stdout)
         .map_err(|e| crate::error::HerdrError::Parse(format!("session list: {e}")))
 }
+
+const DETACHED_PROCESS: u32 = 0x0000_0008;
+const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// Spawns `herdr --session <name> server` detached: sobrevive al cierre de la GUI
+/// y permite que la TUI se adjunte después.
+pub fn start_server_detached(name: &str) -> Result<(), crate::error::HerdrError> {
+    let exe = herdr_exe()?;
+    let mut cmd = Command::new(exe);
+    cmd.args(["--session", name, "server"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    for (key, _) in std::env::vars() {
+        if key.starts_with("HERDR_") {
+            cmd.env_remove(key);
+        }
+    }
+    cmd.spawn()
+        .map_err(|e| crate::error::HerdrError::Api {
+            code: "cli_failed".to_string(),
+            message: format!("no se pudo iniciar el server: {e}"),
+        })?;
+    Ok(())
+}
+
+pub fn stop_session(name: &str) -> Result<CliOutput, crate::error::HerdrError> {
+    run_session_cli(&["session", "stop", name, "--json"], None)
+}
+
+pub fn delete_session(name: &str) -> Result<CliOutput, crate::error::HerdrError> {
+    run_session_cli(&["session", "delete", name, "--json"], None)
+}
