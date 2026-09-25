@@ -17,7 +17,14 @@ export const es = {
     latencyHint: 'latencia del RPC (p50 de las últimas {n} llamadas)',
     startServer: 'Iniciar servidor',
     startFailed: 'No se pudo iniciar el servidor de la sesión {session}.',
+    started: 'Servidor de la sesión {session} en marcha.',
     unavailable: 'El backend todavía no expone «{command}» (§5).',
+    needSession: 'No hay sesión seleccionada: elige una para arrancar su servidor.',
+    noBridge:
+      'Sin puente IPC: la interfaz tiene que correr dentro de la app (Tauri), no en un navegador.',
+    chooseSession: 'Elegir sesión',
+    sessionLabel: 'sesión {name}',
+    noSession: 'sin sesión',
   },
   titlebar: {
     palette: 'Buscar…',
@@ -138,7 +145,7 @@ export const es = {
   terminal: {
     closed: 'La terminal se desconectó ({reason}).',
     retake: 'Retomar control',
-    reconnecting: 'Reconectando…',
+    reconnecting: 'Reconectando con el servidor…',
     connecting: 'Conectando terminal…',
     controlledByOther: 'Controlado por otra conexión',
     noPane: 'No hay ningún panel enfocado en esta sesión.',

@@ -77,10 +77,29 @@ body {
 .shell {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-rows: var(--titlebar-height) minmax(0, 1fr) var(--statusbar-height);
+  /* Columna flex y NO un grid de filas fijas: la franja de reconexión es
+     condicional y con `grid-template-rows: 40px 1fr 26px` se quedaba la fila 1fr
+     (709 px medidos), aplastando body/sidebar/terminal a 26 px. El alto de cada
+     banda lo fija su propia regla. */
+  display: flex;
+  flex-direction: column;
   block-size: 100vh;
   overflow: hidden;
+}
+
+.shell > .titlebar {
+  flex: 0 0 auto;
+  block-size: var(--titlebar-height);
+}
+
+.shell > .statusbar {
+  flex: 0 0 auto;
+  block-size: var(--statusbar-height);
+}
+
+.shell > .body {
+  flex: 1 1 auto;
+  min-block-size: 0;
 }
 
 /* ---------- Titlebar (capa glass 2) ---------- */

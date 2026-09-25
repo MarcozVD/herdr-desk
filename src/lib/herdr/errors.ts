@@ -32,6 +32,25 @@ export function parseApiError(raw: unknown): ApiError {
   return { code: 'unknown', message: String(raw) };
 }
 
+/**
+ * Texto para la UI: el mensaje del backend manda (es el que explica qué pasó
+ * de verdad, p. ej. «la sesión ya está corriendo»). Solo si viene vacío se usa
+ * la traducción por código del Anexo C.
+ */
+export function errorText(error: ApiError): string {
+  const message = error.message.trim();
+  return message.length > 0 ? message : describeApiError(error);
+}
+
+/**
+ * El error de un `invoke` sin `window.__TAURI_INTERNALS__` significa que la
+ * página corre fuera de la app (navegador suelto, `vite preview`): conviene
+ * decirlo así y no enseñar un TypeError crudo.
+ */
+export function isMissingTauriBridge(raw: unknown): boolean {
+  return /__TAURI_INTERNALS__|transformCallback/i.test(parseApiError(raw).message);
+}
+
 /** Códigos que la UI trata como «hay que reconectar / reintentar». */
 export const TRANSIENT_CODES = new Set(['transport', 'timeout', 'not_connected', 'cli_failed']);
 

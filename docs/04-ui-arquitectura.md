@@ -133,18 +133,100 @@ sube en cada reconexión y es la señal para que el pool reabra los bridges visi
 3. `ui_ready` no aparece en la tabla del §5 pero el §T0.8 lo define; la UI lo llama y tolera
    que falle.
 
+## 7bis. Fallos reportados en la app en vivo (diagnóstico y arreglo)
+
+Tres síntomas reportados por el usuario: (a) «la UI perdió forma», (b) «no se conecta a nada»
+y (c) «al pulsar Iniciar servidor sale *El backend todavía no expone session_start*».
+
+### (a) Layout: el shell era un grid de 3 filas con 4 hijos
+
+`.shell` usaba `grid-template-rows: var(--titlebar-height) minmax(0,1fr) var(--statusbar-height)`
+con **tres** filas y, desde T1.5, **cuatro** hijos (titlebar, franja de reconexión, cuerpo y
+status bar). La franja —condicional— se quedaba la fila elástica.
+
+Medido con el bundle de producción (`vite preview`, ventana 1280×800):
+
+| Elemento | Antes | Después |
+|---|---|---|
+| franja de reconexión | **709 px** | 36 px |
+| `.body` (cuerpo) | **26 px** | 690 px |
+| sidebar | 26 px de alto | 674 px |
+| área de paneles | 0 px | 636 px |
+| status bar | 17 px, texto cortado | 26 px, legible |
+
+Arreglo: `.shell` pasa a **columna flex** (`titlebar` y `statusbar` con su alto propio,
+`.body` con `flex: 1 1 auto; min-block-size: 0`) y la franja con `flex: 0 0 auto`. La captura
+de la ventana real (CopyFromScreen) confirmó la estructura correcta y el presupuesto de
+espacio. Se añadieron dos pruebas e2e de regresión que miden la geometría de las cuatro
+bandas (franja < 80 px, cuerpo > 400 px, cero desbordamiento horizontal) porque las pruebas
+existentes comprobaban visibilidad, no forma.
+
+### (b) «No se conecta a nada»
+
+Causa del backend: el Store no hacía refresh inicial (corregido en `45a1420 fix(app): store
+bootstrap refresh and session_current`, ya en `f1-nucleo`). Del lado UI se endureció:
+`online` **solo** con snapshot (un `ping` correcto no basta), watchdog de 2,5 s → offline con
+backoff, y —hallazgo de la validación en vivo— **si un bridge se cierra porque desapareció el
+servidor, la UI lo toma como caída**: antes se quedaba «en línea» con los paneles muertos
+porque el store no avisa por ese canal. Ahora el cierre dispara `noteOutage()` → offline →
+reintento → `connectionEpoch` sube → los paneles se reenganchan.
+
+### (c) «El backend todavía no expone session_start» era un mensaje engañoso
+
+`optionalCommand` colapsaba **cualquier** error en `false`, y la UI traducía eso a «no
+expone». Tres fallos encadenados:
+
+1. El mensaje real de Tauri al faltar un command es `Command <nombre> not found` (p. ej.
+   `Command session_start not found`); el patrón de detección (`/command not found/`) no lo
+   reconocía, así que ni siquiera ese caso se clasificaba bien.
+2. `startServer()` llamaba a `session_start` con **nombre vacío** cuando `session_current`
+   no estaba disponible, y el error del contrato («invalid args») salía también como «no
+   expone».
+3. Un error de negocio (p. ej. la guarda del backend «no se permite iniciar la sesion default
+   desde la GUI») se mostraba como «no expone», que es falso y confunde.
+
+Arreglo: `CommandOutcome<T>` distingue **`missing`** (el command no está registrado) de
+**`error`** (existe y falló: se muestra **su** mensaje), `resolveSessionName()` nunca manda
+nombre vacío (usa `session_current`, y si no hay sesión el botón pasa a «Elegir sesión»),
+`errorText()` prioriza el mensaje del backend y los errores de `__TAURI_INTERNALS__`
+(página fuera de Tauri) se explican como «sin puente IPC» en vez de un TypeError crudo.
+
+## 7ter. Validación en vivo (ventana real, backend real)
+
+Con `pnpm tauri dev` y `HERDR_DESK_SESSION=herdr-desk-dev`, capturando la ventana con
+CopyFromScreen y leyendo el pane por el API para no depender de la vista:
+
+| Comprobación | Resultado |
+|---|---|
+| Arranque | `[herdr-desk] ready session=herdr-desk-dev protocol=19 startup_ms=402` + `stage=ui` |
+| Conexión | píldora **«en línea · 5,7 ms»** (antes 37,1 ms con el server recién arrancado) |
+| Snapshot | sidebar con **ESPACIOS 2** (spike-r3, docs-r11 con sus contadores) y AGENTES 0 |
+| Terminal | paneles con frames reales (TUI de opencode y prompts de PowerShell pintados) |
+| Input (R3) | `echo hd-ui-vivo` escrito en la ventana → el pane real responde `hd-ui-vivo` |
+| Caída | server `stop` → píldora **«desconectado»**, franja con **el error de transporte real** del backend y los paneles en «Reconectando…» |
+| Vuelta | server arriba → **«en línea · 5,7 ms»** sin franja y paneles con prompt **vivo** (sin «Retomar control») |
+| Layout | tras el arreglo, la forma se mantiene en los tres ciclos de caída/vuelta |
+
+Nota de coordinación: en la prueba en vivo, el respawn del backend **no** mandó frames por el
+canal viejo, así que el reenganche lo resolvió la UI (timer de `bridge_reopen_grace_ms`,
+3 s) en vez de duplicar attaches (evita el `terminal attach taken over`). Si el backend
+prefiere ser él quien respawnee los bridges de la UI, basta con que reemita frames por el
+mismo `bridge_id`/Channel: el panel vuelve a «open» solo y el timer se cancela.
+
 ## 8. Verificación de F1 (frontend)
 
 ```text
 pnpm install            OK
-pnpm format:check       OK (salvo README.md del backend, que está sin formatear)
+pnpm format:check       OK
 pnpm lint               OK (0 problemas)
 pnpm check              svelte-check: 0 errores, 0 warnings
-pnpm test               100 tests en 9 archivos (frames, errores, cliente, codegen, reconcile,
-                        snapshot, árbol de splits, parser de atajos, keymap)
-pnpm e2e                58 pruebas en 9 specs (shell, shell F1, terminal, foco, layout, acciones,
-                        atajos, sesiones, reconexión)
-pnpm build              dist/assets/index-*.js 489,14 kB min (134,12 kB gzip) + CSS 35,05 kB
+pnpm test               108 tests en 9 archivos (frames, errores, cliente + clasificación de
+                        errores de command, codegen, reconcile, snapshot, árbol de splits,
+                        parser de atajos, keymap)
+pnpm e2e                68 pruebas en 9 specs (shell, shell F1 con regresión de layout,
+                        terminal, foco, layout, acciones, atajos, sesiones, reconexión y
+                        caída/vuelta del servidor)
+pnpm build              dist/assets/index-*.js 491,46 kB min (134,73 kB gzip) + CSS 35,05 kB
                         → dentro del presupuesto (§4: ≤ 600 KB con xterm)
 ```
 
@@ -166,5 +248,5 @@ Mediciones de la corrida de F1:
 - **Arrastrar divisores** (T3.1) y **drag & drop de pestañas/paneles** (T3.2).
 - **Config real** (F3): `settings.svelte.ts` usa `localStorage`; falta leer `config.toml`
   (`config_read`) y el codegen de settings (`scripts/gen-settings.mjs`).
-- **README.md sin formatear** (documento del backend): hace fallar `pnpm format:check`;
-  lo arregla `pnpm exec prettier --write README.md` en su lado.
+- **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
+  frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).

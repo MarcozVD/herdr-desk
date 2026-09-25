@@ -18,6 +18,8 @@ import {
 } from '../herdr/client';
 import { parseApiError } from '../herdr/errors';
 import type { ApiError } from '../herdr/errors';
+import { isMissingTauriBridge } from '../herdr/errors';
+import { es } from '../i18n/es';
 import type {
   AgentInfo,
   ConnectionState,
@@ -73,6 +75,13 @@ class SessionStore {
   rpcSamples = $state(0);
   /** Última acción de reconexión, para mensajes de la UI. */
   startServerFailed = $state(false);
+  /**
+   * Error real de la última acción de sesión («Iniciar servidor», conectar…).
+   * Se muestra tal cual lo devolvió el backend.
+   */
+  startError = $state<ApiError | null>(null);
+  /** Qué contestó el backend al pedirle la sesión activa (`session_current`). */
+  sessionNameError = $state<ApiError | null>(null);
 
   focusedWorkspaceId = $state<string | null>(null);
   focusedTabId = $state<string | null>(null);
@@ -102,9 +111,35 @@ class SessionStore {
   #stopped = false;
 
   async bootstrap(): Promise<void> {
-    this.sessionName = await sessionCurrent();
+    const current = await sessionCurrent();
+    if (current.ok) {
+      const name = typeof current.value === 'string' ? current.value.trim() : '';
+      this.sessionName = name.length > 0 ? name : null;
+      this.sessionNameError = null;
+    } else {
+      // El backend instalado no expone `session_current`: se sigue sin nombre y
+      // «Iniciar servidor» pedirá elegir sesión en vez de mandar un nombre vacío.
+      this.sessionName = null;
+      this.sessionNameError = current.error;
+    }
     await this.connect();
     await this.ping();
+  }
+
+  /**
+   * Nombre con el que se arranca/conecta la sesión. Nunca devuelve cadena vacía:
+   * si el bootstrap no lo trajo, se vuelve a preguntar al backend (§5
+   * `session_current`) y, si tampoco hay, se pide elegir sesión en la UI.
+   */
+  async resolveSessionName(): Promise<string | null> {
+    const known = this.sessionName?.trim() ?? '';
+    if (known.length > 0) return known;
+    const current = await sessionCurrent();
+    const name = current.ok && typeof current.value === 'string' ? current.value.trim() : '';
+    if (name.length === 0) return null;
+    this.sessionName = name;
+    this.sessionNameError = null;
+    return name;
   }
 
   /** (Re)suscribe al store y arma el watchdog del snapshot. */
@@ -123,7 +158,10 @@ class SessionStore {
       // muestra la píldora de conexión.
       void this.ping();
     } catch (raw) {
-      this.lastError = parseApiError(raw);
+      // Fuera de Tauri (navegador suelto) el invoke no existe: se dice claro.
+      this.lastError = isMissingTauriBridge(raw)
+        ? { code: 'no_bridge', message: es.connection.noBridge }
+        : parseApiError(raw);
       this.connection = 'offline';
       this.scheduleRetry();
     } finally {
@@ -171,13 +209,53 @@ class SessionStore {
     }, delay);
   }
 
-  /** «Iniciar servidor» (T1.5): pide al backend arrancar la sesión y reintenta. */
+  /**
+   * «Iniciar servidor» (T1.5): pide al backend arrancar la sesión y reintenta.
+   * El error que se guarda es el REAL del backend (o el aviso de que el command
+   * no existe), nunca un «no disponible» genérico.
+   */
   async startServer(): Promise<boolean> {
-    const name = this.sessionName ?? '';
-    const started = name.length > 0 ? await sessionStart(name) : false;
-    this.startServerFailed = !started;
+    const name = await this.resolveSessionName();
+    if (name === null) {
+      this.startError = { code: 'no_session', message: es.connection.needSession };
+      this.startServerFailed = true;
+      return false;
+    }
+    const started = await sessionStart(name);
+    if (!started.ok) {
+      this.startError =
+        started.kind === 'missing'
+          ? {
+              code: 'missing_command',
+              message: es.connection.unavailable.replace('{command}', 'session_start'),
+            }
+          : started.error;
+      this.startServerFailed = true;
+      return false;
+    }
+    this.startError = null;
+    this.startServerFailed = false;
     await this.connect();
-    return started;
+    return true;
+  }
+
+  /** Guarda el error de una acción de sesión (para la franja de reconexión). */
+  reportSessionError(error: ApiError | null): void {
+    this.startError = error;
+  }
+
+  /**
+   * Un bridge se cerró porque el servidor cayó. El store del backend NO avisa en
+   * ese canal, así que sin esto la sesión seguía «en línea» con los paneles
+   * muertos y los bridges no se reabrían nunca: se pasa a offline y el bucle de
+   * reintento (que ya existe) reconecta y sube `connectionEpoch`.
+   */
+  noteOutage(reason: string): void {
+    if (this.connection === 'offline') return;
+    this.connection = 'offline';
+    this.lastError = { code: 'transport', message: reason };
+    this.retryAttempt = 0;
+    this.scheduleRetry();
   }
 
   /** Cambia de sesión activa (T1.11): el backend decide y la UI reconecta. */
@@ -283,6 +361,8 @@ class SessionStore {
     this.layouts = [];
     this.connection = 'connecting';
     this.lastError = null;
+    this.startError = null;
+    this.sessionNameError = null;
     this.retryAttempt = 0;
     this.nextRetryInMs = null;
     this.connectionEpoch = 0;

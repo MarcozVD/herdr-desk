@@ -34,6 +34,8 @@ export interface UiSettings {
   webgl_max_panes: number;
   terminal_lru_max: number;
   bridge_grace_ms: number;
+  /** ms que se espera al respawn del backend antes de reenganchar el bridge. */
+  bridge_reopen_grace_ms: number;
   toast_ms: number;
 }
 
@@ -62,6 +64,7 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   webgl_max_panes: 8,
   terminal_lru_max: 12,
   bridge_grace_ms: 3000,
+  bridge_reopen_grace_ms: 3000,
   toast_ms: 4000,
 };
 

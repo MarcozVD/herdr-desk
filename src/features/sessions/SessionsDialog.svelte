@@ -9,7 +9,7 @@
     sessionStart,
     sessionStop,
   } from '../../lib/herdr/client';
-  import { describeApiError } from '../../lib/herdr/errors';
+  import { describeApiError, errorText } from '../../lib/herdr/errors';
   import type { SessionInfo } from '../../lib/herdr/types';
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
@@ -33,12 +33,25 @@
     if (ui.sessionsOpen) void load();
   });
 
+  /** Mensaje del fallo de un command de sesión: el del backend manda. */
+  function notifyFailure(
+    outcome: { kind: 'missing' | 'error'; error: { code: string; message: string } },
+    command: string,
+  ): void {
+    if (outcome.kind === 'missing') {
+      ui.notify(es.connection.unavailable.replace('{command}', command), 'warn');
+      return;
+    }
+    session.reportSessionError(outcome.error);
+    ui.notify(errorText(outcome.error), 'error');
+  }
+
   async function start(target: SessionInfo): Promise<boolean> {
     busy = target.name;
     const started = await sessionStart(target.name);
     busy = null;
-    if (!started) {
-      ui.notify(es.connection.unavailable.replace('{command}', 'session_start'), 'warn');
+    if (!started.ok) {
+      notifyFailure(started, 'session_start');
       return false;
     }
     await load();
@@ -53,10 +66,11 @@
     busy = target.name;
     const connected = await sessionConnect(target.name);
     busy = null;
-    if (!connected) {
-      ui.notify(es.connection.unavailable.replace('{command}', 'session_connect'), 'warn');
+    if (!connected.ok) {
+      notifyFailure(connected, 'session_connect');
       return;
     }
+    session.reportSessionError(null);
     await session.setSessionName(target.name);
     await session.connect();
     ui.notify(`${es.app.session}: ${target.name}`, 'info');
@@ -72,8 +86,8 @@
     });
     if (!accepted) return;
     const stopped = await sessionStop(target.name);
-    if (!stopped) {
-      ui.notify(es.connection.unavailable.replace('{command}', 'session_stop'), 'warn');
+    if (!stopped.ok) {
+      notifyFailure(stopped, 'session_stop');
       return;
     }
     await load();
@@ -89,8 +103,8 @@
     });
     if (!accepted) return;
     const deleted = await sessionDelete(target.name);
-    if (!deleted) {
-      ui.notify(es.connection.unavailable.replace('{command}', 'session_delete'), 'warn');
+    if (!deleted.ok) {
+      notifyFailure(deleted, 'session_delete');
       return;
     }
     await load();
@@ -106,8 +120,8 @@
     });
     if (name === null) return;
     const started = await sessionStart(name);
-    if (!started) {
-      ui.notify(es.connection.unavailable.replace('{command}', 'session_start'), 'warn');
+    if (!started.ok) {
+      notifyFailure(started, 'session_start');
       return;
     }
     await load();

@@ -185,16 +185,22 @@
   });
 
   // Un pane visible abre bridge; al ocultarse se cierra y la instancia queda en
-  // el LRU del pool para volver sin parpadeo. Al reconectar (epoch) se reabre.
+  // el LRU del pool para volver sin parpadeo. Se sigue el epoch de conexión y el
+  // estado de conexión: al reconectar (o al volver el server) hay que reabrir.
   $effect(() => {
     if (!ready || !entry) return;
     const epoch = session.connectionEpoch;
-    if (active) {
-      applyFit();
-      void pool.open(paneId, entry.terminal.cols, entry.terminal.rows, epoch);
-    } else {
+    const connected = session.connection !== 'offline';
+    if (!active) {
       pool.release(paneId, { keepInstance: true });
+      return;
     }
+    // Sin server no se insiste: se espera al reintento (evita spam de open), y
+    // si el panel está «reconectando» el respawn del backend ya reusa su bridge.
+    if (!connected && entry.state !== 'idle') return;
+    if (entry.state === 'reconnecting') return;
+    applyFit();
+    void pool.open(paneId, entry.terminal.cols, entry.terminal.rows, epoch);
   });
 </script>
 
@@ -225,6 +231,24 @@
   {#if bridgeState === 'opening'}
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="opening">
       <span>{es.terminal.connecting}</span>
+    </div>
+  {:else if bridgeState === 'reconnecting'}
+    <!-- El server se cayó: el backend respawnea con el mismo bridge y los frames
+         devuelven el panel a «open»; el botón fuerza el reenganche a mano. -->
+    <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="reconnecting">
+      <span data-testid="terminal-reconnecting">{es.terminal.reconnecting}</span>
+      <button
+        type="button"
+        onclick={() =>
+          void pool.open(
+            paneId,
+            entry?.terminal.cols ?? 80,
+            entry?.terminal.rows ?? 24,
+            session.connectionEpoch,
+          )}
+      >
+        {es.terminal.retake}
+      </button>
     </div>
   {:else if bridgeState === 'closed'}
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="closed">

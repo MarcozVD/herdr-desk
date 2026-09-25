@@ -25,6 +25,8 @@ export interface BootOptions {
   terminalOpenDelayMs?: number;
   /** Árbol que devolverá layout.export (por defecto, un solo panel). */
   layoutTree?: unknown;
+  sessionStartError?: 'missing' | { code: string; message: string };
+  sessionCurrentMissing?: boolean;
 }
 
 export async function bootApp(page: Page, options: BootOptions = {}): Promise<void> {
@@ -34,6 +36,8 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     autoSnapshot: options.autoSnapshot ?? true,
     terminalOpenDelayMs: options.terminalOpenDelayMs ?? 0,
     layoutTree: options.layoutTree ?? null,
+    sessionStartError: options.sessionStartError ?? null,
+    sessionCurrentMissing: options.sessionCurrentMissing ?? false,
   };
   await page.addInitScript((value) => {
     window.__HD_HARNESS__ = value;

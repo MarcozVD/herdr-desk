@@ -3,7 +3,7 @@
 
 import { es } from '../i18n/es';
 import { paneApi, serverApi, tabApi, workspaceApi } from '../herdr/actions';
-import { describeApiError, parseApiError } from '../herdr/errors';
+import { describeApiError, errorText, parseApiError } from '../herdr/errors';
 import { findPane, neighborPane } from '../layout/tree';
 import { session } from '../stores/session.svelte';
 import { settings } from '../stores/settings.svelte';
@@ -309,13 +309,14 @@ export const flows = {
 
   async startServer(): Promise<void> {
     const started = await session.startServer();
-    if (!started) {
-      ui.notify(
-        es.connection.startFailed.replace('{session}', session.sessionName ?? '?'),
-        'error',
-      );
-      ui.notify(es.connection.unavailable.replace('{command}', 'session_start'), 'warn');
+    if (started) {
+      ui.notify(es.connection.started.replace('{session}', session.sessionName ?? ''), 'info');
+      return;
     }
+    const error = session.startError;
+    if (!error) return;
+    const soft = error.code === 'missing_command' || error.code === 'no_session';
+    ui.notify(errorText(error), soft ? 'warn' : 'error');
   },
 
   async reloadConfig(): Promise<void> {

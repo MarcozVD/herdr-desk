@@ -35,7 +35,8 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { settings } from '../stores/settings.svelte';
 import { FrameWriter, binaryStringToBase64, decodeCloseReason, decodeFrame } from './frames';
 
-export type BridgeState = 'idle' | 'opening' | 'open' | 'closing' | 'closed' | 'error';
+export type BridgeState =
+  'idle' | 'opening' | 'open' | 'closing' | 'reconnecting' | 'closed' | 'error';
 
 export interface TerminalEntry {
   paneId: string;
@@ -60,7 +61,17 @@ export interface PoolEvents {
   onStateChange?: (entry: TerminalEntry) => void;
   /** Llega un frame ya decodificado (lo consume la vista para su contador). */
   onFrame?: (entry: TerminalEntry) => void;
+  /**
+   * Un bridge se cerró porque el SERVER cayó (no porque la terminal terminara):
+   * la app tiene que darse cuenta y reconectar. Sin esto la UI se quedaba «en
+   * línea» con los paneles muertos, porque el store del backend no avisa.
+   */
+  onOutage?: (paneId: string, reason: string) => void;
 }
+
+/** Motivos de cierre que significan «se cayó el servidor». */
+const OUTAGE_REASON =
+  /server is shut|shutting down|error de transporte|os error|connection refused/i;
 
 export interface PoolOptions {
   write: (bytes: Uint8Array) => void;
@@ -83,10 +94,39 @@ export class TerminalPool {
   #lru: string[] = [];
   #listeners = new Set<PoolEvents>();
   #openWebgl = 0;
+  /** Reenganches programados tras una caída (pane → timer). */
+  #reopenTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   subscribe(listener: PoolEvents): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  /**
+   * Si el respawn del backend no manda frames en `bridge_reopen_grace_ms`, la UI
+   * se reengancha sola (un `terminal_open` nuevo). Si los frames llegan antes, el
+   * panel vuelve a «open» y el timer se cancela: nunca hay dos attaches peleando.
+   */
+  #scheduleReopen(paneId: string): void {
+    this.#clearReopen(paneId);
+    const delay = Math.max(500, settings.values.bridge_reopen_grace_ms);
+    this.#reopenTimers.set(
+      paneId,
+      setTimeout(() => {
+        this.#reopenTimers.delete(paneId);
+        const entry = this.#entries.get(paneId);
+        if (!entry || entry.state !== 'reconnecting') return;
+        void this.open(paneId, entry.terminal.cols, entry.terminal.rows, entry.epoch);
+      }, delay),
+    );
+  }
+
+  #clearReopen(paneId: string): void {
+    const timer = this.#reopenTimers.get(paneId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.#reopenTimers.delete(paneId);
+    }
   }
 
   #notifyState(entry: TerminalEntry): void {
@@ -169,11 +209,30 @@ export class TerminalPool {
         return;
       }
       if (frame.closed) {
-        entry.closeReason = decodeCloseReason(frame);
+        const reason = decodeCloseReason(frame);
+        entry.closeReason = reason;
+        if (OUTAGE_REASON.test(reason)) {
+          // El backend respawnea reusando el mismo bridge_id y el mismo Channel,
+          // así que NO se suelta el bridge: el panel queda «reconectando» y los
+          // frames que lleguen lo devuelven a «open». Reabrir desde aquí dejaría
+          // dos attaches peleando por el mismo pane («taken over»).
+          entry.state = 'reconnecting';
+          this.#notifyState(entry);
+          this.#scheduleReopen(entry.paneId);
+          for (const listener of this.#listeners) listener.onOutage?.(entry.paneId, reason);
+          return;
+        }
         entry.bridgeId = null;
         entry.state = 'closed';
         this.#notifyState(entry);
         return;
+      }
+      if (entry.state === 'reconnecting' || entry.state === 'closed') {
+        // Llegan frames: el bridge (o su respawn) está vivo otra vez.
+        this.#clearReopen(entry.paneId);
+        entry.state = 'open';
+        entry.closeReason = '';
+        this.#notifyState(entry);
       }
       entry.writer.push(frame.bytes, frame.full);
       for (const listener of this.#listeners) listener.onFrame?.(entry);
@@ -245,6 +304,7 @@ export class TerminalPool {
   release(paneId: string, options: { keepInstance?: boolean } = {}): void {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
+    this.#clearReopen(paneId);
     if (entry.bridgeId !== null) {
       void terminalClose(entry.bridgeId).catch(() => undefined);
       entry.bridgeId = null;
@@ -258,6 +318,7 @@ export class TerminalPool {
   dispose(paneId: string): void {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
+    this.#clearReopen(paneId);
     if (entry.bridgeId !== null) {
       void terminalClose(entry.bridgeId).catch(() => undefined);
       entry.bridgeId = null;

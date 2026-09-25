@@ -98,3 +98,51 @@ test('la sidebar pinta los espacios y agentes del snapshot (fixture)', async ({ 
   );
   await expect(page.getByTestId('agent-row')).toHaveCount(fixture.agents.length);
 });
+
+/** Regresión: la franja de reconexión es una banda más del shell y no debe
+ *  llevarse la fila elástica (con el grid de filas fijas medía 709 px y dejaba
+ *  el cuerpo en 26 px). */
+async function measureShell(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const height = (selector: string) =>
+      Math.round(document.querySelector(selector)?.getBoundingClientRect().height ?? -1);
+    return {
+      banner: height('[data-testid="reconnect-banner"]'),
+      titlebar: height('[data-testid="titlebar"]'),
+      body: height('.body'),
+      sidebar: height('[data-testid="sidebar"]'),
+      panes: height('[data-testid="split-area"]'),
+      statusbar: height('[data-testid="statusbar"]'),
+      overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+}
+
+test('con la franja de reconexión visible el cuerpo conserva su alto (regresión)', async ({
+  page,
+}) => {
+  await bootApp(page, { autoSnapshot: false });
+  await expect(page.getByTestId('reconnect-banner')).toBeVisible();
+
+  const box = await measureShell(page);
+  expect(box.banner).toBeGreaterThan(0);
+  expect(box.banner).toBeLessThan(80);
+  expect(box.titlebar).toBe(40);
+  expect(box.statusbar).toBeGreaterThan(20);
+  expect(box.statusbar).toBeLessThan(40);
+  expect(box.body).toBeGreaterThan(400);
+  expect(box.sidebar).toBeGreaterThan(300);
+  expect(box.panes).toBeGreaterThan(300);
+  expect(box.overflowX).toBe(0);
+});
+
+test('en línea el shell mantiene la misma estructura de bandas', async ({ page }) => {
+  await bootApp(page);
+  await expect(page.getByTestId('reconnect-banner')).toHaveCount(0);
+
+  const box = await measureShell(page);
+  expect(box.titlebar).toBe(40);
+  expect(box.body).toBeGreaterThan(600);
+  expect(box.panes).toBeGreaterThan(400);
+  expect(box.overflowX).toBe(0);
+});

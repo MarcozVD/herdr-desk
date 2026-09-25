@@ -19,6 +19,10 @@ interface HarnessConfig {
   terminalOpenDelayMs?: number;
   /** Árbol que devuelve layout.export (por defecto: un solo panel, el enfocado). */
   layoutTree?: unknown;
+  /** `session_start` falla: 'missing' (command inexistente) o un ApiError real. */
+  sessionStartError?: 'missing' | { code: string; message: string };
+  /** `session_current` no está registrado en el backend. */
+  sessionCurrentMissing?: boolean;
 }
 
 export interface RecordedCall {
@@ -205,8 +209,6 @@ export function installHarness(): void {
     const payload = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: payload });
     switch (cmd) {
-      case 'session_current':
-        return config.sessionName ?? 'herdr-desk-dev';
       case 'session_list':
         return {
           sessions: [
@@ -233,8 +235,14 @@ export function installHarness(): void {
             },
           ],
         };
-      case 'session_connect':
+      case 'session_current':
+        if (config.sessionCurrentMissing) throw 'Command session_current not found';
+        return config.sessionName ?? 'herdr-desk-dev';
       case 'session_start':
+        if (config.sessionStartError === 'missing') throw 'Command session_start not found';
+        if (config.sessionStartError) throw config.sessionStartError;
+        return null;
+      case 'session_connect':
       case 'session_stop':
       case 'session_delete':
         return null;

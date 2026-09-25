@@ -162,44 +162,68 @@ export async function sessionList(): Promise<SessionInfo[]> {
 }
 
 /**
- * Commands del §5 que el backend todavía no expone (sesión activa, conectar,
- * arrancar, parar y borrar). Se intentan y devuelven null si el command no existe,
- * para que la UI lo muestre como «no disponible» en vez de romper. Hueco del §5
- * anotado en el informe de F1.
+ * Resultado de un command del §5. Distingue tres casos que antes se confundían
+ * en un solo `false`:
+ *   - `ok: true`            → el command existe y respondió (aunque devuelva null).
+ *   - `kind: 'missing'`     → el backend instalado no registra ese command.
+ *   - `kind: 'error'`       → el command existe y falló: se muestra SU mensaje.
  */
-/** Command del §5 que puede no existir todavía en el backend: devuelve ok=false
- *  en vez de reventar (y sin confundir «no existe» con «devolvió null»). */
+export type CommandOutcome<T> =
+  { ok: true; value: T | null } | { ok: false; kind: 'missing' | 'error'; error: ApiError };
+
+/**
+ * Tauri rechaza con `Command <nombre> not found` (p. ej. «Command session_start
+ * not found»), `Command not found` a secas o «…not allowed. Command not found»
+ * para plugins. Cualquier otra cosa es un error real y se muestra su mensaje.
+ */
+const MISSING_COMMAND_PATTERN =
+  /command(\s+\S+)?\s+not\s+found|command\s+not\s+allowed|plugin\s+not\s+found|unknown command/i;
+
+/** Tauri rechaza con «Command not found» cuando el command no está registrado. */
+export function classifyCommandError(raw: unknown): { kind: 'missing' | 'error'; error: ApiError } {
+  if (typeof raw === 'string') {
+    if (MISSING_COMMAND_PATTERN.test(raw)) {
+      return { kind: 'missing', error: { code: 'missing_command', message: raw } };
+    }
+    // «invalid args `name` for command `x`»: contrato roto por el cliente.
+    if (/^invalid args/i.test(raw)) {
+      return { kind: 'error', error: { code: 'invalid_args', message: raw } };
+    }
+    return { kind: 'error', error: { code: 'unknown', message: raw } };
+  }
+  return { kind: 'error', error: parseApiError(raw) };
+}
+
 async function optionalCommand<T>(
   command: string,
   args?: Record<string, unknown>,
-): Promise<{ ok: boolean; value: T | null }> {
+): Promise<CommandOutcome<T>> {
   try {
     const value = (await invoke<T>(command, args)) ?? null;
     return { ok: true, value };
-  } catch {
-    return { ok: false, value: null };
+  } catch (raw) {
+    return { ok: false, ...classifyCommandError(raw) };
   }
 }
 
-export async function sessionCurrent(): Promise<string | null> {
-  const result = await optionalCommand<string | null>('session_current');
-  return typeof result.value === 'string' && result.value.length > 0 ? result.value : null;
+export async function sessionCurrent(): Promise<CommandOutcome<string>> {
+  return optionalCommand<string>('session_current');
 }
 
-export async function sessionConnect(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_connect', { name })).ok;
+export async function sessionConnect(name: string): Promise<CommandOutcome<null>> {
+  return optionalCommand<null>('session_connect', { name });
 }
 
-export async function sessionStart(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_start', { name })).ok;
+export async function sessionStart(name: string): Promise<CommandOutcome<null>> {
+  return optionalCommand<null>('session_start', { name });
 }
 
-export async function sessionStop(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_stop', { name })).ok;
+export async function sessionStop(name: string): Promise<CommandOutcome<null>> {
+  return optionalCommand<null>('session_stop', { name });
 }
 
-export async function sessionDelete(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_delete', { name })).ok;
+export async function sessionDelete(name: string): Promise<CommandOutcome<null>> {
+  return optionalCommand<null>('session_delete', { name });
 }
 
 /* ---- Terminal (bridges) ---- */
