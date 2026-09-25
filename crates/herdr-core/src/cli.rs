@@ -53,7 +53,7 @@ pub fn run_session_cli(
     })
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct CliSessionInfo {
     pub name: String,
@@ -63,7 +63,7 @@ pub struct CliSessionInfo {
     pub session_dir: String,
 }
 
-#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct CliSessionList {
     pub sessions: Vec<CliSessionInfo>,

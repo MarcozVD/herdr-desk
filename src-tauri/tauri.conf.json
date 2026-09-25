@@ -12,13 +12,23 @@
   "app": {
     "windows": [
       {
-        "title": "herdr-desk",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "herdr",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 480,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true,
+        "visible": false,
+        "windowEffects": {
+          "effects": ["micaDark"]
+        }
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {
