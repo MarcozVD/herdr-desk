@@ -1,0 +1,12 @@
+dist
+node_modules
+target
+src-tauri
+crates
+schema
+scripts
+docs
+.hermes
+test-results
+playwright-report
+pnpm-lock.yaml
