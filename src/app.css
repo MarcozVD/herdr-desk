@@ -542,7 +542,7 @@ body {
 .overlay {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: var(--dialog-level, 20);
   display: grid;
   place-items: start center;
   padding-block-start: 12vh;

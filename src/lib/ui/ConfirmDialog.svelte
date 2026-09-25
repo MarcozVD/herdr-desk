@@ -29,6 +29,7 @@
     onclose={close}
     width="28rem"
     testId="confirm-dialog"
+    level={30}
     closeLabel={es.dialog.cancel}
   >
     <p class="confirm__message">{request.message}</p>

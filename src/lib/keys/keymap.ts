@@ -223,6 +223,7 @@ export class Keymap {
     prefixActive: boolean,
   ): { action: string } | { literalPrefix: true } | null {
     const chord = chordFromEvent(event);
+    if (!chord) return null;
     const id = chordId(chord);
     if (prefixActive) {
       const action = this.lookup.get(`p:${id}`);
@@ -280,12 +281,16 @@ export class Keymap {
   isPrefixKey(event: KeyboardEvent): boolean {
     const parsed = parseBinding(this.prefixKey);
     if (!parsed) return false;
-    return chordId(chordFromEvent(event)) === chordId(parsed.chord);
+    const chord = chordFromEvent(event);
+    if (!chord) return false;
+    return chordId(chord) === chordId(parsed.chord);
   }
 
   /** Atajos globales de la GUI (no configurables). */
   resolveGuiShortcut(event: KeyboardEvent): string | null {
-    const id = chordId(chordFromEvent(event));
+    const chord = chordFromEvent(event);
+    if (!chord) return null;
+    const id = chordId(chord);
     return GUI_RESERVED.find((entry) => entry.chordId === id)?.action ?? null;
   }
 }

@@ -99,6 +99,7 @@ export async function runAction(action: string): Promise<void> {
     return;
   }
   if (action.startsWith('gui.')) {
+    if (action === 'gui.palette') ui.togglePalette();
     if (action === 'gui.copy') dispatchToTerminal('copy');
     if (action === 'gui.paste') dispatchToTerminal('paste');
     return;

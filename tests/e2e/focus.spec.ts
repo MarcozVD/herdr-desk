@@ -39,7 +39,7 @@ test('R11: el clic dentro de la terminal no manda foco a herdr', async ({ page }
 
 test('R11: con «Sincronizar foco con TUI» activo sí llama a workspace.focus', async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem('herdr-desk.ui', JSON.stringify({ syncFocusWithTui: true }));
+    localStorage.setItem('herdr-desk.settings', JSON.stringify({ sync_focus_with_tui: true }));
   });
   await bootApp(page);
 

@@ -38,14 +38,14 @@
   // el backend publica un snapshot nuevo (`revision` sube con cada refresco).
   $effect(() => {
     const tabId = session.focusedTabId;
-    void session.revision;
-    layout.request(tabId);
+    const revision = session.revision;
+    layout.schedule(tabId, revision);
   });
 
   // Al (re)conectar se rehace el árbol: los paneles visibles reabren sus bridges.
   $effect(() => {
     const epoch = session.connectionEpoch;
-    if (epoch > 0) void layout.refreshNow();
+    if (epoch > 0) void layout.refreshNow(session.focusedTabId);
   });
 
   $effect(() => {
@@ -59,7 +59,13 @@
     return element.tagName === 'INPUT' || element.tagName === 'TEXTAREA';
   }
 
+  const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'CapsLock', 'AltGraph']);
+
   function onKeydown(event: KeyboardEvent): void {
+    // Las teclas modificadoras solas no son un atajo: si se procesaran, el
+    // Control de «Ctrl+B» consumiría el modo prefix antes de la «b».
+    if (MODIFIER_KEYS.has(event.key)) return;
+
     // 1. Atajos globales de la GUI (siempre activos).
     const gui = keymap.resolveGuiShortcut(event);
     if (gui) {
@@ -92,11 +98,21 @@
       return;
     }
 
-    // 3. La tecla de prefix entra y sale del modo prefix.
+    // 3. La tecla de prefix entra y sale del modo prefix; pulsarla dos veces manda
+    //    el Ctrl+B literal a la terminal (como la TUI).
     if (keymap.isPrefixKey(event)) {
       event.preventDefault();
       event.stopPropagation();
-      ui.prefixActive = !ui.prefixActive;
+      if (ui.prefixActive) {
+        ui.prefixActive = false;
+        window.dispatchEvent(
+          new CustomEvent('herdr-desk:terminal', {
+            detail: { channel: 'input', detail: '\u0002' },
+          }),
+        );
+      } else {
+        ui.prefixActive = true;
+      }
       return;
     }
 
@@ -190,9 +206,15 @@
   <Cheatsheet />
 {/if}
 
-<ConfirmDialog />
-<PromptDialog />
-<WorkspaceDialog />
+{#key ui.pendingConfirm}
+  <ConfirmDialog />
+{/key}
+{#key ui.pendingPrompt}
+  <PromptDialog />
+{/key}
+{#key ui.pendingWorkspaceForm}
+  <WorkspaceDialog />
+{/key}
 <SessionsDialog />
 <ContextMenu />
 <ToastHost />

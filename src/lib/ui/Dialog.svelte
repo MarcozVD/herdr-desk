@@ -12,6 +12,8 @@
     width?: string;
     testId?: string;
     closeLabel?: string;
+    /** z-index del overlay: los diálogos abiertos desde otro diálogo van por encima. */
+    level?: number;
   }
 
   let {
@@ -22,6 +24,7 @@
     width = '30rem',
     testId = 'dialog',
     closeLabel = es.dialog.close,
+    level = 20,
   }: Props = $props();
 
   let panel = $state<HTMLDivElement | null>(null);
@@ -39,7 +42,7 @@
   }
 </script>
 
-<div class="overlay">
+<div class="overlay" style="--dialog-level:{level}">
   <button
     type="button"
     class="overlay__scrim"

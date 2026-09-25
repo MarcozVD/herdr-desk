@@ -9,6 +9,7 @@ import { uiReady } from './lib/herdr/client';
 import { keymap } from './lib/keys/keymap';
 import { session } from './lib/stores/session.svelte';
 import { settings } from './lib/stores/settings.svelte';
+import { ui } from './lib/stores/ui.svelte';
 
 declare global {
   interface Window {
@@ -29,6 +30,8 @@ async function boot(): Promise<void> {
   settings.load();
   settings.applyTheme();
   keymap.load();
+  // La sidebar arranca colapsada si así lo pide la configuración.
+  ui.setSidebarCollapsed(settings.values.sidebar_start_collapsed);
 
   mount(App, { target: document.getElementById('app') as HTMLElement });
 

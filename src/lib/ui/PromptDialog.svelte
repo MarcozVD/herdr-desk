@@ -7,13 +7,18 @@
   import Field from './Field.svelte';
 
   const request = $derived(ui.pendingPrompt);
-  let value = $state('');
-  let error = $state('');
+  // El valor inicial sale del prompt; App.svelte recrea el diálogo con `{#key}`
+  // cuando llega otro, así que no hace falta efecto.
+  // svelte-ignore state_referenced_locally
+  let value = $state(request?.value ?? '');
 
-  $effect(() => {
-    value = request?.value ?? '';
-    error = '';
-  });
+  const error = $derived(
+    request
+      ? (request.validate?.(value.trim()) ??
+          (value.trim().length === 0 ? es.dialog.required : null) ??
+          '')
+      : '',
+  );
 
   function close(): void {
     ui.resolvePrompt(null);
@@ -21,14 +26,8 @@
 
   function accept(): void {
     if (!request) return;
-    const trimmed = value.trim();
-    const message =
-      request.validate?.(trimmed) ?? (trimmed.length === 0 ? 'Escribe un valor.' : null);
-    if (message) {
-      error = message;
-      return;
-    }
-    ui.resolvePrompt(trimmed);
+    if (error.length > 0) return;
+    ui.resolvePrompt(value.trim());
   }
 </script>
 
@@ -38,6 +37,7 @@
     onclose={close}
     width="26rem"
     testId="prompt-dialog"
+    level={30}
     closeLabel={es.dialog.cancel}
   >
     <Field
@@ -55,7 +55,13 @@
       <button type="button" class="btn" data-testid="prompt-cancel" onclick={close}>
         {es.dialog.cancel}
       </button>
-      <button type="button" class="btn btn--primary" data-testid="prompt-accept" onclick={accept}>
+      <button
+        type="button"
+        class="btn btn--primary"
+        data-testid="prompt-accept"
+        disabled={error.length > 0}
+        onclick={accept}
+      >
         {request.submitLabel ?? es.dialog.accept}
       </button>
     {/snippet}

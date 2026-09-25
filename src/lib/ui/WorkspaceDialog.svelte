@@ -29,22 +29,23 @@
     onclose={close}
     width="28rem"
     testId="workspace-dialog"
+    level={30}
     closeLabel={es.dialog.cancel}
   >
     <Field
       label={es.workspace.labelLabel}
+      testId="workspace-label"
       bind:value={label}
       placeholder={es.workspace.labelPlaceholder}
-      testId="workspace-label"
       autofocus
       onsubmit={accept}
     />
     <Field
       label={es.workspace.cwdLabel}
+      testId="workspace-cwd"
       bind:value={cwd}
       placeholder="C:\\ruta\\del\\proyecto"
       hint={es.workspace.createHint}
-      testId="workspace-cwd"
       onsubmit={accept}
     />
 

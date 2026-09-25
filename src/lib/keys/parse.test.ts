@@ -105,22 +105,29 @@ describe('parseIndexedRange', () => {
 
 describe('chordFromEvent', () => {
   it('normaliza letras a minúscula conservando shift', () => {
-    expect(chordId(chordFromEvent(fakeEvent({ key: 'N', ctrlKey: true, shiftKey: true })))).toBe(
+    expect(chordId(chordOf(fakeEvent({ key: 'N', ctrlKey: true, shiftKey: true })))).toBe(
       'ctrl+shift+n',
     );
   });
 
   it('un símbolo ya consume el shift', () => {
     // '?' requiere shift en el teclado, pero el binding es `prefix+?`.
-    expect(chordId(chordFromEvent(fakeEvent({ key: '?' })))).toBe('?');
-    expect(chordId(chordFromEvent(fakeEvent({ key: '?', shiftKey: true })))).toBe('?');
+    expect(chordId(chordOf(fakeEvent({ key: '?' })))).toBe('?');
+    expect(chordId(chordOf(fakeEvent({ key: '?', shiftKey: true })))).toBe('?');
   });
 
   it('esc y flechas se normalizan', () => {
-    expect(chordId(chordFromEvent(fakeEvent({ key: 'Escape' })))).toBe('escape');
-    expect(chordId(chordFromEvent(fakeEvent({ key: 'ArrowUp' })))).toBe('arrowup');
+    expect(chordId(chordOf(fakeEvent({ key: 'Escape' })))).toBe('escape');
+    expect(chordId(chordOf(fakeEvent({ key: 'ArrowUp' })))).toBe('arrowup');
   });
 });
+
+/** chordFromEvent puede devolver null (teclas modificadoras solas). */
+function chordOf(event: KeyboardEvent): Exclude<ReturnType<typeof chordFromEvent>, null> {
+  const chord = chordFromEvent(event);
+  if (!chord) throw new Error('el evento no tiene chord');
+  return chord;
+}
 
 describe('normalizeKeyName', () => {
   it('acepta alias de herdr', () => {

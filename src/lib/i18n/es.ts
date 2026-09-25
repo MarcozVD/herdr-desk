@@ -133,6 +133,7 @@ export const es = {
     create: 'Crear',
     close: 'Cerrar',
     apply: 'Aplicar',
+    required: 'Escribe un valor.',
   },
   terminal: {
     closed: 'La terminal se desconectó ({reason}).',

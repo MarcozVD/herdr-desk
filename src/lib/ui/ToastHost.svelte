@@ -22,7 +22,7 @@
     position: fixed;
     inset-block-end: calc(var(--statusbar-height) + var(--space-3));
     inset-inline-end: var(--space-4);
-    z-index: 30;
+    z-index: 60;
     display: grid;
     gap: var(--space-2);
     inline-size: min(26rem, 60vw);

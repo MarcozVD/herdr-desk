@@ -138,7 +138,18 @@ export function parseIndexedRange(
   };
 }
 
-export function chordFromEvent(event: KeyboardEvent): KeyChord {
+/** Teclas que por sí solas no son un atajo. */
+export const MODIFIER_ONLY_KEYS = new Set([
+  'Control',
+  'Shift',
+  'Alt',
+  'Meta',
+  'CapsLock',
+  'AltGraph',
+]);
+
+export function chordFromEvent(event: KeyboardEvent): KeyChord | null {
+  if (MODIFIER_ONLY_KEYS.has(event.key)) return null;
   const { key, shiftConsumedByChar } = normalizeEventKey(event.key);
   return {
     key,

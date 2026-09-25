@@ -27,7 +27,7 @@
   }
 </script>
 
-<div class="overlay">
+<div class="overlay" style="--dialog-level:40">
   <button
     type="button"
     class="overlay__scrim"

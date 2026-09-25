@@ -44,11 +44,12 @@
   }
 </script>
 
-<label class="field" data-testid={testId}>
+<label class="field">
   <span class="field__label">{label}</span>
   <input
     class="field__input"
     bind:this={input}
+    data-testid={testId ?? 'field-input'}
     {value}
     {placeholder}
     spellcheck="false"

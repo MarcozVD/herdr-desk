@@ -167,36 +167,39 @@ export async function sessionList(): Promise<SessionInfo[]> {
  * para que la UI lo muestre como «no disponible» en vez de romper. Hueco del §5
  * anotado en el informe de F1.
  */
+/** Command del §5 que puede no existir todavía en el backend: devuelve ok=false
+ *  en vez de reventar (y sin confundir «no existe» con «devolvió null»). */
 async function optionalCommand<T>(
   command: string,
   args?: Record<string, unknown>,
-): Promise<T | null> {
+): Promise<{ ok: boolean; value: T | null }> {
   try {
-    return (await invoke<T>(command, args)) as T;
+    const value = (await invoke<T>(command, args)) ?? null;
+    return { ok: true, value };
   } catch {
-    return null;
+    return { ok: false, value: null };
   }
 }
 
 export async function sessionCurrent(): Promise<string | null> {
-  const name = await optionalCommand<string | null>('session_current');
-  return typeof name === 'string' && name.length > 0 ? name : null;
+  const result = await optionalCommand<string | null>('session_current');
+  return typeof result.value === 'string' && result.value.length > 0 ? result.value : null;
 }
 
 export async function sessionConnect(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_connect', { name })) !== null;
+  return (await optionalCommand<null>('session_connect', { name })).ok;
 }
 
 export async function sessionStart(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_start', { name })) !== null;
+  return (await optionalCommand<null>('session_start', { name })).ok;
 }
 
 export async function sessionStop(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_stop', { name })) !== null;
+  return (await optionalCommand<null>('session_stop', { name })).ok;
 }
 
 export async function sessionDelete(name: string): Promise<boolean> {
-  return (await optionalCommand<null>('session_delete', { name })) !== null;
+  return (await optionalCommand<null>('session_delete', { name })).ok;
 }
 
 /* ---- Terminal (bridges) ---- */

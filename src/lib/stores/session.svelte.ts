@@ -104,6 +104,7 @@ class SessionStore {
   async bootstrap(): Promise<void> {
     this.sessionName = await sessionCurrent();
     await this.connect();
+    await this.ping();
   }
 
   /** (Re)suscribe al store y arma el watchdog del snapshot. */
@@ -118,6 +119,9 @@ class SessionStore {
       this.nextRetryInMs = null;
       this.startServerFailed = false;
       this.#armSnapshotWatchdog();
+      // Un ping por conexión: fija versión/protocolo y alimenta la p50 que
+      // muestra la píldora de conexión.
+      void this.ping();
     } catch (raw) {
       this.lastError = parseApiError(raw);
       this.connection = 'offline';
@@ -135,7 +139,9 @@ class SessionStore {
       if (result.type !== 'pong') return false;
       this.protocol = result.protocol;
       this.version = result.version;
-      if (this.connection !== 'online') this.connection = 'online';
+      // El ping solo confirma que el IPC responde; la sesión se da por «en línea»
+      // cuando llega un snapshot (sin datos la UI no sirve para nada).
+      if (this.snapshot !== null) this.connection = 'online';
       this.refreshLatency();
       return true;
     } catch (raw) {
