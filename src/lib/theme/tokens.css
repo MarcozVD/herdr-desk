@@ -1,0 +1,171 @@
+/* Tokens de diseño (§3 del plan): glass, radios, espaciado, motion y la paleta
+   base del tema. En F3 la paleta se rellena desde `[theme]` de config.toml
+   (lib/theme/themes.ts); esto son los valores por defecto del spike. */
+
+:root {
+  /* Glass */
+  --glass-alpha: 0.55;
+  --glass-alpha-overlay: 0.72;
+  --glass-blur: 20px;
+  --glass-blur-overlay: 28px;
+  --glass-saturate: 140%;
+  --glass-border: rgb(255 255 255 / 0.12);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.1);
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --shadow-lg: 0 20px 50px -12px rgb(0 0 0 / 0.55);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --t-fast: 120ms;
+  --t-med: 180ms;
+  --t-slow: 240ms;
+  --font-ui: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'Cascadia Mono', monospace;
+
+  /* Layout del shell */
+  --titlebar-height: 40px;
+  --statusbar-height: 26px;
+  --sidebar-width: 244px;
+  --sidebar-width-collapsed: 0px;
+
+  /* Paleta del tema (defaults tipo dracula, como el tema activo del usuario).
+     Los nombres son los tokens de herdr del §3 del plan. */
+  --accent: #bd93f9;
+  --panel-bg: #21222c;
+  --sidebar-bg: #191a21;
+  --active-row-bg: #343746;
+  --selection-bg: #44475a;
+  --surface-dim: #4b4f63;
+  --text: #f8f8f2;
+  --text-dim: #a6a8bd;
+  --mauve: #cba6f7;
+  --green: #50fa7b;
+  --yellow: #f1fa8c;
+  --red: #ff5555;
+  --blue: #8be9fd;
+  --teal: #8be9fd;
+  --peach: #ffb86c;
+
+  /* Superficies de la terminal: casi opacas, sin backdrop-filter (§3 capa 3). */
+  --panel-bg-solid: #21222c;
+  --pane-header-bg: #1b1c24;
+
+  color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  --panel-bg: #f4f4f8;
+  --sidebar-bg: #ececf2;
+  --active-row-bg: #dcdce8;
+  --selection-bg: #c8c8dc;
+  --surface-dim: #9a9ab0;
+  --text: #1b1b23;
+  --text-dim: #55556a;
+  --panel-bg-solid: #fbfbfe;
+  --pane-header-bg: #eeeef5;
+  color-scheme: light;
+}
+
+.glass {
+  background: color-mix(in oklab, var(--panel-bg) calc(var(--glass-alpha) * 100%), transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--shadow-lg);
+  border-radius: var(--radius);
+}
+
+.glass-overlay {
+  background: color-mix(
+    in oklab,
+    var(--panel-bg) calc(var(--glass-alpha-overlay) * 100%),
+    transparent
+  );
+  backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--shadow-lg);
+  border-radius: var(--radius-lg);
+}
+
+/* Reducción de transparencia (§3): glass sólido, sin blur. */
+:root[data-glass='off'] .glass,
+:root[data-glass='off'] .glass-overlay {
+  background: var(--panel-bg);
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root:not([data-glass='force']) .glass,
+  :root:not([data-glass='force']) .glass-overlay {
+    background: var(--panel-bg);
+    backdrop-filter: none;
+  }
+}
+
+/* Estado de agente (§3). El glow vive en ::after y SOLO se anima opacity:
+   animar box-shadow obliga a repintar. */
+.agent-dot {
+  position: relative;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--surface-dim);
+  color: var(--surface-dim);
+  flex: 0 0 auto;
+}
+
+.agent-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.agent-dot[data-state='working'] {
+  background: var(--blue);
+  color: var(--blue);
+}
+.agent-dot[data-state='blocked'] {
+  background: var(--yellow);
+  color: var(--yellow);
+}
+.agent-dot[data-state='done'] {
+  background: var(--green);
+  color: var(--green);
+}
+.agent-dot[data-state='unknown'] {
+  background: var(--mauve);
+  color: var(--mauve);
+}
+.agent-dot[data-state='working']::after {
+  opacity: 0.35;
+  animation: agent-pulse 1.6s var(--ease) infinite;
+}
+.agent-dot[data-state='blocked']::after,
+.agent-dot[data-state='done']::after {
+  opacity: 0.9;
+}
+
+@keyframes agent-pulse {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-dot[data-state='working']::after {
+    animation: none;
+    opacity: 0.7;
+  }
+}
