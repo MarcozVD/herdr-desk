@@ -1,164 +1,90 @@
-<!-- Terminal del panel enfocado: xterm.js sobre el bridge de herdr.
-     Reglas del §4/§7 que este componente respeta:
-     - los frames NO entran en la reactividad: van a xterm por FrameWriter
+<!-- Terminal de un panel: instancia de xterm del pool sobre el bridge de herdr.
+     Reglas del §4/§7:
+     - los frames NO entran en la reactividad: van a xterm por FrameWriter (pool)
      - un frame `full` descarta los frames anteriores en cola
      - el input se reenvía tal cual llega (R3): flechas, Ctrl+C y pegado multilínea
      - el foco es local (R11): el clic enfoca la terminal, no manda IPC a herdr
--->
+     - solo los panes VISIBLES tienen bridge (`active`), el resto se libera -->
 <script lang="ts">
-  import { FitAddon } from '@xterm/addon-fit';
-  import { Unicode11Addon } from '@xterm/addon-unicode11';
-  import { WebLinksAddon } from '@xterm/addon-web-links';
-  import { WebglAddon } from '@xterm/addon-webgl';
-  import { Terminal } from '@xterm/xterm';
+  import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
   import { onMount } from 'svelte';
 
   import '@xterm/xterm/css/xterm.css';
 
   import { es } from '../i18n/es';
-  import { parseApiError } from '../herdr/errors';
-  import {
-    terminalClose,
-    terminalInput,
-    terminalInputBytes,
-    terminalOpen,
-    terminalResize,
-    terminalScroll,
-  } from '../herdr/client';
+  import { session } from '../stores/session.svelte';
+  import { settings } from '../stores/settings.svelte';
   import { ui } from '../stores/ui.svelte';
-  import { FrameWriter, binaryStringToBase64, decodeCloseReason, decodeFrame } from './frames';
+  import { pool } from './pool';
+  import type { BridgeState, TerminalEntry } from './pool';
+  import TerminalScrollbar from './TerminalScrollbar.svelte';
 
   interface Props {
     paneId: string;
+    /** Panes visibles: solo ellos tienen bridge abierto. */
+    active?: boolean;
   }
 
-  let { paneId }: Props = $props();
+  let { paneId, active = true }: Props = $props();
 
   let host = $state<HTMLDivElement | null>(null);
   let ready = $state(false);
-  let bridgeState = $state<'idle' | 'opening' | 'open' | 'closed' | 'error'>('idle');
+  let bridgeState = $state<BridgeState>('idle');
   let closeReason = $state('');
   let errorText = $state('');
 
-  // Fuera de la reactividad de Svelte (§7): instancias, buffers y handles.
-  let terminal: Terminal | null = null;
-  let fit: FitAddon | null = null;
-  let writer: FrameWriter | null = null;
+  const scroll = $derived(session.panes.find((pane) => pane.pane_id === paneId)?.scroll ?? null);
+
+  // Fuera de la reactividad: instancia, handles y contador de frames.
+  let entry: TerminalEntry | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-  let disposers: Array<{ dispose(): void }> = [];
-  let bridgeId: number | null = null;
-  let openPaneId: string | null = null;
-  let bufferedInput: string[] = [];
   let lastSize = { cols: 0, rows: 0 };
-  // Contador de frames fuera de la reactividad: se publica como atributo del
-  // host (lo leen los e2e y sirve para el flood de R7) sin re-renderizar.
-  let frameCount = 0;
-  let destroyed = false;
+  let frameTotal = 0;
 
-  function readTheme() {
-    const styles = getComputedStyle(document.documentElement);
-    const value = (name: string, fallback: string) =>
-      styles.getPropertyValue(name).trim() || fallback;
-    return {
-      background: value('--panel-bg-solid', '#21222c'),
-      foreground: value('--text', '#f8f8f2'),
-      cursor: value('--accent', '#bd93f9'),
-      selectionBackground: value('--selection-bg', '#44475a'),
-    };
+  function syncFromEntry(source: TerminalEntry): void {
+    bridgeState = source.state;
+    closeReason = source.closeReason;
+    errorText = source.errorText;
   }
 
-  function loadWebgl(term: Terminal): void {
-    try {
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      term.loadAddon(webgl);
-    } catch {
-      // Sin WebGL xterm usa el renderer DOM: la terminal sigue funcionando.
-    }
-  }
-
-  // En dev la instancia de xterm queda accesible para los e2e: con el renderer
-  // WebGL la pantalla vive en un canvas, así que las pruebas leen el buffer.
-  function registerTestTerminal(id: string, term: Terminal): void {
+  function registerTestTerminal(id: string, term: TerminalEntry['terminal']): void {
     if (!import.meta.env.DEV) return;
-    const registry = window as unknown as { __HD_TERMS__?: Record<string, Terminal> };
+    const registry = window as unknown as { __HD_TERMS__?: Record<string, unknown> };
     registry.__HD_TERMS__ ??= {};
     registry.__HD_TERMS__[id] = term;
   }
 
   function unregisterTestTerminal(id: string): void {
     if (!import.meta.env.DEV) return;
-    const registry = window as unknown as { __HD_TERMS__?: Record<string, Terminal> };
+    const registry = window as unknown as { __HD_TERMS__?: Record<string, unknown> };
     if (registry.__HD_TERMS__) delete registry.__HD_TERMS__[id];
   }
 
-  function send(data: string): void {
-    if (bridgeId === null) {
-      bufferedInput.push(data);
-      return;
-    }
-    void terminalInput(bridgeId, data).catch((raw) => fail(raw));
-  }
-
-  function sendBinary(data: string): void {
-    if (bridgeId === null) return;
-    void terminalInputBytes(bridgeId, binaryStringToBase64(data)).catch((raw) => fail(raw));
-  }
-
-  function fail(raw: unknown): void {
-    errorText = parseApiError(raw).message;
-    bridgeState = 'error';
-  }
-
-  function onFrame(buffer: ArrayBuffer): void {
-    let frame;
+  async function copySelection(): Promise<void> {
+    const text = entry?.terminal.getSelection() ?? '';
+    if (text.length === 0) return;
     try {
-      frame = decodeFrame(buffer);
+      await writeText(text);
     } catch {
-      return;
+      ui.notify(es.terminal.clipboardUnavailable, 'warn');
     }
-    if (frame.closed) {
-      closeReason = decodeCloseReason(frame) || es.terminal.closed.replace('{reason}', '');
-      bridgeState = 'closed';
-      bridgeId = null;
-      return;
-    }
-    frameCount += 1;
-    if (frameCount % 16 === 0 && host) host.dataset.frames = String(frameCount);
-    writer?.push(frame.bytes, frame.full);
   }
 
-  async function openBridge(targetPaneId: string): Promise<void> {
-    if (!terminal || destroyed) return;
-    applyFit();
-    const cols = Math.max(20, terminal.cols);
-    const rows = Math.max(5, terminal.rows);
-    bridgeState = 'opening';
-    errorText = '';
+  async function pasteFromClipboard(): Promise<void> {
+    if (!entry) return;
     try {
-      const id = await terminalOpen(targetPaneId, cols, rows, onFrame);
-      if (destroyed) {
-        void terminalClose(id);
-        return;
-      }
-      bridgeId = id;
-      openPaneId = targetPaneId;
-      lastSize = { cols, rows };
-      bridgeState = 'open';
-      const pending = bufferedInput;
-      bufferedInput = [];
-      for (const data of pending) void terminalInput(id, data);
-      terminal.focus();
-    } catch (raw) {
-      fail(raw);
+      const text = await readText();
+      if (text && text.length > 0) pool.send(paneId, text);
+    } catch {
+      ui.notify(es.terminal.clipboardUnavailable, 'warn');
     }
   }
 
   function applyFit(): void {
-    if (!terminal || !fit) return;
+    if (!entry) return;
     try {
-      fit.fit();
+      entry.fit.fit();
     } catch {
       // El contenedor todavía no tiene tamaño: se reintenta en el próximo evento.
     }
@@ -168,91 +94,107 @@
     if (resizeTimer !== null) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       resizeTimer = null;
-      if (!terminal) return;
-      const previous = { cols: terminal.cols, rows: terminal.rows };
+      if (!entry) return;
+      const previous = { cols: entry.terminal.cols, rows: entry.terminal.rows };
       applyFit();
-      if (bridgeId === null) return;
-      if (terminal.cols === previous.cols && terminal.rows === previous.rows) return;
-      if (terminal.cols === lastSize.cols && terminal.rows === lastSize.rows) return;
-      lastSize = { cols: terminal.cols, rows: terminal.rows };
-      void terminalResize(bridgeId, terminal.cols, terminal.rows).catch((raw) => fail(raw));
+      if (entry.bridgeId === null) return;
+      if (entry.terminal.cols === previous.cols && entry.terminal.rows === previous.rows) return;
+      if (entry.terminal.cols === lastSize.cols && entry.terminal.rows === lastSize.rows) return;
+      lastSize = { cols: entry.terminal.cols, rows: entry.terminal.rows };
+      pool.resize(paneId, entry.terminal.cols, entry.terminal.rows);
     }, 60);
+  }
+
+  function onTerminalEvent(event: Event): void {
+    const detail = (event as CustomEvent<{ channel: string; detail: string }>).detail;
+    if (!detail) return;
+    if (detail.channel === 'input') pool.send(paneId, detail.detail);
+    else if (detail.channel === 'copy') void copySelection();
+    else if (detail.channel === 'paste') void pasteFromClipboard();
+  }
+
+  function openContextMenu(event: MouseEvent): void {
+    event.preventDefault();
+    ui.openContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { id: 'copy', label: es.terminal.copy, run: () => copySelection() },
+        { id: 'paste', label: es.terminal.paste, run: () => pasteFromClipboard() },
+      ],
+    });
   }
 
   onMount(() => {
     if (!host) return;
-    const term = new Terminal({
-      // herdr manda el viewport ya renderizado: el scrollback vive en el server.
-      scrollback: 0,
-      allowTransparency: false,
-      allowProposedApi: true,
-      fontFamily: 'var(--font-mono)',
-      fontSize: 13,
-      lineHeight: 1.2,
-      letterSpacing: 0,
-      cursorBlink: true,
-      cursorStyle: 'bar',
-      convertEol: false,
-      scrollOnUserInput: false,
-      theme: readTheme(),
-    });
-    terminal = term;
-    fit = new FitAddon();
-    term.loadAddon(fit);
-    term.loadAddon(new Unicode11Addon());
-    term.unicode.activeVersion = '11';
-    term.loadAddon(new WebLinksAddon());
-    term.open(host);
-    loadWebgl(term);
-    registerTestTerminal(paneId, term);
+    const created = pool.ensure(paneId);
+    entry = created;
+    created.host = host;
+    created.terminal.open(host);
+    pool.attachWebgl(created);
+    registerTestTerminal(paneId, created.terminal);
+    syncFromEntry(created);
 
-    writer = new FrameWriter({ write: (bytes) => term.write(bytes) });
+    const unsubscribe = pool.subscribe({
+      onStateChange: (changed) => {
+        if (changed.paneId !== paneId) return;
+        syncFromEntry(changed);
+        if (changed.state === 'open') changed.terminal.focus();
+      },
+      onFrame: (changed) => {
+        if (changed.paneId !== paneId) return;
+        frameTotal += 1;
+        if (frameTotal % 16 === 0 && host) host.dataset.frames = String(frameTotal);
+      },
+    });
 
     // R3: el input va tal cual lo produce xterm (flechas de PSReadLine, Ctrl+C,
     // pegado multilínea, secuencias de vim). No se filtra ni se reescribe nada.
-    disposers.push(term.onData((data) => send(data)));
-    disposers.push(term.onBinary((data) => sendBinary(data)));
+    created.coreDisposers.push(created.terminal.onData((data) => pool.send(paneId, data)));
+    created.coreDisposers.push(created.terminal.onBinary((data) => pool.sendBinary(paneId, data)));
+    created.coreDisposers.push(
+      created.terminal.onSelectionChange(() => {
+        if (settings.values.copy_on_select) void copySelection();
+      }),
+    );
 
     // La rueda no hace scroll local (scrollback: 0): se pide a herdr.
-    term.attachCustomWheelEventHandler((event) => {
-      const lines = Math.max(1, Math.round(ui.mouseScrollLines));
-      const direction = event.deltaY < 0 ? 'up' : 'down';
-      if (bridgeId !== null) {
-        void terminalScroll(bridgeId, direction, lines).catch((raw) => fail(raw));
-      }
+    created.terminal.attachCustomWheelEventHandler((event) => {
+      const lines = Math.max(1, Math.round(settings.values.mouse_scroll_lines));
+      pool.scroll(paneId, event.deltaY < 0 ? 'up' : 'down', lines);
       return false;
     });
 
+    window.addEventListener('herdr-desk:terminal', onTerminalEvent);
     resizeObserver = new ResizeObserver(() => scheduleFit());
     resizeObserver.observe(host);
     ready = true;
 
     return () => {
-      destroyed = true;
+      window.removeEventListener('herdr-desk:terminal', onTerminalEvent);
+      unsubscribe();
       if (resizeTimer !== null) clearTimeout(resizeTimer);
       resizeObserver?.disconnect();
-      for (const disposable of disposers) disposable.dispose();
-      disposers = [];
-      writer?.dispose();
-      if (bridgeId !== null) void terminalClose(bridgeId);
-      bridgeId = null;
+      for (const disposable of created.coreDisposers) disposable.dispose();
+      created.coreDisposers = [];
+      created.host = null;
       unregisterTestTerminal(paneId);
-      term.dispose();
-      terminal = null;
-      writer = null;
+      // El pool cierra el bridge; la instancia se libera (el panel ya no existe).
+      pool.release(paneId);
     };
   });
 
-  // Al cambiar de panel enfocado se abre un bridge nuevo (el anterior se cierra
-  // en el cleanup del efecto anterior).
+  // Un pane visible abre bridge; al ocultarse se cierra y la instancia queda en
+  // el LRU del pool para volver sin parpadeo. Al reconectar (epoch) se reabre.
   $effect(() => {
-    if (!ready) return;
-    const target = paneId;
-    if (openPaneId === target) return;
-    const previous = bridgeId;
-    bridgeId = null;
-    if (previous !== null) void terminalClose(previous);
-    void openBridge(target);
+    if (!ready || !entry) return;
+    const epoch = session.connectionEpoch;
+    if (active) {
+      applyFit();
+      void pool.open(paneId, entry.terminal.cols, entry.terminal.rows, epoch);
+    } else {
+      pool.release(paneId, { keepInstance: true });
+    }
   });
 </script>
 
@@ -263,6 +205,7 @@
   data-bridge={bridgeState}
   role="application"
   aria-label="terminal {paneId}"
+  oncontextmenu={openContextMenu}
   onpointerdown={(event) => {
     // Si el clic cae en el propio xterm, xterm ya se encarga del foco y del
     // ratón; si cae en el overlay o en el borde, el navegador movería el foco a
@@ -270,10 +213,14 @@
     const surface = event.currentTarget.querySelector('.terminal-surface');
     if (surface?.contains(event.target as Node)) return;
     event.preventDefault();
-    terminal?.focus();
+    entry?.terminal.focus();
   }}
 >
   <div bind:this={host} class="terminal-surface"></div>
+  <TerminalScrollbar
+    {scroll}
+    onscroll={(direction, lines) => pool.scroll(paneId, direction, lines)}
+  />
 
   {#if bridgeState === 'opening'}
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="opening">
@@ -284,14 +231,14 @@
       <span data-testid="terminal-close-reason">
         {es.terminal.closed.replace('{reason}', closeReason)}
       </span>
-      <button type="button" onclick={() => void openBridge(paneId)}>
+      <button type="button" onclick={() => void pool.open(paneId, 80, 24, session.connectionEpoch)}>
         {es.terminal.retake}
       </button>
     </div>
   {:else if bridgeState === 'error'}
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="error">
       <span data-testid="terminal-error">{errorText}</span>
-      <button type="button" onclick={() => void openBridge(paneId)}>
+      <button type="button" onclick={() => void pool.open(paneId, 80, 24, session.connectionEpoch)}>
         {es.terminal.retake}
       </button>
     </div>
@@ -302,5 +249,7 @@
   .terminal-surface {
     block-size: 100%;
     inline-size: 100%;
+    min-inline-size: 0;
+    flex: 1 1 auto;
   }
 </style>

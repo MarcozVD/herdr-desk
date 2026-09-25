@@ -93,6 +93,9 @@
   </header>
 
   <div class="pane-frame__body">
+    <!-- Montado == visible: el Pool solo abre bridge para los panes montados (los
+         de la pestaña activa). Al ocultarse la pestaña el componente se desmonta
+         y el pool libera el bridge con su gracia. -->
     <TerminalView {paneId} />
   </div>
 </article>
