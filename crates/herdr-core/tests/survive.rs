@@ -7,6 +7,8 @@ use herdr_core::terminal::spawn_bridge;
 
 mod common;
 
+use common::Sandbox;
+
 /// T1.5: el server lanzado por la GUI (detached) sobrevive al cierre del proceso
 /// que lo lanzó. Este test hace de "GUI": spawnea y muere.
 #[tokio::test]
@@ -94,4 +96,37 @@ async fn t15b_server_survives_and_client_attaches() {
     let _ = herdr_core::cli::stop_session(&name);
     let _ = herdr_core::cli::delete_session(&name);
     let _ = std::fs::remove_file(&path);
+}
+
+/// Bug reportado en vivo: el store no hacia refresh inicial y el frontend nunca
+/// pasaba a online. Verifica contra hd-test-* que el store publica el snapshot
+/// inicial SIN ningun kick (solo eventos).
+#[tokio::test]
+async fn t16_store_bootstrap_snapshot() {
+    let sb = Sandbox::start();
+    common::wait_session_running(&sb.name).await;
+    let client = sb.ensure_pane().await;
+
+    // store SIN kicks: el refresher debe publicar el snapshot inicial solo
+    let store = herdr_core::Store::spawn(std::sync::Arc::new(client));
+    let deadline = Instant::now() + common::MAX_WAIT;
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "el store no publico el snapshot inicial sin kicks"
+        );
+        let raw = store.snapshot();
+        if &*raw != "{}" {
+            let snap: SessionSnapshot =
+                serde_json::from_str(&raw).expect("snapshot inicial parsea");
+            assert_eq!(snap.protocol, 19);
+            assert!(
+                !snap.workspaces.is_empty(),
+                "snapshot inicial sin workspaces"
+            );
+            assert!(!snap.panes.is_empty(), "snapshot inicial sin panes");
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }

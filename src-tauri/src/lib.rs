@@ -96,6 +96,7 @@ pub fn run() {
             commands::api::events_forward,
             commands::api::ui_ready,
             commands::session::session_list,
+            commands::session::session_current,
             commands::session::session_connect,
             commands::session::session_start,
             commands::session::session_stop,

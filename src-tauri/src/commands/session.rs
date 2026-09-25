@@ -13,6 +13,13 @@ pub async fn session_list() -> Result<CliSessionList, ApiError> {
     cli::session_list().map_err(|e| e.api())
 }
 
+/// Sesión activa del backend (la del runtime actual). El frontend la usa en
+/// bootstrap para el selector y para "Iniciar servidor" sin nombre vacío.
+#[tauri::command]
+pub async fn session_current(state: State<'_, AppState>) -> Result<String, ApiError> {
+    Ok(state.current().session.clone())
+}
+
 #[tauri::command]
 pub async fn session_start(name: String) -> Result<(), ApiError> {
     // sandbox guard: solo sesiones de desarrollo (D10); default se prohibe para start/stop
@@ -78,8 +85,12 @@ pub async fn session_connect(
         .map_err(|e| e.api())?;
 
     let store = Arc::new(Store::new());
+    // kick temprano: aunque el refresher ya hace fetch inicial, garantiza un refresh
+    // en cuanto arranca sin depender de eventos
+    store.kick();
     let client2 = client.clone();
-    tauri::async_runtime::spawn(store.refresher_task(client2));
+    let store2 = store.clone();
+    tauri::async_runtime::spawn(store2.refresher_task(client2));
 
     state.swap(Runtime {
         session: name,

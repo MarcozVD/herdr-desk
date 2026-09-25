@@ -70,9 +70,7 @@ async fn refresher<S: SnapshotSource>(
     kick: std::sync::Arc<tokio::sync::Notify>,
 ) {
     loop {
-        kick.notified().await;
-        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-        drain(&kick).await;
+        // bootstrap: primer refresh sin esperar kicks (sin eventos no habria snapshot)
         match source.fetch().await {
             Ok(raw) => {
                 let current = tx.borrow().clone();
@@ -84,6 +82,9 @@ async fn refresher<S: SnapshotSource>(
                 tracing::warn!("snapshot refresh fallo: {err}");
             }
         }
+        kick.notified().await;
+        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        drain(&kick).await;
     }
 }
 
@@ -141,5 +142,22 @@ mod tests {
         let snap = store.snapshot();
         let expected = calls.load(Ordering::SeqCst);
         assert_eq!(&*snap, format!("snap-{expected}").as_str());
+    }
+
+    #[tokio::test]
+    async fn store_publishes_initial_snapshot_without_kicks() {
+        let store = Store::spawn(FakeSource {
+            calls: std::sync::Arc::new(AtomicUsize::new(0)),
+        });
+        let mut rx = store.watch();
+        tokio::time::timeout(std::time::Duration::from_millis(500), rx.changed())
+            .await
+            .expect("sin refresh inicial")
+            .expect("watch cerrado");
+        let snap = store.snapshot();
+        assert!(
+            snap.starts_with("snap-"),
+            "el snapshot inicial no se publico: {snap}"
+        );
     }
 }
