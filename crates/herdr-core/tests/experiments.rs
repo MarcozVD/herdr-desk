@@ -93,6 +93,53 @@ async fn r5_bridge_cost() {
     assert!(true);
 }
 
+/// T0.11: eco keydown->frame, 50 teclas, p50/p95 (meta p95 <= 40 ms, base 23-32 ms).
+#[tokio::test]
+async fn r0_echo_latency() {
+    let sb = Sandbox::start();
+    common::wait_session_running(&sb.name).await;
+    let client = sb.ensure_pane().await;
+    let raw = client.snapshot_raw().await.expect("snapshot");
+    let snap: SessionSnapshot = serde_json::from_str(&raw).expect("parse");
+    let pane = snap.focused_pane_id.expect("focused pane");
+
+    let exe = herdr_core::paths::find_herdr_exe(None).expect("herdr.exe");
+    let (bridge, mut events) = spawn_bridge(&exe, Some(&sb.name), &pane, 100, 30).expect("bridge");
+    first_full_frame(&mut events).await;
+
+    let mut latencies: Vec<u128> = Vec::new();
+    let keys = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    for k in keys.iter().take(50) {
+        let key = *k as char;
+        bridge.input_text(&key.to_string());
+        let t0 = Instant::now();
+        loop {
+            assert!(t0.elapsed() < common::MAX_WAIT, "sin eco de la tecla {key}");
+            let ev = tokio::time::timeout(Duration::from_secs(5), events.recv())
+                .await
+                .expect("frame")
+                .expect("canal");
+            if let herdr_core::terminal::BridgeEvent::Frame { bytes, .. } = ev {
+                if String::from_utf8_lossy(&bytes).contains(key) {
+                    latencies.push(t0.elapsed().as_millis());
+                    break;
+                }
+            }
+        }
+    }
+    bridge.release();
+
+    latencies.sort();
+    let p50 = latencies[latencies.len() / 2];
+    let p95 = latencies[(latencies.len() as f32 * 0.95) as usize - 1];
+    let total = latencies.iter().sum::<u128>() / latencies.len() as u128;
+    println!(
+        "R0: eco de {n} teclas: p50={p50}ms p95={p95}ms avg={total}ms",
+        n = latencies.len()
+    );
+    assert!(latencies.len() == 50);
+}
+
 fn herdr_pids() -> Vec<u32> {
     let out = std::process::Command::new("powershell")
         .args([
