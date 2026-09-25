@@ -1,0 +1,21 @@
+[package]
+name = "herdr-desk"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "herdr-desk: GUI glassmorphism para herdr"
+authors = ["mvale"]
+
+[lib]
+name = "herdr_desk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.11", features = [] }
+tauri-plugin-opener = "2"
+serde.workspace = true
+serde_json.workspace = true
+herdr-core = { path = "../crates/herdr-core" }
