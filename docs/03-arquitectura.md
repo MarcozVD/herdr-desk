@@ -57,6 +57,21 @@ src-tauri (capa fina)
      `on_frame`, tamaño recordado cols/rows);
   2. rearma la conexión S (make-before-break).
 
+## Conexión y bootstrap (fix bug en vivo, F1)
+
+- **Refresh inicial del store**: el refresher hace un fetch inmediato al arrancar, ANTES de
+  esperar kicks. Sin esto, un store arrancado en una sesión sin tráfico quedaba con
+  `"{}"` para siempre y el frontend nunca pasaba a online (bug detectado en vivo).
+  `store_subscribe` entrega entonces el snapshot real en el primer mensaje.
+- **`session_current() -> String`** (§5, registrado en invoke_handler): devuelve la sesión
+  activa del runtime. El frontend la usa en bootstrap para el selector y para
+  "Iniciar servidor" sin nombre vacío.
+- **session_connect**: tras el swap de runtime, el store nuevo arranca con su refresh
+  inicial propio (no depende de eventos) y se le manda un kick temprano como refuerzo;
+  el watcher detecta el swap (comparación de `Arc` por `ptr_eq`) y rearma la conexión S.
+- Test de regresión: `t16_store_bootstrap_snapshot` (sandbox hd-test-*: store sin kicks
+  publica snapshot con workspaces/panes) y unitario `store_publishes_initial_snapshot_without_kicks`.
+
 ## Conexión S (decisión R12 de F0)
 
 - `open_pane_subscription(pipe, panes)`: suscripción `pane.agent_status_changed` por cada
