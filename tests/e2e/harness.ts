@@ -1,5 +1,5 @@
 // Utilidades compartidas por los e2e: arranca la app con el arnés instalado y
-// ayuda a empujar frames binarios al bridge simulado.
+// ayuda a empujar snapshots, árboles de layout y frames binarios.
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -7,9 +7,15 @@ import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 
 export const FIXTURE_PATH = resolve(process.cwd(), 'tests/e2e/fixtures/snapshot.json');
+export const LAYOUT_FIXTURE_PATH = resolve(process.cwd(), 'tests/e2e/fixtures/layout-w1t1.json');
 
-export function readSnapshotFixture(): unknown {
-  return JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8')) as unknown;
+export function readSnapshotFixture(): Record<string, unknown> {
+  return JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8')) as Record<string, unknown>;
+}
+
+/** Árbol de `layout.export` de w1:t1 (dos paneles: A | B). */
+export function readLayoutFixture(): unknown {
+  return JSON.parse(readFileSync(LAYOUT_FIXTURE_PATH, 'utf-8')) as unknown;
 }
 
 export interface BootOptions {
@@ -17,6 +23,8 @@ export interface BootOptions {
   sessionName?: string | null;
   autoSnapshot?: boolean;
   terminalOpenDelayMs?: number;
+  /** Árbol que devolverá layout.export (por defecto, un solo panel). */
+  layoutTree?: unknown;
 }
 
 export async function bootApp(page: Page, options: BootOptions = {}): Promise<void> {
@@ -25,6 +33,7 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     sessionName: options.sessionName === undefined ? 'herdr-desk-dev' : options.sessionName,
     autoSnapshot: options.autoSnapshot ?? true,
     terminalOpenDelayMs: options.terminalOpenDelayMs ?? 0,
+    layoutTree: options.layoutTree ?? null,
   };
   await page.addInitScript((value) => {
     window.__HD_HARNESS__ = value;
@@ -39,6 +48,8 @@ export interface FrameOptions {
   height?: number;
   full?: boolean;
   text?: string;
+  /** Panel destino; por defecto el primer bridge abierto. */
+  paneId?: string;
 }
 
 /** Empuja un frame ANSI al bridge simulado del panel. */
@@ -53,7 +64,7 @@ export async function pushFrame(page: Page, options: FrameOptions = {}): Promise
       view.setUint16(10, value.height, true);
       view.setUint8(12, (value.full ? 1 : 0) | (value.closed ? 2 : 0));
       new Uint8Array(buffer, 16).set(value.bytes);
-      window.__HD_TEST__?.pushFrame(buffer);
+      window.__HD_TEST__?.pushFrame(buffer, value.paneId);
     },
     {
       bytes,
@@ -62,6 +73,7 @@ export async function pushFrame(page: Page, options: FrameOptions = {}): Promise
       height: options.height ?? 24,
       full: options.full ?? true,
       closed: false,
+      paneId: options.paneId,
     },
   );
 }
@@ -95,17 +107,23 @@ export async function terminalText(page: Page, paneId?: string): Promise<string>
 }
 
 /** Pega texto en la terminal como lo haría el usuario (evento paste real). */
-export async function pasteIntoTerminal(page: Page, text: string): Promise<void> {
-  await page.evaluate((value) => {
-    const textarea = document.querySelector('[data-testid="terminal-host"] textarea');
-    if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('no hay textarea de xterm');
-    textarea.focus();
-    const data = new DataTransfer();
-    data.setData('text/plain', value);
-    textarea.dispatchEvent(
-      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
-    );
-  }, text);
+export async function pasteIntoTerminal(page: Page, text: string, paneId?: string): Promise<void> {
+  await page.evaluate(
+    (value) => {
+      const selector = value.paneId
+        ? `[data-testid="pane-frame"][data-pane-id="${value.paneId}"] textarea`
+        : '[data-testid="terminal-host"] textarea';
+      const textarea = document.querySelector(selector);
+      if (!(textarea instanceof HTMLTextAreaElement)) throw new Error('no hay textarea de xterm');
+      textarea.focus();
+      const data = new DataTransfer();
+      data.setData('text/plain', value.text);
+      textarea.dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    },
+    { text, paneId: paneId ?? null },
+  );
 }
 
 export async function recordedCalls(
@@ -116,4 +134,18 @@ export async function recordedCalls(
     (name) => (window.__HD_TEST__?.callsOf(name) ?? []).map((call) => call.args),
     cmd,
   );
+}
+
+export async function recordedMethodCalls(
+  page: Page,
+  method: string,
+): Promise<Array<Record<string, unknown>>> {
+  return page.evaluate(
+    (name) => (window.__HD_TEST__?.callsOfMethod(name) ?? []).map((call) => call.args),
+    method,
+  );
+}
+
+export async function openPanes(page: Page): Promise<string[]> {
+  return page.evaluate(() => window.__HD_TEST__?.openPanes() ?? []);
 }
