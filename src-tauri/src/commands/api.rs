@@ -24,7 +24,9 @@ pub async fn store_subscribe(
 ) -> Result<(), ApiError> {
     let runtime = state.current();
     let mut rx = runtime.store.watch();
-    let _ = on_msg.send(InvokeResponseBody::Json(runtime.store.snapshot().to_string()));
+    let _ = on_msg.send(InvokeResponseBody::Json(
+        runtime.store.snapshot().to_string(),
+    ));
     tauri::async_runtime::spawn(async move {
         loop {
             if rx.changed().await.is_err() {

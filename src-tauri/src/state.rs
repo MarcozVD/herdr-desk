@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 use tauri::ipc::{Channel, InvokeResponseBody};
 
-use herdr_core::terminal::Bridge;
 use herdr_core::Store;
+use herdr_core::terminal::Bridge;
 
 /// Sesión activa: se reemplaza entera al conectar a otra sesión (session_connect).
 pub struct Runtime {

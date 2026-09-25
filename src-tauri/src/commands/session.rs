@@ -34,14 +34,7 @@ pub async fn session_start(name: String) -> Result<(), ApiError> {
             });
         }
         match cli::session_list() {
-            Ok(list)
-                if list
-                    .sessions
-                    .iter()
-                    .any(|s| s.name == name && s.running) =>
-            {
-                return Ok(())
-            }
+            Ok(list) if list.sessions.iter().any(|s| s.name == name && s.running) => return Ok(()),
             _ => tokio::time::sleep(Duration::from_millis(300)).await,
         }
     }

@@ -98,11 +98,10 @@ pub fn start_server_detached(name: &str) -> Result<(), crate::error::HerdrError>
             cmd.env_remove(key);
         }
     }
-    cmd.spawn()
-        .map_err(|e| crate::error::HerdrError::Api {
-            code: "cli_failed".to_string(),
-            message: format!("no se pudo iniciar el server: {e}"),
-        })?;
+    cmd.spawn().map_err(|e| crate::error::HerdrError::Api {
+        code: "cli_failed".to_string(),
+        message: format!("no se pudo iniciar el server: {e}"),
+    })?;
     Ok(())
 }
 

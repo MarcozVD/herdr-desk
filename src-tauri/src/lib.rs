@@ -6,9 +6,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use herdr_core::model::SessionSnapshot;
-use herdr_core::{events, RpcClient, Store};
-use tauri::ipc::InvokeResponseBody;
+use herdr_core::{RpcClient, Store, events};
 use tauri::Manager;
+use tauri::ipc::InvokeResponseBody;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -240,7 +240,8 @@ fn respawn_bridges(app: &tauri::AppHandle, rt: &Arc<state::Runtime>, panes: &[St
                 e.on_frame.clone(),
             )
         };
-        let spawn = herdr_core::terminal::spawn_bridge(&exe, Some(&rt.session), &pane_id, cols, rows);
+        let spawn =
+            herdr_core::terminal::spawn_bridge(&exe, Some(&rt.session), &pane_id, cols, rows);
         match spawn {
             Ok((bridge, mut rx)) => {
                 tracing::info!(

@@ -137,7 +137,7 @@ pub async fn terminal_scroll(
             return Err(ApiError {
                 code: "invalid_params".to_string(),
                 message: format!("direccion invalida: {other}"),
-            })
+            });
         }
     };
     let bridge = get_alive_bridge(&state, bridge_id)?;

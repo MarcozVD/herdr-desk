@@ -66,10 +66,8 @@ pub async fn open_pane_subscription(
         .iter()
         .map(|p| json!({"type": "pane.agent_status_changed", "pane_id": p}))
         .collect();
-    let request =
-        json!({"id": "hd-pane-events", "method": "events.subscribe", "params": {"subscriptions": subs}});
-    let mut line =
-        serde_json::to_string(&request).map_err(|e| HerdrError::Parse(e.to_string()))?;
+    let request = json!({"id": "hd-pane-events", "method": "events.subscribe", "params": {"subscriptions": subs}});
+    let mut line = serde_json::to_string(&request).map_err(|e| HerdrError::Parse(e.to_string()))?;
     line.push('\n');
     writer.write_all(line.as_bytes()).await?;
     writer.flush().await?;
@@ -117,7 +115,10 @@ pub async fn open_pane_subscription(
         }
     });
 
-    Ok(PaneSubscription { rx, close: close_tx })
+    Ok(PaneSubscription {
+        rx,
+        close: close_tx,
+    })
 }
 
 /// herdr accepts dotted types when subscribing (`workspace.created`) but emits

@@ -25,8 +25,11 @@ async fn t15a_spawn_detached_server() {
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    std::fs::write(std::env::temp_dir().join("herdr-desk-t15-session.txt"), &name)
-        .expect("escribir nombre de sesion");
+    std::fs::write(
+        std::env::temp_dir().join("herdr-desk-t15-session.txt"),
+        &name,
+    )
+    .expect("escribir nombre de sesion");
     // el test termina aquí = la "GUI" se cierra; el server debe seguir vivo
 }
 
@@ -76,7 +79,10 @@ async fn t15b_server_survives_and_client_attaches() {
             .await
             .expect("frame")
             .expect("canal");
-        if matches!(ev, herdr_core::terminal::BridgeEvent::Frame { full: true, .. }) {
+        if matches!(
+            ev,
+            herdr_core::terminal::BridgeEvent::Frame { full: true, .. }
+        ) {
             got_frame = true;
             break;
         }
