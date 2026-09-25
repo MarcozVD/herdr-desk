@@ -1,0 +1,21 @@
+{
+  "data": {
+    "pane": {
+      "agent_status": "unknown",
+      "cwd": "C:\\Users\\mvale\\Documents\\herdr\\crates\\herdr-core\\",
+      "focused": true,
+      "pane_id": "w1:p1",
+      "revision": 0,
+      "scroll": {
+        "max_offset_from_bottom": 0,
+        "offset_from_bottom": 0,
+        "viewport_rows": 24
+      },
+      "tab_id": "w1:t1",
+      "terminal_id": "term_65c54b85982dd1",
+      "workspace_id": "w1"
+    },
+    "type": "pane_created"
+  },
+  "event": "pane.created"
+}

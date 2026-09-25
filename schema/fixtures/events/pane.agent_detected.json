@@ -1,0 +1,9 @@
+{
+  "data": {
+    "agent": "fx-bot",
+    "pane_id": "w1:p1",
+    "type": "pane_agent_detected",
+    "workspace_id": "w1"
+  },
+  "event": "pane.agent_detected"
+}

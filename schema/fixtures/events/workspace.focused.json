@@ -1,0 +1,7 @@
+{
+  "data": {
+    "type": "workspace_focused",
+    "workspace_id": "w1"
+  },
+  "event": "workspace.focused"
+}

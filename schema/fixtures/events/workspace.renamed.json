@@ -1,0 +1,8 @@
+{
+  "data": {
+    "label": "fx-r",
+    "type": "workspace_renamed",
+    "workspace_id": "w1"
+  },
+  "event": "workspace.renamed"
+}

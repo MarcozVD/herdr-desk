@@ -1,0 +1,9 @@
+{
+  "data": {
+    "label": "fx-t",
+    "tab_id": "w1:t1",
+    "type": "tab_renamed",
+    "workspace_id": "w1"
+  },
+  "event": "tab.renamed"
+}

@@ -1,0 +1,8 @@
+{
+  "data": {
+    "tab_id": "w1:t1",
+    "type": "tab_focused",
+    "workspace_id": "w1"
+  },
+  "event": "tab.focused"
+}
