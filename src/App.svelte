@@ -39,6 +39,12 @@
     if (ui.syncFocusWithTui) void session.focusWorkspace(workspace.workspace_id);
   }
 
+  /** Número del espacio al que pertenece un agente (alinea las columnas). */
+  function workspaceNumber(workspaceId: string): string {
+    const workspace = session.workspaces.find((item) => item.workspace_id === workspaceId);
+    return workspace ? String(workspace.number) : '';
+  }
+
   function onKeydown(event: KeyboardEvent): void {
     // Únicos atajos globales de la GUI en F0 (§T1.10 los completa en F1). El
     // listener va en fase de captura sobre window: si el atajo es de la GUI, se
@@ -139,6 +145,7 @@
               data-status={agent.agent_status}
             >
               <span class="agent-dot" data-state={agent.agent_status}></span>
+              <span class="agent-row__number">{workspaceNumber(agent.workspace_id)}</span>
               <span class="agent-row__name"
                 >{agent.display_agent ?? agent.agent ?? agent.pane_id}</span
               >
