@@ -1,8 +1,12 @@
-// Mapeo de errores a español (Anexo C del plan). Acepta cualquier cosa que
-// devuelva Tauri: `ApiError` de los commands, un string suelto o un Error.
+// Mapeo de errores a español (Anexo C del plan) + los códigos locales y los que
+// herdr devuelve en la práctica (`invalid_request`, `cli_failed`).
 
 import { es } from '../i18n/es';
-import type { ApiError } from './types';
+
+export interface ApiError {
+  code: string;
+  message: string;
+}
 
 export function isApiError(value: unknown): value is ApiError {
   return (
@@ -28,6 +32,13 @@ export function parseApiError(raw: unknown): ApiError {
   return { code: 'unknown', message: String(raw) };
 }
 
+/** Códigos que la UI trata como «hay que reconectar / reintentar». */
+export const TRANSIENT_CODES = new Set(['transport', 'timeout', 'not_connected', 'cli_failed']);
+
+export function isTransient(error: unknown): boolean {
+  return TRANSIENT_CODES.has(parseApiError(error).code);
+}
+
 export interface ErrorContext {
   method?: string;
   session?: string;
@@ -51,6 +62,7 @@ export function describeApiError(raw: unknown, context: ErrorContext = {}): stri
     case 'not_found':
       return es.errors.not_found;
     case 'invalid_params':
+    case 'invalid_request':
       return fill(es.errors.invalid_params, values);
     case 'agent_blocked':
       return es.errors.agent_blocked;
@@ -61,9 +73,12 @@ export function describeApiError(raw: unknown, context: ErrorContext = {}): stri
     case 'popup_not_open':
       return es.errors.popup_not_open;
     case 'transport':
+    case 'not_connected':
       return fill(es.errors.transport, values);
     case 'timeout':
       return fill(es.errors.timeout, values);
+    case 'cli_failed':
+      return fill(es.errors.cli_failed, values);
     case 'bridge_closed':
     case 'bridge_exit':
       return fill(es.errors.bridge_closed, values);

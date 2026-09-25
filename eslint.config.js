@@ -56,6 +56,8 @@ export default tseslint.config(
       '.hermes/**',
       'test-results/**',
       'playwright-report/**',
+      // Generados por scripts/gen-types.mjs
+      'src/lib/herdr/*.gen.ts',
     ],
   },
   ...tseslint.configs.recommended,
