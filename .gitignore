@@ -1,0 +1,8 @@
+/target/
+/dist/
+/node_modules/
+/src-tauri/gen/
+/test-results/
+/playwright-report/
+.hermes/
+*.log
