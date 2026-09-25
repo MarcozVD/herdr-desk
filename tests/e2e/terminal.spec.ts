@@ -80,6 +80,9 @@ test('resize: la ventana redimensiona la terminal y avisa al bridge', async ({ p
 
   const resizes = await recordedCalls(page, 'terminal_resize');
   const last = resizes[resizes.length - 1];
+  console.log(
+    `[hd-perf] resize -> terminal_resize cols=${last?.cols} rows=${last?.rows} (llamadas=${resizes.length})`,
+  );
   expect(Number(last?.cols)).toBeGreaterThan(0);
   expect(Number(last?.rows)).toBeGreaterThan(0);
   expect(Number(last?.cols)).toBeLessThan(200);

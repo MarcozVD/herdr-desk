@@ -108,5 +108,6 @@ test('métrica evento -> UI: un snapshot nuevo pinta el estado en menos de 50 ms
   }, next);
 
   // §4: evento -> UI (glow de estado) <= 50 ms.
+  console.log(`[hd-perf] evento->UI (snapshot -> atributo en el DOM): ${deltaMs.toFixed(1)} ms`);
   expect(deltaMs).toBeLessThan(50);
 });
