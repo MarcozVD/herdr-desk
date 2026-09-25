@@ -132,12 +132,12 @@
       <div class="sidebar__section">
         <h2 class="sidebar__title">
           <span>{es.sidebar.agents}</span>
-          <span data-testid="agents-count">{session.agents.length}</span>
+          <span data-testid="agents-count">{session.agentsByPriority.length}</span>
         </h2>
-        {#if session.agents.length === 0}
+        {#if session.agentsByPriority.length === 0}
           <p class="empty-note" data-testid="agents-empty">{es.sidebar.noAgents}</p>
         {:else}
-          {#each session.agents as agent (agent.pane_id)}
+          {#each session.agentsByPriority as agent (agent.pane_id)}
             <div
               class="agent-row"
               data-testid="agent-row"

@@ -10,10 +10,15 @@
   };
 
   const state = $derived(session.connection);
+  const label = $derived(
+    state === 'offline' && session.retryAttempt > 0
+      ? es.connection.retrying
+      : (labels[state] ?? state),
+  );
   const text = $derived(
-    session.latencyMs !== null && state === 'online'
-      ? `${labels[state]} · ${es.connection.latency.replace('{ms}', session.latencyMs.toFixed(1))}`
-      : labels[state],
+    session.rpcLatency !== null && state === 'online'
+      ? `${label} · ${es.connection.latency.replace('{ms}', session.rpcLatency.toFixed(1))}`
+      : label,
   );
 </script>
 
