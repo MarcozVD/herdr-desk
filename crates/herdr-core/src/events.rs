@@ -41,6 +41,85 @@ pub const GLOBAL_EVENT_TYPES: [&str; 24] = [
 
 pub type EventTx = mpsc::Sender<EventEnvelope>;
 
+/// Conexión S: suscripción pane-scoped (`pane.agent_status_changed`) para un conjunto
+/// de panes. El caller hace make-before-break: abre la nueva con `open_pane_subscription`
+/// y cierra la vieja con `PaneSubscription::close`.
+pub struct PaneSubscription {
+    pub rx: mpsc::UnboundedReceiver<EventEnvelope>,
+    pub close: tokio::sync::oneshot::Sender<()>,
+}
+
+impl PaneSubscription {
+    pub fn close(self) {
+        let _ = self.close.send(());
+    }
+}
+
+pub async fn open_pane_subscription(
+    pipe: String,
+    panes: Vec<String>,
+) -> Result<PaneSubscription, HerdrError> {
+    let stream = crate::transport::open(&pipe).await?;
+    let mut writer = stream;
+
+    let subs: Vec<Value> = panes
+        .iter()
+        .map(|p| json!({"type": "pane.agent_status_changed", "pane_id": p}))
+        .collect();
+    let request =
+        json!({"id": "hd-pane-events", "method": "events.subscribe", "params": {"subscriptions": subs}});
+    let mut line =
+        serde_json::to_string(&request).map_err(|e| HerdrError::Parse(e.to_string()))?;
+    line.push('\n');
+    writer.write_all(line.as_bytes()).await?;
+    writer.flush().await?;
+
+    let mut reader = BufReader::new(writer);
+    let mut first = String::new();
+    reader.read_line(&mut first).await?;
+    if first.contains("\"error\"") {
+        return Err(HerdrError::Api {
+            code: "invalid_request".to_string(),
+            message: first.trim().to_string(),
+        });
+    }
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    let (close_tx, mut close_rx) = tokio::sync::oneshot::channel::<()>();
+    tokio::spawn(async move {
+        let mut buf = String::new();
+        loop {
+            tokio::select! {
+                read = reader.read_line(&mut buf) => {
+                    match read {
+                        Ok(0) | Err(_) => return,
+                        Ok(_) => {}
+                    }
+                    if buf.contains("events_lost") {
+                        return;
+                    }
+                    if let Ok(mut ev) =
+                        serde_json::from_str::<EventEnvelope>(buf.trim_end())
+                    {
+                        ev.event = normalize_event_type(&ev.event);
+                        buf.clear();
+                        if tx.send(ev).is_err() {
+                            return;
+                        }
+                        continue;
+                    }
+                    buf.clear();
+                }
+                _ = &mut close_rx => {
+                    return;
+                }
+            }
+        }
+    });
+
+    Ok(PaneSubscription { rx, close: close_tx })
+}
+
 /// herdr accepts dotted types when subscribing (`workspace.created`) but emits
 /// snake_case on the wire (`workspace_created`). Normalize to the dotted form
 /// used across herdr-desk.
