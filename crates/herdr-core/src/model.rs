@@ -106,7 +106,7 @@ pub struct AgentInfo {
     pub tab_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct EventEnvelope {
     pub event: String,
