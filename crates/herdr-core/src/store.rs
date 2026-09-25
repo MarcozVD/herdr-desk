@@ -9,17 +9,42 @@ pub trait SnapshotSource: Send + Sync + 'static {
 }
 
 pub struct Store {
+    tx: tokio::sync::watch::Sender<SnapshotRaw>,
     rx: tokio::sync::watch::Receiver<SnapshotRaw>,
     kick: std::sync::Arc<tokio::sync::Notify>,
 }
 
+impl Default for Store {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Store {
-    /// Spawns the refresher task: at most one in-flight refresh; extra kicks coalesce.
-    pub fn spawn<S: SnapshotSource>(source: S) -> Self {
+    /// Creates the store without spawning anything, for hosts that manage their own runtime.
+    pub fn new() -> Self {
         let (tx, rx) = tokio::sync::watch::channel(SnapshotRaw::from("{}"));
         let kick = std::sync::Arc::new(tokio::sync::Notify::new());
-        tokio::spawn(refresher(source, tx, kick.clone()));
-        Self { rx, kick }
+        Self { tx, rx, kick }
+    }
+
+    /// Spawns the refresher task: at most one in-flight refresh; extra kicks coalesce.
+    pub fn spawn<S: SnapshotSource>(source: S) -> Self {
+        let store = Self::new();
+        let kick = store.kick.clone();
+        let tx = store.tx.clone();
+        tokio::spawn(refresher(source, tx, kick));
+        store
+    }
+
+    /// The refresher future, for hosts that spawn tasks themselves (e.g. tauri).
+    pub fn refresher_task<S: SnapshotSource>(
+        &self,
+        source: S,
+    ) -> impl Future<Output = ()> + Send + 'static {
+        let kick = self.kick.clone();
+        let tx = self.tx.clone();
+        refresher(source, tx, kick)
     }
 
     pub fn snapshot(&self) -> SnapshotRaw {
