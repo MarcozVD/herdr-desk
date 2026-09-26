@@ -83,6 +83,10 @@
 
   function applyFit(): void {
     if (!entry) return;
+    // Con el contenedor sin tamaño (pestaña oculta, primer render) el `fit`
+    // calcularía 0 columnas y xterm REDIMENSIONA su buffer a ese tamaño: al
+    // volver el panel se quedaba en negro. Se espera al próximo evento.
+    if (!host || host.clientWidth === 0 || host.clientHeight === 0) return;
     try {
       entry.fit.fit();
     } catch {

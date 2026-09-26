@@ -380,7 +380,21 @@ export class TerminalPool {
     if (!entry) return;
     entry.visible = true;
     this.#touch(paneId);
-    void this.attachWebgl(entry);
+    this.#repaint(entry);
+    void this.attachWebgl(entry).then(() => this.#repaint(entry));
+  }
+
+  /**
+   * Repinta el viewport desde el buffer. Al volver a la vista hace falta: como el
+   * bridge sigue vivo, el servidor NO reenvía el viewport, y xterm no repinta
+   * solo porque su DOM se vuelva a colgar del documento (el panel se veía negro).
+   */
+  #repaint(entry: TerminalEntry): void {
+    try {
+      entry.terminal.refresh(0, Math.max(0, entry.terminal.rows - 1));
+    } catch {
+      // Todavía sin abrir en el documento: se repintará en el siguiente intento.
+    }
   }
 
   /** Suelta el addon WebGL (el contexto GPU es un recurso contado). */

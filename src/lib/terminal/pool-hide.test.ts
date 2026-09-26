@@ -126,6 +126,19 @@ describe('ocultar un panel (cambio de pestaña)', () => {
     expect(pool.entry('w1:p1')?.terminal).toBe(terminal);
   });
 
+  it('al volver repinta el viewport desde su buffer (sin bridge nuevo)', async () => {
+    const entry = await pool.open('w1:p1', 80, 24, 1);
+    const refresh = vi.spyOn(entry.terminal, 'refresh');
+    pool.hide('w1:p1');
+    pool.show('w1:p1');
+    await vi.advanceTimersByTimeAsync(30);
+
+    // El servidor no reenvía el viewport (el bridge sigue vivo): repinta xterm.
+    expect(refresh).toHaveBeenCalled();
+    expect(refresh.mock.calls.at(-1)?.[0]).toBe(0);
+    expect(closeCalls).toEqual([]);
+  });
+
   it('sync cierra SOLO los paneles que ya no existen', async () => {
     await pool.open('w1:p1', 80, 24, 1);
     await pool.open('w1:p2', 80, 24, 1);

@@ -10,6 +10,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import {
   bootApp,
+  pushFrame,
   readLayoutFixture,
   readSnapshotFixture,
   recordedCalls,
@@ -26,6 +27,30 @@ const treeTwoTabs = {
 
 async function closeCalls(page: Page): Promise<unknown[]> {
   return recordedCalls(page, 'terminal_close');
+}
+
+/** Texto que la terminal de ese panel tiene en su buffer (regresión: al volver
+ *  a la pestaña el panel se quedaba en negro porque el buffer se perdía). */
+async function bufferText(page: Page, paneId: string): Promise<string> {
+  return page.evaluate((id) => {
+    const terms = (window as unknown as { __HD_TERMS__?: Record<string, unknown> }).__HD_TERMS__;
+    const term = terms?.[id] as
+      | {
+          buffer: {
+            active: {
+              length: number;
+              getLine(n: number): { translateToString(): string } | undefined;
+            };
+          };
+        }
+      | undefined;
+    if (!term) return '';
+    const lines: string[] = [];
+    for (let index = 0; index < term.buffer.active.length; index += 1) {
+      lines.push(term.buffer.active.getLine(index)?.translateToString() ?? '');
+    }
+    return lines.join(String.fromCharCode(10));
+  }, paneId);
 }
 
 /** ¿El panel tiene bridge abierto ahora mismo? (estado real del pool). */
@@ -88,6 +113,11 @@ test.describe('navegación sin perder terminales', () => {
     expect(await hasOpenBridge(page, 'w1:p1')).toBe(true);
     expect(await hasOpenBridge(page, 'w1:p2')).toBe(true);
 
+    // Contenido real en el panel: al volver tiene que SEGUIR ahí (si el buffer se
+    // pierde, el panel se ve en negro aunque el bridge siga abierto).
+    await pushFrame(page, { paneId: 'w1:p1', full: true, text: 'marca-de-buffer' });
+    await expect.poll(async () => bufferText(page, 'w1:p1')).toContain('marca-de-buffer');
+
     // Cambia de pestaña: se desmontan las vistas de la pestaña que se oculta.
     await page.locator('[data-testid="tab"][data-tab-id="w1:t2"]').click();
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p3"]')).toBeVisible();
@@ -106,6 +136,8 @@ test.describe('navegación sin perder terminales', () => {
     ).toHaveAttribute('data-bridge', 'open');
     await expect(page.locator('.terminal-overlay')).toHaveCount(0);
     expect(await closeCalls(page)).toHaveLength(0);
+    // El buffer sobrevive al viaje de ida y vuelta: el panel no se queda en negro.
+    expect(await bufferText(page, 'w1:p1')).toContain('marca-de-buffer');
   });
 
   test('pulsar un espacio de la barra cambia el espacio que se ve', async ({ page }) => {
