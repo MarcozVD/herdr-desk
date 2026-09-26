@@ -123,6 +123,84 @@ sube en cada reconexión y es la señal para que el pool reabra los bridges visi
   (`session_connect`, arrancando antes si está detenida), arranca/detiene/borra con
   confirmación y crea sesiones nuevas validando el nombre.
 
+## 6bis. Componentes UI reutilizables: tarjetas desplegables y presets de animación
+
+### `lib/ui/motion.ts` — presets de animación
+
+Un único sitio para springs y easings, para que los componentes compartan el mismo «feel».
+Nada de dependencias nuevas: solo `svelte/motion`.
+
+- `SPRINGS.card | panel | snap` y `springFromPhysics(k, c, m)`.
+- `springOptions()`, `createSpring()`, `setSpringTarget(spring, target, reduced)` (salta de golpe
+  con movimiento reducido y devuelve la promesa de asentamiento).
+- `EASINGS`, `DURATIONS` y `cssTransition()` para la parte CSS.
+- `prefersReducedMotionNow()`: consulta viva de `prefers-reduced-motion` (con guarda para
+  entornos sin `matchMedia`).
+
+**Unidades (esto costó un fallo real).** La clase `Spring` integra con un paso `dt` normalizado a
+frames (`dt = 1` a 60 fps; el tiempo transcurrido se acota a 1/30 s, así que `dt ∈ [1, 2]`):
+
+```
+k_svelte = k · dt² / m        d_svelte = c · dt / m        (dt = 1/60)
+```
+
+El spring de referencia del encargo (**600/50/1**) es exactamente
+`{ stiffness: 0.1667, damping: 0.8333 }`: se asienta en ~400 ms y sin rebote. Copiar los números
+«de catálogo» no funciona: `k = 600` se recortaría a 1, y valores intermedios (el primer intento
+fue `k = 1, d = 0.2`) quedan al borde de la estabilidad y **con `dt > 1` se desbocan** (rebote del
+80-100 % y oscilación que no se asienta). Medido en `motion.test.ts`, que fija tiempos, rebote y
+estabilidad con `dt = 1.5` y `2` para los tres presets:
+
+| Preset | Física | k / d | Asienta (dt=1) | Rebote |
+|---|---|---|---|---|
+| `card` | 600/50/1 | 0.1667 / 0.8333 | 400 ms | 0 % |
+| `panel` | 400/40/1 | 0.1111 / 0.6667 | 467 ms | 0 % |
+| `snap` | 900/45/1 | 0.2500 / 0.7500 | 200 ms | 0 % |
+
+### `lib/ui/CardSplitAccordion.svelte` — porte del `CardSplitAccordian` de watermelon.sh
+
+El original es React (registry de watermelon.sh: `useState`, `motion/react`, `lucide-react`,
+`react-icons`, `react-use-measure`, clases Tailwind). Se portó a Svelte 5 **sin dependencias
+nuevas** (`pnpm-lock.yaml` intacto) y sin Tailwind:
+
+- **`cardSplit.ts`**: tipos (`AccordionItem`), geometría pura `itemChrome(index, total, openIndex)`
+  y los items por defecto (los mismos temas del original, en español vía `i18n/es.ts`).
+- **`CardSplitAccordionItem.svelte`**: una fila = botón (cabecera) + panel. Su `Spring` se crea en
+  la inicialización (identidad estable) y el objetivo es `bind:clientHeight` del contenido; el
+  chevron gira con una transición CSS del mismo preset. La fila no comparte estado con la lista.
+- **`CardSplitAccordion.svelte`**: la lista. API data-driven `items` (`id`, `title`, `icon` como
+  snippet o `iconKey` integrado, `content`), `openId` bindable, `onOpenChange`, `maxWidth`,
+  `class`, `testId`. Un solo item abierto; el clic en el abierto lo cierra. Reexporta
+  `itemChrome` y `DEFAULT_ITEMS` para testes y consumidores.
+- **Iconos**: `@lucide/svelte` (Layers, Hand, Send, Timer, ChevronDown) y un SVG inline propio
+  para el cursor (el original usaba `react-icons`).
+- **Accesibilidad** (el original no la traía): botón real, `aria-expanded`, `aria-controls`,
+  panel `role="region"` + `aria-labelledby`, navegación con ↑/↓/Inicio/Fin con envoltura,
+  `aria-hidden` al cerrar y foco visible con token `--accent`.
+- **Estilos**: tokens existentes (`--glass-border`, `--panel-bg-solid`, `--accent`, `--text-dim`,
+  `--space-*`, `--t-med`, `--ease`, `--shadow-lg`); radio 20 px y margen 10 px del abierto, como el
+  original; `@media (prefers-reduced-motion: reduce)` corta las transiciones CSS.
+- **No está cableado al shell** (no aporta al layout actual): queda listo para usar.
+
+**Tests (29 nuevos, 137 en total).** `motion.test.ts` mide los presets con la recurrencia exacta
+de `svelte/motion` copiada en el test y valida la conversión de unidades, el salto instantáneo, el
+asentamiento y la estabilidad. `CardSplitAccordion.test.ts` monta el componente de verdad
+(`mount` + `flushSync`, sin librerías de testing añadidas) en jsdom con stubs mínimos:
+`matchMedia` como `EventTarget` real (Svelte propaga el evento: con un objeto plano reventaba),
+`ResizeObserver`, un `clientHeight` simulado y un `requestAnimationFrame` determinista (el de jsdom
+no es puntual y congelaba los springs). Dos ajustes de configuración, ninguno con dependencias
+nuevas: `resolve.conditions: ['browser']` (sin él `svelte` resuelve al build de servidor y
+`mount()` falla con `lifecycle_function_unavailable`) y `ssr.resolve.conditions: ['browser']`
+(sin él `esm-env` da `BROWSER = false` y el bucle de rAF de svelte/motion es un noop: ningún spring
+se mueve).
+
+**Dos trampas de Svelte 5 + Spring, ambas con test de regresión:**
+
+1. Hay que leer `measured[key]` **dentro** del `$effect`: leer solo el objeto no registra
+   dependencia y la medición de `bind:clientHeight` nunca despierta al efecto.
+2. `spring.set()` lee internamente `spring.current`, así que sin `untrack` el efecto se reejecuta
+   en cada tick del spring, lo reinicia y el valor oscila sin asentarse.
+
 ## 7. Huecos del contrato §5 encontrados
 
 1. `session_current` no está en el §5 y la UI lo usa para el nombre de la sesión: hoy cae a
@@ -220,15 +298,20 @@ pnpm install            OK
 pnpm format:check       OK
 pnpm lint               OK (0 problemas)
 pnpm check              svelte-check: 0 errores, 0 warnings
-pnpm test               108 tests en 9 archivos (frames, errores, cliente + clasificación de
+pnpm test               137 tests en 11 archivos (frames, errores, cliente + clasificación de
                         errores de command, codegen, reconcile, snapshot, árbol de splits,
-                        parser de atajos, keymap)
+                        parser de atajos, keymap + los 29 nuevos: presets de animación y
+                        CardSplitAccordion en jsdom)
 pnpm e2e                68 pruebas en 9 specs (shell, shell F1 con regresión de layout,
                         terminal, foco, layout, acciones, atajos, sesiones, reconexión y
                         caída/vuelta del servidor)
 pnpm build              dist/assets/index-*.js 491,46 kB min (134,73 kB gzip) + CSS 35,05 kB
                         → dentro del presupuesto (§4: ≤ 600 KB con xterm)
 ```
+
+Bundle tras añadir el acordeón y los presets (no cableados al shell, así que no entran en el
+grafo inicial): `pnpm build` sigue en 493 kB min. `pnpm-lock.yaml` sin cambios: **cero
+dependencias nuevas**.
 
 Mediciones de la corrida de F1:
 

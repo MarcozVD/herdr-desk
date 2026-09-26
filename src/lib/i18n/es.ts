@@ -142,6 +142,38 @@ export const es = {
     apply: 'Aplicar',
     required: 'Escribe un valor.',
   },
+  cardSplit: {
+    /** Etiqueta accesible del bloque. */
+    label: 'Tarjetas desplegables',
+    /** Textos de los items por defecto (los mismos temas del original). */
+    items: [
+      {
+        title: '¿Qué es el diseño de interacción?',
+        content:
+          'El diseño de interacción se centra en crear interfaces atractivas con comportamientos y acciones bien pensados.',
+      },
+      {
+        title: 'Principios y patrones',
+        content:
+          'Directrices fundamentales y soluciones repetidas que aseguran consistencia y usabilidad.',
+      },
+      {
+        title: 'Usabilidad y accesibilidad',
+        content:
+          'Diseñar experiencias fáciles de usar y accesibles para personas de todas las capacidades.',
+      },
+      {
+        title: 'Prototipado y pruebas',
+        content:
+          'Experimentación rápida y validación de ideas con prototipos y pruebas con usuarios reales.',
+      },
+      {
+        title: 'Optimización de UX',
+        content:
+          'Mejorar la experiencia analizando el comportamiento y refinando las interacciones con el tiempo.',
+      },
+    ],
+  },
   terminal: {
     closed: 'La terminal se desconectó ({reason}).',
     retake: 'Retomar control',
