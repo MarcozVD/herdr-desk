@@ -24,19 +24,6 @@ function ok(message: string): void {
   ui.notify(message, 'info');
 }
 
-/**
- * Refresca el snapshot tras una acción que cambia el estado de la sesión.
- *
- * El canal del store del backend no reemite en cada evento (ver docs/04 §7quater),
- * así que sin esto la UI hacía la acción —el backend la aplicaba— pero seguía
- * pintando el estado viejo hasta el siguiente catch-up del latido. Con esto la
- * acción se ve reflejada de inmediato (y el árbol de paneles se re-pide: el
- * snapshot sube `revision`).
- */
-async function syncSnapshot(): Promise<void> {
-  await session.refreshSnapshot();
-}
-
 /** Nombre por defecto cuando el ajuste no pide prompt. */
 function defaultLabel(kind: 'workspace' | 'tab'): string {
   if (kind === 'workspace') {
@@ -65,7 +52,6 @@ export const flows = {
         focus: true,
       });
       if (workspace) ui.focusWorkspaceLocally(workspace.workspace_id);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'workspace.create');
     }
@@ -82,7 +68,6 @@ export const flows = {
     if (label === null) return;
     try {
       await workspaceApi.rename(workspaceId, label);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'workspace.rename');
     }
@@ -101,7 +86,6 @@ export const flows = {
     }
     try {
       await workspaceApi.close(workspaceId);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'workspace.close');
     }
@@ -123,7 +107,6 @@ export const flows = {
     if (insertIndex === index) return;
     try {
       await workspaceApi.move(workspaceId, insertIndex);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'workspace.move');
     }
@@ -164,7 +147,6 @@ export const flows = {
         label,
         focus: true,
       });
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'tab.create');
     }
@@ -181,7 +163,6 @@ export const flows = {
     if (label === null) return;
     try {
       await tabApi.rename(tabId, label);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'tab.rename');
     }
@@ -200,7 +181,6 @@ export const flows = {
     }
     try {
       await tabApi.close(tabId);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'tab.close');
     }
@@ -209,7 +189,6 @@ export const flows = {
   async focusTab(tabId: string): Promise<void> {
     try {
       await tabApi.focus(tabId);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'tab.focus');
     }
@@ -240,7 +219,6 @@ export const flows = {
         cwd: session.focusedPane?.cwd ?? null,
         focus: true,
       });
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'pane.split');
     }
@@ -260,7 +238,6 @@ export const flows = {
     }
     try {
       await paneApi.close(paneId);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'pane.close');
     }
@@ -269,7 +246,6 @@ export const flows = {
   async toggleZoom(paneId: string): Promise<void> {
     try {
       await paneApi.zoom(paneId, 'toggle');
-      await syncSnapshot();
       await layout.refreshNow();
     } catch (raw) {
       fail(raw, 'pane.zoom');
@@ -287,7 +263,6 @@ export const flows = {
     if (label === null) return;
     try {
       await paneApi.rename(paneId, label);
-      await syncSnapshot();
     } catch (raw) {
       fail(raw, 'pane.rename');
     }

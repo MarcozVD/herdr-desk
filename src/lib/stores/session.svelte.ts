@@ -45,27 +45,6 @@ export const SNAPSHOT_TIMEOUT_MS = 2500;
  */
 export const HEARTBEAT_MS = 5000;
 
-/**
- * ⚠️ PARCHE TEMPORAL — RETIRAR cuando el backend haga el kick del store por
- * evento (hoy `events::run_with` de `crates/herdr-core` solo hace
- * `kick.notify_one()` al CERRARSE la conexión de eventos, así que el store no
- * refresca durante la operación normal y el canal `store_subscribe` se queda
- * mudo). Mientras eso siga así, la UI se queda congelada: los splits y cierres
- * hechos desde la propia GUI no se ven, aunque la píldora diga «en línea».
- *
- * Con el parche ACTIVO (por defecto) se compensa de dos formas, y solo estas dos:
- *   1. el latido (`#heartbeatTick`) pide `session.snapshot` por RPC si el store
- *      no ha empujado nada en el último intervalo (`HEARTBEAT_MS`);
- *   2. cada acción de la GUI (`flows.syncSnapshot`) refresca tras mutar, para
- *      verse reflejada de inmediato en vez de esperar al latido.
- * Las dos pasan por el mismo interruptor: `session.setSnapshotCatchUp(false)`
- * las apaga de golpe (el `ping` del latido, que es la detección de caída del
- * server, NO se apaga: eso no es parte del parche).
- *
- * NO extender esto a más sitios: el arreglo de raíz es del backend.
- */
-export const SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK = true;
-
 export function backoffDelayMs(attempt: number): number {
   const raw = BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1);
   return Math.min(BACKOFF_MAX_MS, raw);
@@ -93,8 +72,6 @@ class SessionStore {
   version = $state<string | null>(null);
   protocol = $state<number | null>(null);
   sessionName = $state<string | null>(null);
-  /** performance.now() del último mensaje aplicado: mide evento -> UI. */
-  lastMessageAt = $state<number | null>(null);
   /** Sube con cada snapshot aplicado. */
   revision = $state(0);
   /** p50 de las últimas llamadas RPC. */
@@ -144,8 +121,6 @@ class SessionStore {
   #subToken = 0;
   #connecting = false;
   #stopped = false;
-  /** Interruptor del parche de catch-up (ver SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK). */
-  #catchUp = SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK;
 
   async bootstrap(): Promise<void> {
     const current = await sessionCurrent();
@@ -328,50 +303,16 @@ class SessionStore {
   }
 
   /**
-   * Un latido: confirma que el server responde (ping) y, si el store no ha
-   * empujado nada desde el latido anterior, pide el snapshot por RPC.
+   * Un latido: confirma que el servidor sigue respondiendo (un `ping` por el IPC).
    *
-   * El canal del store es la vía normal, pero solo empuja cuando el backend
-   * refresca SU snapshot. Si eso no ocurre —el kick de la conexión de eventos
-   * del backend se dispara al cerrarse la conexión, no en cada evento—, la UI se
-   * quedaba CONGELADA: los splits y cierres hechos desde la propia GUI no se
-   * veían reflejados (el panel nuevo no aparecía, el cerrado seguía en pantalla)
-   * aunque la píldora dijera «en línea». Este catch-up la devuelve al estado
-   * real, con un coste de ~1 ms y solo cuando no hay pushes.
+   * Es la ÚNICA señal fiable de caída del server —el store solo empuja cuando el
+   * servidor manda algo, y un bridge de terminal que se cierra no es una caída—,
+   * así que este latido se queda. Lo que YA NO hace es pedir snapshots: el store
+   * es la única fuente de verdad de la UI (el backend refresca su snapshot con
+   * cada evento, con coalescencia).
    */
   async #heartbeatTick(): Promise<void> {
-    const alive = await this.ping();
-    if (!alive) return;
-    // ⚠️ Parche temporal: sin él, el latido solo comprueba que el server vive.
-    if (!this.#catchUp) return;
-    if (this.#recent()) return;
-    await this.refreshSnapshot();
-  }
-
-  /** ¿Hubo mensajes del store en el último intervalo del latido? */
-  #recent(): boolean {
-    if (this.lastMessageAt === null) return false;
-    return performance.now() - this.lastMessageAt < HEARTBEAT_MS;
-  }
-
-  /**
-   * Pide `session.snapshot` y aplica el resultado. Lo usan el latido (catch-up)
-   * y las acciones de la GUI, que así se ven reflejadas de inmediato sin
-   * depender de que el store empuje.
-   *
-   * Es la única puerta del parche temporal: con `setSnapshotCatchUp(false)` no
-   * hace nada (y el latido tampoco lo llama). Ver
-   * `SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK`.
-   */
-  async refreshSnapshot(): Promise<void> {
-    if (!this.#catchUp) return;
-    try {
-      const result = await call('session.snapshot', {});
-      if (result.type !== 'session_snapshot') return;
-      this.applySnapshot(result.snapshot);
-    } catch {
-      // Sin ruido: el siguiente latido lo reintenta.
-    }
+    await this.ping();
   }
 
   #clearHeartbeat(): void {
@@ -404,7 +345,6 @@ class SessionStore {
   }
 
   apply(message: StoreMessage): void {
-    this.lastMessageAt = performance.now();
     switch (message.kind) {
       case 'snapshot':
         this.applySnapshot(message.snapshot);
@@ -490,19 +430,6 @@ class SessionStore {
     this.#clearHeartbeat();
   }
 
-  /**
-   * Apaga (o vuelve a encender) el parche de catch-up del snapshot. Es el
-   * interruptor único del workaround: cuando el backend haga el kick por evento,
-   * basta con `session.setSnapshotCatchUp(false)` (o borrar el parche).
-   */
-  setSnapshotCatchUp(enabled: boolean): void {
-    this.#catchUp = enabled;
-  }
-
-  get snapshotCatchUp(): boolean {
-    return this.#catchUp;
-  }
-
   reset(): void {
     this.stop();
     this.#stopped = false;
@@ -528,7 +455,6 @@ class SessionStore {
     this.startServerFailed = false;
     this.version = null;
     this.protocol = null;
-    this.lastMessageAt = null;
     this.focusedWorkspaceId = null;
     this.focusedTabId = null;
     this.focusedPaneId = null;
