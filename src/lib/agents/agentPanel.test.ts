@@ -254,7 +254,7 @@ describe('tokens de fila (T2.1)', () => {
     expect(resolveAgentToken('state_icon', ctx)).toMatchObject({ kind: 'icon', status: 'blocked' });
     expect(resolveAgentToken('state_text', ctx)?.text).toBe('bloqueado');
     expect(resolveAgentToken('workspace', ctx)?.text).toBe('1 spike-r3');
-    expect(resolveAgentToken('tab', ctx)?.text).toBe('1 1');
+    expect(resolveAgentToken('tab', ctx)?.text).toBe('1');
     expect(resolveAgentToken('pane', ctx)?.text).toBe('w1:p7');
     expect(resolveAgentToken('agent', ctx)?.text).toBe('Claude');
     expect(resolveAgentToken('terminal_title', ctx)?.text).toBe('  Claude  ');
@@ -279,6 +279,15 @@ describe('tokens de fila (T2.1)', () => {
     );
     expect(resolveAgentToken('lo_que_sea', ctx)).toBeNull();
     expect(resolveAgentToken('', ctx)).toBeNull();
+  });
+
+  it('no repite número y etiqueta cuando son lo mismo', () => {
+    const renamed = { ...ctx, tab: tab({ number: 3, label: 'docs' }) };
+    expect(resolveAgentToken('tab', renamed)?.text).toBe('3 docs');
+    expect(
+      resolveAgentToken('workspace', { ...ctx, workspace: workspace({ number: 2, label: '2' }) })
+        ?.text,
+    ).toBe('2');
   });
 
   it('sin workspace ni tab en el snapshot usa los ids', () => {

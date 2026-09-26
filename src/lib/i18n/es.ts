@@ -57,6 +57,7 @@ export const es = {
     sortPriority: 'Prioridad',
     noAgentsMatch: 'Ningún agente coincide con el filtro.',
     blockedCount: '{n} bloqueados',
+    blockedCountOne: '1 bloqueado',
   },
   statusbar: {
     pane: 'panel',

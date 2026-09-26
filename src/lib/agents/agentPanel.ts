@@ -146,6 +146,15 @@ export function agentRowGap(config: AgentRowsConfig = {}): number {
   return Math.min(gap, 5);
 }
 
+/**
+ * `«número» «etiqueta»` sin repetir: las pestañas de herdr vienen etiquetadas
+ * con su propio número («1»), y pintarlas daría «1 1».
+ */
+function numberedLabel(number: number, label: string): string {
+  const text = label.trim();
+  return text.length === 0 || text === String(number) ? String(number) : `${number} ${text}`;
+}
+
 function styleOf(spec: AgentTokenSpec): AgentTokenStyle {
   return typeof spec === 'string' ? {} : { fg: spec.fg, bold: spec.bold, dim: spec.dim };
 }
@@ -181,10 +190,10 @@ export function resolveAgentToken(
         return ctx.stateLabels[ctx.agent.agent_status] ?? ctx.agent.agent_status;
       case 'workspace':
         return ctx.workspace
-          ? `${ctx.workspace.number} ${ctx.workspace.label}`.trim()
+          ? numberedLabel(ctx.workspace.number, ctx.workspace.label)
           : ctx.agent.workspace_id;
       case 'tab':
-        return ctx.tab ? `${ctx.tab.number} ${ctx.tab.label}`.trim() : ctx.agent.tab_id;
+        return ctx.tab ? numberedLabel(ctx.tab.number, ctx.tab.label) : ctx.agent.tab_id;
       case 'pane':
         return ctx.agent.pane_id;
       case 'agent':

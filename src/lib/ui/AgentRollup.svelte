@@ -32,7 +32,9 @@
     <span
       class="rollup__blocked"
       data-testid="rollup-blocked"
-      title={es.sidebar.blockedCount.replace('{n}', String(rollup.blocked))}>{rollup.blocked}</span
+      title={rollup.blocked === 1
+        ? es.sidebar.blockedCountOne
+        : es.sidebar.blockedCount.replace('{n}', String(rollup.blocked))}>{rollup.blocked}</span
     >
   {/if}
 </span>

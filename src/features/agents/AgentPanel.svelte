@@ -94,7 +94,9 @@
 
   {#if blocked > 0}
     <p class="agent-panel__blocked" data-testid="agents-blocked">
-      {es.sidebar.blockedCount.replace('{n}', String(blocked))}
+      {blocked === 1
+        ? es.sidebar.blockedCountOne
+        : es.sidebar.blockedCount.replace('{n}', String(blocked))}
     </p>
   {/if}
 
