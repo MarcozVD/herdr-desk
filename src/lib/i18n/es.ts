@@ -51,6 +51,12 @@ export const es = {
     panesCount: '{n} paneles',
     tabsCount: '{n} pestañas',
     newWorkspace: 'Nuevo espacio',
+    filterAgents: 'Filtrar agentes…',
+    sortAgentsHint: 'Cambiar el orden del panel de agentes',
+    sortSpaces: 'Espacios',
+    sortPriority: 'Prioridad',
+    noAgentsMatch: 'Ningún agente coincide con el filtro.',
+    blockedCount: '{n} bloqueados',
   },
   statusbar: {
     pane: 'panel',

@@ -7,13 +7,9 @@
   import { settings } from '../../lib/stores/settings.svelte';
   import { ui } from '../../lib/stores/ui.svelte';
   import AgentDot from '../../lib/ui/AgentDot.svelte';
+  import AgentPanel from '../agents/AgentPanel.svelte';
 
   const collapsedMode = $derived(settings.values.sidebar_collapsed_mode);
-
-  function workspaceNumber(workspaceId: string): string {
-    const workspace = session.workspaces.find((item) => item.workspace_id === workspaceId);
-    return workspace ? String(workspace.number) : '';
-  }
 </script>
 
 <aside
@@ -69,31 +65,7 @@
   </div>
 
   <div class="sidebar__section">
-    <h2 class="sidebar__title">
-      <span>{es.sidebar.agents}</span>
-      <span class="sidebar__count" data-testid="agents-count"
-        >{session.agentsByPriority.length}</span
-      >
-    </h2>
-    {#if session.agentsByPriority.length === 0}
-      <p class="empty-note" data-testid="agents-empty">{es.sidebar.noAgents}</p>
-    {:else}
-      {#each session.agentsByPriority as agent (agent.pane_id)}
-        <button
-          type="button"
-          class="agent-row"
-          data-testid="agent-row"
-          data-pane-id={agent.pane_id}
-          data-status={agent.agent_status}
-          onclick={() => flows.focusPane(agent.pane_id)}
-        >
-          <AgentDot status={agent.agent_status} label={es.agentStatus[agent.agent_status]} />
-          <span class="agent-row__number">{workspaceNumber(agent.workspace_id)}</span>
-          <span class="agent-row__name">{agent.display_agent ?? agent.agent ?? agent.pane_id}</span>
-          <span class="agent-row__meta">{es.agentStatus[agent.agent_status]}</span>
-        </button>
-      {/each}
-    {/if}
+    <AgentPanel />
   </div>
 </aside>
 
@@ -118,19 +90,5 @@
   .sidebar__action:hover {
     color: var(--text);
     border-color: color-mix(in oklab, var(--accent) 45%, transparent);
-  }
-
-  .agent-row {
-    border: none;
-    background: transparent;
-    color: var(--text);
-    font: inherit;
-    text-align: start;
-    cursor: pointer;
-    width: 100%;
-  }
-
-  .agent-row:hover {
-    background: color-mix(in oklab, var(--active-row-bg) 55%, transparent);
   }
 </style>

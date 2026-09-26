@@ -3,10 +3,19 @@
 // leerán de config.toml + %APPDATA%\herdr-desk\settings.json y aquí solo quedarán
 // los que son exclusivos de la GUI (glass, LRU de terminales, etc.).
 
+import {
+  DEFAULT_AGENT_ROWS,
+  DEFAULT_AGENT_ROW_GAP,
+  type AgentTokenSpec,
+} from '../agents/agentPanel';
+
 export type GlassMode = 'auto' | 'full' | 'off';
 export type SidebarCollapsedMode = 'compact' | 'hidden';
 export type TabBarPosition = 'top' | 'bottom';
 export type AgentPanelSort = 'spaces' | 'priority';
+
+/** Filas de un agente en el panel: array de filas y cada fila un array de tokens. */
+export type AgentRowsConfig = AgentTokenSpec[][];
 
 export interface UiSettings {
   // [ui] de herdr
@@ -25,6 +34,12 @@ export interface UiSettings {
   hide_tab_bar_when_single_tab: boolean;
   tab_bar_position: TabBarPosition;
   agent_panel_sort: AgentPanelSort;
+  /** `[ui.sidebar.agents] rows`: filas de cada agente (tokens). */
+  agent_rows: AgentRowsConfig;
+  /** `[ui.sidebar.agents.rows_by_agent]`: filas por id canónico de agente. */
+  agent_rows_by_agent: Record<string, AgentRowsConfig>;
+  /** `[ui.sidebar.agents] row_gap`: filas en blanco entre agentes. */
+  agent_row_gap: number;
   accent: string;
   copy_on_select: boolean;
   // Solo de la GUI (F3 las moverá a settings.json)
@@ -56,6 +71,9 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   hide_tab_bar_when_single_tab: false,
   tab_bar_position: 'top',
   agent_panel_sort: 'spaces',
+  agent_rows: DEFAULT_AGENT_ROWS,
+  agent_rows_by_agent: {},
+  agent_row_gap: DEFAULT_AGENT_ROW_GAP,
   accent: 'cyan',
   copy_on_select: true,
   glass: 'auto',

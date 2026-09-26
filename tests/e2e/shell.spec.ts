@@ -25,9 +25,13 @@ test('la sidebar pinta los espacios y los agentes del snapshot', async ({ page }
 
   await expect(page.getByTestId('agents-count')).toHaveText('2');
   await expect(page.getByTestId('agent-row')).toHaveCount(2);
-  // Orden por prioridad: blocked antes que working.
-  await expect(page.getByTestId('agent-row').nth(0)).toHaveAttribute('data-status', 'blocked');
-  await expect(page.getByTestId('agent-row').nth(1)).toHaveAttribute('data-status', 'working');
+  // Orden por defecto (T2.1): modo `spaces`, agrupado por espacio en el orden
+  // del snapshot (w1 «spike» antes que w2 «docs») y dentro de cada grupo por
+  // prioridad. El orden por prioridad global es el otro modo del panel.
+  await expect(page.getByTestId('agent-section')).toHaveCount(2);
+  await expect(page.getByTestId('agent-section').nth(0)).toHaveAttribute('data-workspace-id', 'w1');
+  await expect(page.getByTestId('agent-row').nth(0)).toHaveAttribute('data-status', 'working');
+  await expect(page.getByTestId('agent-row').nth(1)).toHaveAttribute('data-status', 'blocked');
 
   // Status bar con el panel enfocado del fixture.
   await expect(page.getByTestId('status-pane')).toContainText('w1:p1');

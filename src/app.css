@@ -281,12 +281,20 @@ body {
   :is(
     .workspace-row__label,
     .workspace-row__count,
-    .agent-row__name,
-    .agent-row__meta,
     .sidebar__title span:first-child,
     .sidebar__action,
     .empty-note
   ) {
+  display: none;
+}
+
+/* T2.1 — Panel de agentes en compacto: la sidebar queda en 3,25 rem, así que
+   solo caben los iconos de estado (los tokens de texto y las herramientas se
+   ocultan en vez de recortarse). */
+.body[data-sidebar='compact'] .sidebar .agent-panel__tools,
+.body[data-sidebar='compact'] .sidebar .agent-panel__blocked,
+.body[data-sidebar='compact'] .sidebar .agent-panel__section-title,
+.body[data-sidebar='compact'] .sidebar .agent-row__token {
   display: none;
 }
 
