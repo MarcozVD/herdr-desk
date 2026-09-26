@@ -25,6 +25,8 @@ interface HarnessConfig {
   sessionCurrentMissing?: boolean;
   /** Respuesta del command `agent_kinds` (T2.3). */
   agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
+  /** El PRIMER `terminal_open` de cada panel no manda frames (canal muerto). */
+  staleBridgeFirstOpen?: boolean | null;
 }
 
 export interface RecordedCall {
@@ -334,10 +336,21 @@ export function installHarness(): void {
       case 'terminal_open': {
         bridgeSeq += 1;
         const id = bridgeSeq;
-        bridges.set(id, {
-          paneId: String(payload.paneId),
-          channel: payload.onFrame as Channel<unknown>,
-        });
+        const paneId = String(payload.paneId);
+        const previous = [...bridges.values()].filter((bridge) => bridge.paneId === paneId).length;
+        bridges.set(id, { paneId, channel: payload.onFrame as Channel<unknown> });
+        // Un panel cuya PRIMERA apertura no manda frames simula el canal muerto
+        // que deja el backend al recargarse la webview (bug real medido).
+        const stale = Boolean(config.staleBridgeFirstOpen) && previous === 0;
+        if (!stale) {
+          const frame = new ArrayBuffer(16);
+          const view = new DataView(frame);
+          view.setBigUint64(0, 1n, true);
+          view.setUint16(8, 80, true);
+          view.setUint16(10, 24, true);
+          view.setUint8(12, 1); // full
+          queueMicrotask(() => deliver(payload.onFrame as Channel<unknown>, frame));
+        }
         if (config.terminalOpenDelayMs && config.terminalOpenDelayMs > 0) {
           return new Promise((resolve) =>
             setTimeout(() => resolve(id), config.terminalOpenDelayMs),

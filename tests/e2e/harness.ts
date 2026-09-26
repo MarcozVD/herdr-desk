@@ -29,6 +29,8 @@ export interface BootOptions {
   sessionCurrentMissing?: boolean;
   /** Respuesta del command `agent_kinds` (T2.3). */
   agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
+  /** El primer `terminal_open` de cada panel no manda frames (canal muerto). */
+  staleBridgeFirstOpen?: boolean;
 }
 
 export async function bootApp(page: Page, options: BootOptions = {}): Promise<void> {
@@ -39,6 +41,7 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     terminalOpenDelayMs: options.terminalOpenDelayMs ?? 0,
     layoutTree: options.layoutTree ?? null,
     agentKinds: options.agentKinds ?? null,
+    staleBridgeFirstOpen: options.staleBridgeFirstOpen ?? null,
     sessionStartError: options.sessionStartError ?? null,
     sessionCurrentMissing: options.sessionCurrentMissing ?? false,
   };

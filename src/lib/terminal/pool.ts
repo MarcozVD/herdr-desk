@@ -33,6 +33,7 @@ import {
 import { parseApiError } from '../herdr/errors';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { settings } from '../stores/settings.svelte';
+import { es } from '../i18n/es';
 import { FrameWriter, binaryStringToBase64, decodeCloseReason, decodeFrame } from './frames';
 import { terminalOptions, type TerminalFont } from './font';
 
@@ -56,6 +57,15 @@ export interface TerminalEntry {
   bufferedInput: string[];
   coreDisposers: Array<{ dispose(): void }>;
   onFrame: (frame: ArrayBuffer) => void;
+  /** Frames recibidos desde la última apertura del bridge. */
+  framesSinceOpen: number;
+  /** Reaperturas forzadas por no recibir frames (tope `MAX_STALE_REOPENS`). */
+  staleReopens: number;
+  /** Último tamaño pedido, para poder reabrir sin la vista delante. */
+  lastCols: number;
+  lastRows: number;
+  /** Vigilante de la primera señal de vida del bridge. */
+  watchdog: ReturnType<typeof setTimeout> | null;
 }
 
 export interface PoolEvents {
@@ -69,6 +79,30 @@ export interface PoolEvents {
    */
   onOutage?: (paneId: string, reason: string) => void;
 }
+
+/**
+ * Si un bridge recién abierto no manda NI UN frame en este plazo, se da por
+ * muerto y se reabre desde cero.
+ *
+ * Motivo real medido en vivo: el backend REUSA el bridge (y con él su canal) de
+ * una página anterior cuando la webview se recarga, así que los frames se
+ * pierden en un canal que ya no existe: la terminal se ve, el input funciona
+ * (va por otro camino) y no se pinta nada. Cerrar el bridge y abrirlo otra vez
+ * crea bridge y canal nuevos, y el servidor reenvía el viewport completo.
+ */
+export const FRAME_WATCHDOG_MS = 1500;
+
+/**
+ * Espera antes de reabrir: el backend cierra el bridge con una gracia de 3 s
+ * (`CLOSE_GRACE`) y, mientras siga vivo, `terminal_open` REUSA el mismo bridge y
+ * el mismo hilo de lectura… que sigue mandando los frames al canal con el que
+ * nació (el de la página anterior). Para estrenar canal hay que dejar morir el
+ * bridge viejo y pedir uno nuevo.
+ */
+export const STALE_REOPEN_DELAY_MS = 3600;
+
+/** Reintentos de reapertura antes de contarlo como error real. */
+export const MAX_STALE_REOPENS = 2;
 
 /** Motivos de cierre que significan «se cayó el servidor». */
 const OUTAGE_REASON =
@@ -200,6 +234,11 @@ export class TerminalPool {
       bufferedInput: [],
       coreDisposers: [],
       onFrame: () => undefined,
+      framesSinceOpen: 0,
+      staleReopens: 0,
+      lastCols: 80,
+      lastRows: 24,
+      watchdog: null,
     };
 
     entry.onFrame = (buffer: ArrayBuffer) => {
@@ -209,6 +248,12 @@ export class TerminalPool {
       } catch {
         return;
       }
+      // Un frame prueba que el canal está vivo: se desarma el vigilante y se
+      // devuelve el presupuesto de reaperturas (una caída posterior podrá
+      // curarse otra vez).
+      entry.framesSinceOpen += 1;
+      entry.staleReopens = 0;
+      this.#clearWatchdog(entry.paneId);
       if (frame.closed) {
         const reason = decodeCloseReason(frame);
         entry.closeReason = reason;
@@ -289,6 +334,10 @@ export class TerminalPool {
       entry.bridgeId = bridgeId;
       entry.epoch = epoch;
       entry.state = 'open';
+      entry.lastCols = Math.max(20, cols);
+      entry.lastRows = Math.max(5, rows);
+      entry.framesSinceOpen = 0;
+      this.#armWatchdog(entry);
       const pending = entry.bufferedInput;
       entry.bufferedInput = [];
       for (const data of pending) await terminalInput(bridgeId, data);
@@ -306,6 +355,7 @@ export class TerminalPool {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
     this.#clearReopen(paneId);
+    this.#clearWatchdog(paneId);
     if (entry.bridgeId !== null) {
       void terminalClose(entry.bridgeId).catch(() => undefined);
       entry.bridgeId = null;
@@ -328,6 +378,7 @@ export class TerminalPool {
       entry.webgl = false;
       this.#openWebgl = Math.max(0, this.#openWebgl - 1);
     }
+    if (entry.watchdog) clearTimeout(entry.watchdog);
     for (const disposable of entry.coreDisposers) disposable.dispose();
     entry.coreDisposers = [];
     entry.writer.dispose();
@@ -359,7 +410,61 @@ export class TerminalPool {
   resize(paneId: string, cols: number, rows: number): void {
     const entry = this.#entries.get(paneId);
     if (!entry || entry.bridgeId === null) return;
+    entry.lastCols = Math.max(20, cols);
+    entry.lastRows = Math.max(5, rows);
     void terminalResize(entry.bridgeId, cols, rows).catch(() => undefined);
+  }
+
+  /** Vigilante de la primera señal de vida del bridge (ver `FRAME_WATCHDOG_MS`). */
+  #armWatchdog(entry: TerminalEntry): void {
+    this.#clearWatchdog(entry.paneId);
+    const paneId = entry.paneId;
+    entry.watchdog = setTimeout(() => this.#watchdogFired(paneId), FRAME_WATCHDOG_MS);
+  }
+
+  #clearWatchdog(paneId: string): void {
+    const entry = this.#entries.get(paneId);
+    if (!entry?.watchdog) return;
+    clearTimeout(entry.watchdog);
+    entry.watchdog = null;
+  }
+
+  /**
+   * El bridge abrió pero no llegó ni un frame: se cierra y se reabre desde cero
+   * para estrenar canal. Mientras tanto la UI muestra «reconectando» (estado
+   * real) en vez de fingir que el panel está vivo.
+   */
+  #watchdogFired(paneId: string): void {
+    const entry = this.#entries.get(paneId);
+    if (!entry) return;
+    entry.watchdog = null;
+    if (entry.state !== 'open' || entry.bridgeId === null) return;
+    if (entry.framesSinceOpen > 0) return;
+
+    if (entry.staleReopens >= MAX_STALE_REOPENS) {
+      entry.errorText = es.terminal.staleBridgeFailed.replace('{n}', String(entry.staleReopens));
+      entry.state = 'error';
+      this.#notifyState(entry);
+      return;
+    }
+
+    entry.staleReopens += 1;
+    const stale = entry.bridgeId;
+    entry.bridgeId = null;
+    entry.state = 'reconnecting';
+    entry.closeReason = es.terminal.staleReopening;
+    this.#notifyState(entry);
+    void terminalClose(stale).catch(() => undefined);
+    // Se espera a que el backend mate el bridge viejo (gracia de 3 s): reabrir
+    // antes reusaría el mismo bridge y su hilo seguiría escribiendo en el canal
+    // muerto, que es justo lo que hay que dejar atrás.
+    const cols = entry.lastCols;
+    const rows = entry.lastRows;
+    setTimeout(() => {
+      const current = this.#entries.get(paneId);
+      if (!current || current.state !== 'reconnecting') return;
+      void this.open(paneId, cols, rows, current.epoch);
+    }, STALE_REOPEN_DELAY_MS);
   }
 
   /**

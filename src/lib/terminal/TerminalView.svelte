@@ -238,7 +238,9 @@
          pool.ts `#scheduleReopen`). Nada que ofrecer aquí: si el bridge vuelve,
          el panel vuelve solo a «open». -->
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="reconnecting">
-      <span data-testid="terminal-reconnecting">{es.terminal.reconnecting}</span>
+      <!-- Si el pool cerró el bridge por no recibir frames, se dice el motivo
+           real; si no, el texto genérico de reconexión. -->
+      <span data-testid="terminal-reconnecting">{closeReason || es.terminal.reconnecting}</span>
     </div>
   {:else if bridgeState === 'closed'}
     <!-- Cierre real (no reenganchable desde aquí): se muestra el motivo real,

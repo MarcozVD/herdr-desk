@@ -194,6 +194,8 @@ export const es = {
     copyOnSelect: 'Copiar al seleccionar',
     copied: 'Copiado al portapapeles.',
     clipboardUnavailable: 'El portapapeles no está disponible en esta sesión.',
+    staleReopening: 'El bridge no manda frames: reabriendo el canal…',
+    staleBridgeFailed: 'El bridge no manda frames (canal muerto); lo reabrí {n} veces.',
   },
   agents: {
     focus: 'Enfocar agente',

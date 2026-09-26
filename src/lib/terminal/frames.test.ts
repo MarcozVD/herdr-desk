@@ -112,6 +112,33 @@ describe('FrameWriter', () => {
     expect(new TextDecoder().decode(write.mock.calls[0][0])).toBe('viewport-completo');
   });
 
+  it('un frame full se escribe YA, sin esperar al frame de animación', () => {
+    // Regresión medida en vivo: si el `full` se quedara en la cola esperando al
+    // rAF, una ráfaga de `full`s la vaciaría antes de cada rAF y la terminal no
+    // pintaría nada aunque los frames estén llegando.
+    const write = vi.fn();
+    const writer = new FrameWriter({ write, schedule: () => 7, cancel: vi.fn() });
+
+    writer.push(new TextEncoder().encode('viewport'), true);
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(new TextDecoder().decode(write.mock.calls[0][0])).toBe('viewport');
+  });
+
+  it('una ráfaga de frames full escribe aunque el planificador no dispare', () => {
+    const write = vi.fn();
+    const writer = new FrameWriter({ write, schedule: () => 7, cancel: vi.fn() });
+
+    for (const text of ['f1', 'f2', 'f3']) {
+      writer.push(new TextEncoder().encode(text), true);
+    }
+
+    // Ningún rAF: aun así se ha escrito cada viewport (el último manda).
+    expect(write).toHaveBeenCalledTimes(3);
+    expect(new TextDecoder().decode(write.mock.calls[2][0])).toBe('f3');
+    expect(writer.pending).toBe(0);
+  });
+
   it('dispose cancela el frame pendiente y vacía la cola', () => {
     const write = vi.fn();
     const cancel = vi.fn();

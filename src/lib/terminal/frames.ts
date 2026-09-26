@@ -104,8 +104,20 @@ export class FrameWriter {
     return this.#handle !== null;
   }
 
+  /**
+   * Un frame `full` trae el viewport completo: sustituye a los deltas que
+   * estuvieran en cola Y SE ESCRIBE YA, sin esperar al rAF. Si se dejara en la
+   * cola, una ráfaga de `full`s (un ciclo de resize, un respawn que reenvía el
+   * viewport) la vaciaría antes de cada rAF y la terminal no pintaría nada
+   * mientras siguiera llegando el siguiente `full`.
+   */
   push(bytes: Uint8Array, full: boolean): void {
-    if (full) this.#queue.length = 0;
+    if (full) {
+      this.#queue.length = 0;
+      this.#queue.push(bytes);
+      this.flush();
+      return;
+    }
     this.#queue.push(bytes);
     this.#scheduleFlush();
   }
