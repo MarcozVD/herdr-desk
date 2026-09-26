@@ -7,7 +7,7 @@ use herdr_core::ApiError;
 
 #[tauri::command]
 pub async fn herdr_call(
-    state: State<'_, AppState>,
+    state: State<'_, std::sync::Arc<AppState>>,
     method: String,
     params: Value,
 ) -> Result<Value, ApiError> {
@@ -19,7 +19,7 @@ pub async fn herdr_call(
 /// reconecta (session_connect), debe volver a suscribirse.
 #[tauri::command]
 pub async fn store_subscribe(
-    state: State<'_, AppState>,
+    state: State<'_, std::sync::Arc<AppState>>,
     on_msg: Channel<InvokeResponseBody>,
 ) -> Result<(), ApiError> {
     let runtime = state.current();
@@ -42,7 +42,7 @@ pub async fn store_subscribe(
 /// Canal de eventos (conexión S + eventos de sesión) para el frontend.
 #[tauri::command]
 pub async fn events_forward(
-    state: State<'_, AppState>,
+    state: State<'_, std::sync::Arc<AppState>>,
     on_evt: Channel<InvokeResponseBody>,
 ) -> Result<(), ApiError> {
     state.subscribe_events(on_evt);
@@ -50,7 +50,10 @@ pub async fn events_forward(
 }
 
 #[tauri::command]
-pub async fn ui_ready(app: AppHandle, state: State<'_, AppState>) -> Result<(), ApiError> {
+pub async fn ui_ready(
+    app: AppHandle,
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<(), ApiError> {
     let session = state.current().session.clone();
     if let Err(err) = crate::window::show_main(&app) {
         tracing::warn!("no se pudo mostrar la ventana: {err}");

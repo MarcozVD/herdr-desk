@@ -16,7 +16,9 @@ pub async fn session_list() -> Result<CliSessionList, ApiError> {
 /// Sesión activa del backend (la del runtime actual). El frontend la usa en
 /// bootstrap para el selector y para "Iniciar servidor" sin nombre vacío.
 #[tauri::command]
-pub async fn session_current(state: State<'_, AppState>) -> Result<String, ApiError> {
+pub async fn session_current(
+    state: State<'_, std::sync::Arc<AppState>>,
+) -> Result<String, ApiError> {
     Ok(state.current().session.clone())
 }
 
@@ -49,7 +51,7 @@ pub async fn session_start(name: String) -> Result<(), ApiError> {
 
 #[tauri::command]
 pub async fn session_connect(
-    state: State<'_, AppState>,
+    state: State<'_, std::sync::Arc<AppState>>,
     name: Option<String>,
 ) -> Result<(), ApiError> {
     let name = match name {
@@ -101,7 +103,10 @@ pub async fn session_connect(
 }
 
 #[tauri::command]
-pub async fn session_stop(state: State<'_, AppState>, name: String) -> Result<(), ApiError> {
+pub async fn session_stop(
+    state: State<'_, std::sync::Arc<AppState>>,
+    name: String,
+) -> Result<(), ApiError> {
     if name == "default" {
         return Err(ApiError {
             code: "invalid_params".to_string(),
@@ -123,7 +128,10 @@ pub async fn session_stop(state: State<'_, AppState>, name: String) -> Result<()
 }
 
 #[tauri::command]
-pub async fn session_delete(state: State<'_, AppState>, name: String) -> Result<(), ApiError> {
+pub async fn session_delete(
+    state: State<'_, std::sync::Arc<AppState>>,
+    name: String,
+) -> Result<(), ApiError> {
     let active = state.current().session.clone();
     if active == name {
         return Err(ApiError {

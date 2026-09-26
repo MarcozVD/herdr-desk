@@ -32,8 +32,8 @@ pub fn resolve_terminal_font_family(is_installed: &dyn Fn(&str) -> bool) -> Stri
 pub fn terminal_font_installed(family: &str) -> bool {
     #[cfg(windows)]
     {
-        use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
         use winreg::RegKey;
+        use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
         let needle = family.to_ascii_lowercase();
         for hkey in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
             let key = RegKey::predef(hkey)
@@ -112,7 +112,10 @@ mod tests {
         let probe = with_installed(&["Consolas"]);
         let defaults = build_gui_defaults(&probe);
         assert_eq!(defaults.terminal_font_family, "Consolas");
-        assert_eq!(defaults.terminal_font_size_px, DEFAULT_TERMINAL_FONT_SIZE_PX);
+        assert_eq!(
+            defaults.terminal_font_size_px,
+            DEFAULT_TERMINAL_FONT_SIZE_PX
+        );
         assert_eq!(defaults.terminal_line_height, DEFAULT_TERMINAL_LINE_HEIGHT);
     }
 
