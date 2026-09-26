@@ -105,6 +105,23 @@
     }, 60);
   }
 
+  // T2.7 — El foco de teclado sigue al panel enfocado: al saltar a un panel
+  // desde la paleta o la sidebar, sus teclas van a esa terminal (si el bridge ya
+  // estaba abierto no hubo cambio de estado que lo enfocara).
+  $effect(() => {
+    if (ui.localFocusedPaneId !== paneId) return;
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
+    ) {
+      return; // el usuario está escribiendo en un campo: no se le quita el foco
+    }
+    const current = pool.entry(paneId);
+    if (!current || current.state !== 'open') return;
+    current.terminal.focus();
+  });
+
   function onTerminalEvent(event: Event): void {
     const detail = (event as CustomEvent<{ channel: string; detail: string }>).detail;
     if (!detail) return;

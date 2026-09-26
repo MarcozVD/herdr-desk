@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentInfo } from '../herdr/types';
 import { noticeCenter } from './noticeCenter';
+import { noticeSound } from './noticeSound';
 import { settings } from '../stores/settings.svelte';
 import { ui } from '../stores/ui.svelte';
 
@@ -27,7 +28,10 @@ function clearToasts(): void {
   for (const toast of [...ui.toasts]) ui.dismissToast(toast.id);
 }
 
+const toneSpy = vi.spyOn(noticeSound, 'play').mockResolvedValue(true);
+
 afterEach(() => {
+  toneSpy.mockClear();
   noticeCenter.reset();
   clearToasts();
   settings.values.toast_delivery = 'off';
@@ -82,6 +86,35 @@ describe('preferencia de notificaciones (T2.5)', () => {
     });
     noticeCenter.flushNow();
     expect(ui.toasts).toHaveLength(1);
+  });
+});
+
+describe('sonido de los avisos (T2.5)', () => {
+  it('bloqueado y terminado suenan; la salida no', () => {
+    settings.values.toast_delivery = 'herdr';
+    noticeCenter.reset();
+    noticeCenter.observe([agent('w1:p1', 'idle')], context);
+
+    noticeCenter.observe([agent('w1:p1', 'working')], context);
+    expect(toneSpy).not.toHaveBeenCalled(); // empezar a trabajar no suena
+
+    noticeCenter.observe([agent('w1:p1', 'blocked')], context);
+    expect(toneSpy).toHaveBeenLastCalledWith('request');
+
+    noticeCenter.observe([agent('w1:p1', 'working')], context);
+    noticeCenter.observe([agent('w1:p1', 'done')], context);
+    expect(toneSpy).toHaveBeenLastCalledWith('done');
+  });
+
+  it('el sonido NO depende del reparto de toasts', () => {
+    settings.values.toast_delivery = 'off';
+    noticeCenter.reset();
+    noticeCenter.observe([agent('w1:p1', 'working')], context);
+    noticeCenter.observe([agent('w1:p1', 'blocked')], context);
+    noticeCenter.flushNow();
+
+    expect(toneSpy).toHaveBeenLastCalledWith('request');
+    expect(ui.toasts).toHaveLength(0); // sin toasts, pero con sonido
   });
 });
 

@@ -67,6 +67,8 @@ interface PendingWorkspaceForm extends WorkspaceFormRequest {
 class UiStore {
   sidebarCollapsed = $state(settings.values.sidebar_start_collapsed);
   paletteOpen = $state(false);
+  /** Sube en cada apertura: la paleta se monta de cero (consulta limpia). */
+  paletteSession = $state(0);
   helpOpen = $state(false);
   sessionsOpen = $state(false);
   /** Modo prefix activo (T1.10). */
@@ -105,6 +107,7 @@ class UiStore {
   }
 
   openPalette(): void {
+    if (!this.paletteOpen) this.paletteSession += 1;
     this.paletteOpen = true;
   }
 
@@ -113,6 +116,7 @@ class UiStore {
   }
 
   togglePalette(): void {
+    if (!this.paletteOpen) this.paletteSession += 1;
     this.paletteOpen = !this.paletteOpen;
   }
 

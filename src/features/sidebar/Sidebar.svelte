@@ -36,7 +36,8 @@
           data-testid="workspace-row"
           data-workspace-id={workspace.workspace_id}
           data-status={workspace.agent_status}
-          aria-current={workspace.focused || ui.localFocusedWorkspaceId === workspace.workspace_id}
+          aria-current={(ui.localFocusedWorkspaceId ?? session.focusedWorkspaceId) ===
+            workspace.workspace_id}
           onclick={() => flows.focusWorkspace(workspace.workspace_id)}
           ondblclick={() => void flows.renameWorkspace(workspace.workspace_id)}
           oncontextmenu={(event) => flows.openWorkspaceMenu(event, workspace.workspace_id)}

@@ -5,6 +5,7 @@
 
 import type { AgentInfo } from '../herdr/types';
 import { settings } from '../stores/settings.svelte';
+import { noticeSound } from './noticeSound';
 import { ui } from '../stores/ui.svelte';
 import {
   captureAgentStates,
@@ -19,6 +20,7 @@ import {
 
 class NoticeCenter {
   #previous: AgentState[] = [];
+  #lastNotifiedPaneId: string | null = null;
   #lastRevision = 0;
   #buffer = new NoticeBuffer((groups) => {
     for (const group of groups) {
@@ -39,17 +41,30 @@ class NoticeCenter {
     const previous = this.#previous;
     const next = captureAgentStates(agents);
     this.#previous = next;
-    if (settings.values.toast_delivery !== 'herdr') return;
     if (previous.length === 0) return;
     const notices = diffAgentNotices(previous, next).filter((notice) =>
       shouldNotify(notice, context),
     );
+    if (notices.length === 0) return;
+    const last = notices.at(-1);
+    if (last) this.#lastNotifiedPaneId = last.paneId;
+    // El sonido depende SOLO de la preferencia de sonido (no del reparto de
+    // toasts): bloqueado pide atención, terminado avisa de que acabó.
+    if (notices.some((notice) => notice.kind === 'blocked')) void noticeSound.play('request');
+    else if (notices.some((notice) => notice.kind === 'done')) void noticeSound.play('done');
+    if (settings.values.toast_delivery !== 'herdr') return;
     this.#buffer.push(notices, settings.values.toast_group_ms);
+  }
+
+  /** Último panel que provocó un aviso: destino de «ir a la última notificación». */
+  get lastNotifiedPaneId(): string | null {
+    return this.#lastNotifiedPaneId;
   }
 
   /** Cambio de sesión: no hay nada con lo que comparar. */
   reset(): void {
     this.#previous = [];
+    this.#lastNotifiedPaneId = null;
     this.#lastRevision = 0;
     this.#buffer.flushNow();
   }

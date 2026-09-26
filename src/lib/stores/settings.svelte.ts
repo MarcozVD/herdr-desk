@@ -60,6 +60,10 @@ export interface UiSettings {
   toast_delivery: ToastDelivery;
   /** `[ui.toast] delay_seconds`: lo que se espera para agrupar una ráfaga. */
   toast_group_ms: number;
+  /** `[ui.sound] enabled` de herdr: ÚNICO interruptor de los sonidos de aviso. */
+  sound_enabled: boolean;
+  /** Ids de los últimos comandos ejecutados en la paleta (los más nuevos delante). */
+  palette_recent: string[];
 }
 
 /** Valores por defecto, tomados del `--default-config` de herdr 0.8.0-preview. */
@@ -94,6 +98,8 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   toast_ms: 4000,
   toast_delivery: 'off',
   toast_group_ms: 1000,
+  sound_enabled: true,
+  palette_recent: [],
 };
 
 const STORAGE_KEY = 'herdr-desk.settings';

@@ -7,7 +7,9 @@
 
   import AgentPromptDialog from './features/agents/AgentPromptDialog.svelte';
   import { noticeCenter } from './lib/agents/noticeCenter';
+  import { noticeSound } from './lib/agents/noticeSound';
   import StartAgentDialog from './features/agents/StartAgentDialog.svelte';
+  import CommandPalette from './features/palette/CommandPalette.svelte';
   import SessionsDialog from './features/sessions/SessionsDialog.svelte';
   import Sidebar from './features/sidebar/Sidebar.svelte';
   import StatusBar from './features/statusbar/StatusBar.svelte';
@@ -57,6 +59,18 @@
 
   $effect(() => {
     document.documentElement.style.setProperty('--sidebar-width', `${settings.widthPx}px`);
+  });
+
+  // T2.5 — El audio de los avisos se arma en el primer gesto del usuario (los
+  // navegadores no dejan sonar sin interacción). Es una sola vez y no bloquea.
+  $effect(() => {
+    const arm = (): void => noticeSound.arm();
+    window.addEventListener('pointerdown', arm, { once: true, capture: true });
+    window.addEventListener('keydown', arm, { once: true, capture: true });
+    return () => {
+      window.removeEventListener('pointerdown', arm, { capture: true });
+      window.removeEventListener('keydown', arm, { capture: true });
+    };
   });
 
   // T2.5 — Avisos de agente: se compara el snapshot nuevo con el anterior en
@@ -220,28 +234,9 @@
 <StartAgentDialog />
 <TextViewer />
 
-{#if ui.paletteOpen}
-  <div class="overlay">
-    <button
-      type="button"
-      class="overlay__scrim"
-      data-testid="palette-scrim"
-      aria-label={es.palette.close}
-      onclick={() => ui.closePalette()}
-    ></button>
-    <div
-      class="palette glass-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={es.palette.title}
-      tabindex="-1"
-      data-testid="palette"
-    >
-      <input class="palette__input" placeholder={es.titlebar.palette} readonly />
-      <p class="palette__note">{es.palette.comingSoon}</p>
-    </div>
-  </div>
-{/if}
+{#key ui.paletteSession}
+  <CommandPalette />
+{/key}
 
 {#if ui.helpOpen}
   <Cheatsheet />
