@@ -22,6 +22,8 @@ mod session_switch_tests;
 #[cfg(all(test, feature = "sandbox"))]
 mod terminal_cycle_tests;
 #[cfg(all(test, feature = "sandbox"))]
+mod terminal_release_sandbox_tests;
+#[cfg(all(test, feature = "sandbox"))]
 mod worktree_sandbox_tests;
 
 use std::sync::Arc;
@@ -170,6 +172,7 @@ pub fn run() {
             commands::terminal::terminal_resize,
             commands::terminal::terminal_scroll,
             commands::terminal::terminal_close,
+            commands::terminal::terminal_release,
         ])
         .run(tauri::generate_context!())
         .expect("error while running herdr-desk");

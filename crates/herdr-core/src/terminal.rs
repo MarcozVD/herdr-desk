@@ -210,6 +210,14 @@ impl Bridge {
     }
 }
 
+/// Bridge de prueba cuyos comandos van a un canal descartado (sin proceso).
+/// Solo para tests del registro de bridges; no toca el server ni spawn nada.
+#[cfg(feature = "sandbox")]
+pub fn bridge_noop() -> Bridge {
+    let (tx, _rx) = mpsc::unbounded_channel::<BridgeCommand>();
+    Bridge { input_tx: tx }
+}
+
 pub fn parse_frame_line(line: &str) -> Option<BridgeEvent> {
     let v: Value = serde_json::from_str(line).ok()?;
     match v.get("type").and_then(Value::as_str)? {
