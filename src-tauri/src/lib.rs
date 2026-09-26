@@ -10,6 +10,8 @@ mod cli_run_sandbox_tests;
 #[cfg(all(test, feature = "sandbox"))]
 mod config_sandbox_tests;
 #[cfg(all(test, feature = "sandbox"))]
+mod notification_sandbox_tests;
+#[cfg(all(test, feature = "sandbox"))]
 mod sandbox_guard;
 #[cfg(all(test, feature = "sandbox"))]
 mod server_sandbox_tests;
@@ -142,6 +144,7 @@ pub fn run() {
             commands::integrations::integration_status,
             commands::integrations::integration_install,
             commands::integrations::integration_uninstall,
+            commands::notifications::notification_show,
             tray::tray_update,
             overlay::taskbar_overlay,
             toast_identity::toast_identity,

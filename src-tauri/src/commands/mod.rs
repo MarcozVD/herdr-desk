@@ -2,6 +2,7 @@ pub mod api;
 pub mod cli_run;
 pub mod config;
 pub mod integrations;
+pub mod notifications;
 pub mod server;
 pub mod session;
 pub mod system;

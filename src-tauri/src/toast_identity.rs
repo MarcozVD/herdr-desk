@@ -36,7 +36,7 @@ fn write_aumid_registry(
 }
 
 #[cfg(windows)]
-fn find_icon_uri() -> Option<String> {
+pub(crate) fn find_icon_uri() -> Option<String> {
     // icono junto al exe (instalado) o del repo (dev)
     let exe = std::env::current_exe().ok()?;
     let candidates = [
@@ -111,4 +111,27 @@ pub async fn toast_identity() -> Result<serde_json::Value, ApiError> {
         "aumid": TOAST_AUMID,
         "display_name": TOAST_DISPLAY_NAME,
     }))
+}
+
+/// ¿Está registrado el AUMID en el registro de Windows? Fuera de Windows
+/// devuelve false (no hay toasts nativos). Nunca falla: degrada a false.
+pub fn aumid_registered(aumid: &str) -> bool {
+    #[cfg(windows)]
+    {
+        read_aumid_registered(aumid)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = aumid;
+        false
+    }
+}
+
+#[cfg(windows)]
+fn read_aumid_registered(aumid: &str) -> bool {
+    use winreg::RegKey;
+    use winreg::enums::HKEY_CURRENT_USER;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    hkcu.open_subkey(format!("SOFTWARE\\Classes\\AppUserModelId\\{aumid}"))
+        .is_ok()
 }
