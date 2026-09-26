@@ -114,12 +114,41 @@ configuración de la ventana. No reintentarlo por el lado de Tauri/ventana.
 
 ## Terminales (T1.8 backend)
 
-- Pool: `BridgeRegistry` con ids numéricos estables; un bridge por pane visible.
-- `terminal_close(bridge_id)`: **gracia de 3 s** — el bridge sigue aceptando input mientras
-  tanto; a los 3 s release real y la entrada queda muerta (respawnable). Si el frontend
-  re-abre el mismo pane antes, `terminal_open` limpia la entrada muerta y crea un bridge nuevo.
-- Respawn automático tras reconexión: conserva el canal del frontend (no hace falta
-  re-suscribirse desde JS) y el último tamaño (cols/rows) conocido.
+- Pool: `BridgeRegistry` con ids numéricos estables; **invariante: máximo UN bridge vivo
+  por pane** (`find_alive_by_pane` + `purge_dead_for_pane`).
+- **Ciclo de apertura** (`open_bridge_in_registry`): purga muertas del pane → si hay un
+  bridge vivo para ese pane lo **reutiliza** (cancela la gracia y actualiza el canal
+  `on_frame`, mismo id) → si no, crea uno nuevo. Nunca dos bridges vivos para el mismo
+  pane (el bug original creaba un segundo y el server respondía `taken over`).
+
+### Contrato de la gracia de cierre (3 s)
+
+- `terminal_close(id)`: marca `closing_since` y **no mata nada**. El bridge sigue vivo y
+  acepta input/resize/scroll durante la gracia (el estado closing NO es error).
+- Si el frontend reabre el mismo pane dentro de la gracia: `terminal_open` cancela el
+  cierre y devuelve el MISMO bridge_id; no hay proceso nuevo ni re-attach.
+- Si nadie reabre: a los 3 s se emite un frame `closed` con motivo estable `user_close`
+  por el canal del frontend, la entrada pasa a muerta (`dead_reason = user_close`,
+  NO respawnable) y se hace release del bridge.
+
+### Contrato de motivos de cierre (estable; parte del IPC)
+
+| Motivo | Causa | ¿Caída real? |
+|---|---|---|
+| `user_close` | cierre pedido desde la GUI (gracia expirada) | no |
+| `released` | server dijo `detached` (despegue normal de la sesión de terminal) | no |
+| `taken_over` | server dijo `terminal attach taken over` (otra conexión tomó el pane) | no |
+| `pane_closed` | server dijo `pane closed`/`pane exited` | no |
+| `server_down` | proceso bridge terminó sin `terminal.closed` (EOF/crash) o server caído | **sí** |
+| `unknown:<texto>` | cualquier otro motivo del server | no |
+
+El backend normaliza SIEMPRE el motivo crudo del server (`normalize_close_reason`) antes
+de enviarlo: el frontend NO debe clasificar por regex. **Solo `server_down` es caída real.**
+La tarea de lectura (`bridge_read_task`) marca la entrada muerta una sola vez y suprime
+todo tráfico posterior al cierre (frames duplicados o closed del server tras user_close).
+Respawn automático: SOLO entradas con `dead_reason = server_down` cuyo pane siga vivo en
+el snapshot (`purge_non_respawnable` limpia panes inexistentes y cierres pedidos).
+
 - Clipboard: plugin `tauri-plugin-clipboard-manager` (Rust + capabilities
   `clipboard-manager:allow-write-text/read-text`). El frontend usa el paquete npm.
 

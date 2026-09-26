@@ -60,10 +60,22 @@ pub struct BridgeEntry {
     pub bridge: Bridge,
     pub pane_id: String,
     pub alive: bool,
+    /// Gracia de cierre activa (3 s): el bridge sigue vivo y el frontend puede
+    /// reabrir el pane para cancelar el cierre.
     pub closing_since: Option<std::time::Instant>,
+    /// Motivo de cierre estable (contrato con el frontend) cuando alive=false.
+    pub dead_reason: Option<String>,
     pub on_frame: Channel<InvokeResponseBody>,
     pub last_cols: u16,
     pub last_rows: u16,
+}
+
+impl BridgeEntry {
+    /// Solo los muertos por caida del server se respawnean automaticamente.
+    pub fn respawnable(&self) -> bool {
+        !self.alive
+            && self.dead_reason.as_deref() == Some(crate::commands::terminal::CLOSE_SERVER_DOWN)
+    }
 }
 
 pub struct BridgeRegistry {
@@ -95,12 +107,33 @@ impl BridgeRegistry {
                 pane_id,
                 alive: true,
                 closing_since: None,
+                dead_reason: None,
                 on_frame,
                 last_cols: cols,
                 last_rows: rows,
             },
         );
         id
+    }
+
+    /// Puente vivo para un pane, si existe (maximo UNO por invariant).
+    pub fn find_alive_by_pane(&self, pane_id: &str) -> Option<u32> {
+        self.bridges
+            .iter()
+            .find(|(_, e)| e.alive && e.pane_id == pane_id)
+            .map(|(id, _)| *id)
+    }
+
+    /// Barre las entradas muertas de un pane (purga al abrir/reabrir).
+    pub fn purge_dead_for_pane(&mut self, pane_id: &str) {
+        self.bridges.retain(|_, e| e.alive || e.pane_id != pane_id);
+    }
+
+    /// Barre entradas muertas que ya no son respawnables:
+    /// panes inexistentes o cierres pedidos por el usuario.
+    pub fn purge_non_respawnable(&mut self, live_panes: &[String]) {
+        self.bridges
+            .retain(|_, e| e.alive || (e.respawnable() && live_panes.contains(&e.pane_id)));
     }
 
     pub fn alive_panes(&self) -> Vec<String> {

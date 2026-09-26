@@ -10,6 +10,9 @@ authors = ["mvale"]
 name = "herdr_desk_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+sandbox = ["herdr-core/sandbox"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
