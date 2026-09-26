@@ -1,4 +1,5 @@
 pub mod api;
+pub mod api_catalog;
 pub mod cli_run;
 pub mod config;
 pub mod integrations;

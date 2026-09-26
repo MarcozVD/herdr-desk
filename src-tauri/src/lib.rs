@@ -6,6 +6,8 @@ pub mod tray;
 mod window;
 
 #[cfg(all(test, feature = "sandbox"))]
+mod api_catalog_sandbox_tests;
+#[cfg(all(test, feature = "sandbox"))]
 mod cli_run_sandbox_tests;
 #[cfg(all(test, feature = "sandbox"))]
 mod config_sandbox_tests;
@@ -158,6 +160,7 @@ pub fn run() {
             commands::plugins::plugin_pane_close,
             commands::plugins::plugin_install_preview,
             commands::plugins::plugin_install,
+            commands::api_catalog::api_catalog,
             tray::tray_update,
             overlay::taskbar_overlay,
             toast_identity::toast_identity,
