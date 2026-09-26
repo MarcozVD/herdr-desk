@@ -473,8 +473,21 @@ export const flows = {
 
   /* ---- Agentes (T2.2/T2.3) ---- */
 
-  /** El `target` de las acciones de agente es el id del panel (verificado en vivo). */
+  /**
+   * Enfoca un agente (sidebar, paleta o atajos de cola) y **se va con él**: si su
+   * panel está en otro espacio o en otra pestaña, la vista tiene que cambiar.
+   *
+   * El `target` de las acciones de agente es el id del panel (verificado en vivo).
+   * La pestaña que manda es la del PROPIO panel (si no, no se vería); el criterio
+   * de «recordada o activa» de `focusWorkspace` se usa al cambiar de espacio sin
+   * panel concreto.
+   */
   focusAgent(paneId: string): void {
+    const pane = session.panes.find((item) => item.pane_id === paneId);
+    if (pane) {
+      ui.focusWorkspaceLocally(pane.workspace_id);
+      ui.focusTabLocally(pane.tab_id, pane.workspace_id);
+    }
     ui.focusPaneLocally(paneId);
     // `agent.focus` marca el agente como visto en el servidor. Sin sincronía de
     // foco no se toca la TUI, así que un fallo aquí no se le cuenta al usuario.
