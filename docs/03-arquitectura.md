@@ -241,6 +241,65 @@ el snapshot (`purge_non_respawnable` limpia panes inexistentes y cierres pedidos
   `HKCU\...\AppUserModelId` de la app para que los toasts muestren el nombre de la
   aplicación y no "Windows PowerShell" (patrón `windows-toast-identity.md`).
 
+## Base de configuración (F3, T3.x backend)
+
+Contrato verificado contra la CLI y el server reales (no deducido). Commands en
+`src-tauri/src/commands/config.rs`, registrados en `lib.rs`:
+
+- `config_default(refresh: Option<bool>) -> ConfigDefault { sections }`
+  - `ConfigDefaultSection { path, table_array, description, keys }`
+  - `ConfigDefaultKey { key, value: Option<String>, active, description }`
+  - Fuente: `herdr --default-config` (TOML anotado; todo comentado salvo
+    `experimental.pane_history = false`), cacheado y con refresco opcional.
+  - Incluye las tablas `[[keys.command]]` (`key`/`type`/`command`/`width`/`height`)
+    y las subsecciones punteadas (`ui.toast.herdr`, `keys.indexed`).
+- `config_read() -> ConfigRead { path, exists, diagnostics, entries }`
+  - `ConfigEntry { path, value, origin: "file" | "default", description, in_defaults }`
+- `config_write(state, changes: Vec<ConfigChange>) -> ConfigWriteResult`
+  - `ConfigChange { path, value: Option<String> }` (`None` quita la clave);
+    `value` es TOML, así que `keys.command` admite fragmento `[[keys.command]]…` o
+    array inline `[{...}]`.
+  - `ConfigWriteResult { applied, rejected, backup, reload, rolled_back, diagnostics }`
+- `config_reset_keys(state) -> ConfigResetResult { output, reload }`
+  (envuelve `herdr config reset-keys`, que ya hace backup y limpia atajos).
+- `ConfigReloadOutcome { status: "applied" | "partial" | "failed", diagnostics, skipped, error }`
+
+### Contrato de la CLI (medido)
+
+- `herdr config check` **no** acepta `--json` (exit 2 si se pasa). Salida de texto:
+  - `config: ok` → exit 0.
+  - `config: issues found` → exit 1, con líneas `config parse error: …`,
+    `unknown config key …; ignoring key`, `unknown config section …; ignoring section`.
+  - Mapeo a diagnósticos: `parse_error` → **error** (bloquea la escritura);
+    `unknown_key`/`unknown_section` → **warning** (la CLI las ignora).
+  - Archivo ausente = `config: ok`. La ruta se puede pisar con `HERDR_CONFIG_PATH`.
+- Recarga: RPC `server.reload_config` con `params {}` (EmptyParams, protocolo 19)
+  → `{"type":"config_reload","status":"applied"|"partial"|"failed","diagnostics":[…]}`
+  (verificado en vivo contra el server sandbox).
+
+### Orden de escritura y seguridad
+
+1. Se valida **sin tocar `config.toml`**: se escribe el texto propuesto a un temporal y
+   se corre `herdr config check` con `HERDR_CONFIG_PATH` apuntando ahí (env inyectada
+   tras limpiar las `HERDR_*` heredadas; el argv sigue en la lista blanca).
+2. Backup `config.toml.bak-<unix-ms>`, **solo en la primera escritura por proceso**.
+3. Escritura atómica (tmp + rename) con `toml_edit`: las claves existentes conservan
+   decor y comentario de línea; las nuevas no reinyectan comentarios (evita duplicados,
+   porque los bloques comentados son trivia del item siguiente).
+4. `server.reload_config` sobre el pipe de la sesión activa (nunca el `default`).
+5. Si `status == "failed"` → **rollback** (restaura el backup y recarga). Si el RPC
+   cae o expira, `reload.skipped = true` sin rollback: la configuración se cargará al
+   arrancar.
+- Lista blanca: 8 → 9 entradas, solo añade `herdr config reset-keys` (el reset correcto
+  es semántica de la CLI). `reload-config` no entra: la recarga va por RPC.
+- Dependencia: `toml_edit.workspace = true`.
+- Tests: 36 unitarios (roundtrip byte a byte con la fixture real
+  `schema/fixtures/default_config.toml`, reemplazo in situ conservando comentario,
+  `remove`, fragmento vs inline, rutas inválidas, parser de diagnósticos) y 7 sandbox
+  contra server real `hd-test-cfg-*` (check con TOML roto, clave desconocida, fixture
+  por defecto, roundtrip con reload `applied` + backup real + segunda escritura sin
+  backup, rechazo sin tocar el archivo, y `failed` → rollback).
+
 ## Protocolo (hallazgos vigentes)
 
 1. 1 request por conexión; respuesta `{"id","result"}` o `{"id","error":{code,message}}`.
