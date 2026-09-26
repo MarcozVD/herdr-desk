@@ -496,6 +496,36 @@ latido. Con el canal del store funcionando, el catch-up no hace peticiones
   pide el snapshot cuando el store está callado y **no** lo pide si acaba de
   empujar).
 
+**Cerrado en backend (F1, commit `e303f55`)**: el kick por evento ya está en
+`crates/herdr-core/src/events.rs` y la ráfaga coalesce (50 eventos → 2 refrescos,
+tests de regresión incluidos). El latido de catch-up del frontend deja de ser
+necesario y se retira en la tanda siguiente; el store queda como única fuente de
+verdad y el ping de salud se mantiene solo para detectar la caída del server.
+
+## 6quater. Panel de agentes y estados (F2a / T2.1, T2.4)
+
+- **Orden y filtro** (`36b7bcb`, `ddbeab9`): el panel de agentes agrupa por
+  workspace/tab con orden estable (persistido) y filtro por texto/estado; las
+  filas salen de la config (`rows_by_agent`, `$name`) y respetan el `row_gap`.
+- **Glow por estado** (`051e361`): cada marco lleva un rim del color del estado
+  (`working`/`blocked`/`done`/`unknown`) mediante `::after` con `data-status`, sin
+  `box-shadow` ni `filter` animados y con `prefers-reduced-motion` respetado;
+  `unknown` deja el rim en opacidad 0.
+- **Rollups** (`AgentRollup.svelte`): punto + conteo por estado, peor estado
+  calculado si falta el del backend, sin chip cuando no hay bloqueados y sin
+  `backdrop-filter` (rendimiento en listas largas).
+- **Conteo de bloqueados → overlay** (`src/lib/agents/taskbarOverlay.ts`): el
+  frontend envía `taskbar_overlay` con el número de bloqueados (0 → `null` para
+  quitar la insignia) y no repite la llamada si el valor no cambia; si el command
+  no existe en el backend avisa una sola vez.
+- Tokens: `$name` (nombre del agente) y `state_labels` (rótulo por estado) para no
+  duplicar número y etiqueta («1 bloqueado», singular incluido).
+- Tests: `paneGlow.test.ts` (6), `AgentRollup.test.ts` (4),
+  `taskbarOverlay.test.ts` (3), `agents.spec.ts` (6) y `agent-state.spec.ts` (3) en
+  e2e; suite completa 81 tests en 13 specs. Build 506,82 kB min (139,60 gzip),
+  dentro del presupuesto de ≤ 600 KB.
+
+
 ### Validación en vivo de esta ronda (ventana real + API del pane)
 
 La ventana se captura con `CopyFromScreen` y cada acción se contrasta contra la
