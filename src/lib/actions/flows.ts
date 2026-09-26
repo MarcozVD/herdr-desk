@@ -331,6 +331,8 @@ export const flows = {
   /* ---- Contexto ---- */
 
   openWorkspaceMenu(event: MouseEvent, workspaceId: string): void {
+    // Sin esto el WebView2 abriría su propio menú encima del nuestro.
+    event.preventDefault();
     ui.openContextMenu({
       x: event.clientX,
       y: event.clientY,
@@ -354,6 +356,8 @@ export const flows = {
   },
 
   openTabMenu(event: MouseEvent, tabId: string): void {
+    // Sin esto el WebView2 abriría su propio menú encima del nuestro.
+    event.preventDefault();
     ui.openContextMenu({
       x: event.clientX,
       y: event.clientY,
@@ -370,6 +374,8 @@ export const flows = {
   },
 
   openPaneMenu(event: MouseEvent, paneId: string): void {
+    // Sin esto el WebView2 abriría su propio menú encima del nuestro.
+    event.preventDefault();
     ui.openContextMenu({
       x: event.clientX,
       y: event.clientY,

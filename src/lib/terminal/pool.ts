@@ -34,6 +34,7 @@ import { parseApiError } from '../herdr/errors';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { settings } from '../stores/settings.svelte';
 import { FrameWriter, binaryStringToBase64, decodeCloseReason, decodeFrame } from './frames';
+import { terminalOptions, type TerminalFont } from './font';
 
 export type BridgeState =
   'idle' | 'opening' | 'open' | 'closing' | 'reconnecting' | 'closed' | 'error';
@@ -160,9 +161,9 @@ export class TerminalPool {
       scrollback: 0,
       allowTransparency: false,
       allowProposedApi: true,
-      fontFamily: 'var(--font-mono)',
-      fontSize: 13,
-      lineHeight: 1.2,
+      // La familia la resuelve `lib/terminal/font.ts` (backend o fallback local):
+      // xterm NO resuelve `var(--font-mono)`, se quedaba en la mono del WebView2.
+      ...terminalOptions(),
       cursorBlink: true,
       cursorStyle: 'bar',
       convertEol: false,
@@ -359,6 +360,54 @@ export class TerminalPool {
     const entry = this.#entries.get(paneId);
     if (!entry || entry.bridgeId === null) return;
     void terminalResize(entry.bridgeId, cols, rows).catch(() => undefined);
+  }
+
+  /**
+   * Aplica un preset de tipografía a TODAS las instancias vivas (incluidas las
+   * del LRU): xterm recalcula el tamaño de celda al cambiar la fuente, así que
+   * hay que volver a hacer `fit` y avisar del nuevo tamaño al bridge. La rejilla
+   * se descuadra si no se reajusta (las celdas viejas ya no valen).
+   */
+  applyFont(font: TerminalFont): void {
+    const options = terminalOptions(font);
+    for (const entry of this.#entries.values()) {
+      if (
+        entry.terminal.options.fontFamily === options.fontFamily &&
+        entry.terminal.options.fontSize === options.fontSize &&
+        entry.terminal.options.lineHeight === options.lineHeight
+      ) {
+        continue;
+      }
+      entry.terminal.options.fontFamily = options.fontFamily;
+      entry.terminal.options.fontSize = options.fontSize;
+      entry.terminal.options.lineHeight = options.lineHeight;
+      this.#refit(entry);
+    }
+  }
+
+  /**
+   * Rehace el `fit` de todas las instancias y avisa del tamaño al bridge si
+   * cambió. Se usa cuando la fuente real del sistema ya está cargada (las celdas
+   * se midieron antes con la de reserva).
+   */
+  refitAll(): void {
+    for (const entry of this.#entries.values()) this.#refit(entry);
+  }
+
+  #refit(entry: TerminalEntry): void {
+    const previous = { cols: entry.terminal.cols, rows: entry.terminal.rows };
+    try {
+      entry.fit.fit();
+    } catch {
+      // El contenedor todavía no tiene tamaño (o el pane está oculto): el
+      // ResizeObserver del pane volverá a intentarlo.
+      return;
+    }
+    if (entry.bridgeId === null) return;
+    if (entry.terminal.cols === previous.cols && entry.terminal.rows === previous.rows) return;
+    void terminalResize(entry.bridgeId, entry.terminal.cols, entry.terminal.rows).catch(
+      () => undefined,
+    );
   }
 
   scroll(paneId: string, direction: 'up' | 'down', lines: number): void {

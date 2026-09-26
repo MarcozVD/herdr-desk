@@ -284,3 +284,14 @@ export async function terminalClose(bridgeId: number): Promise<void> {
 export async function uiReady(): Promise<void> {
   await invoke('ui_ready');
 }
+
+/**
+ * `gui_defaults`: defaults de la GUI resueltos por el backend para esta máquina
+ * (familia de la fuente de la terminal, tamaño por defecto…). Es un command en
+ * curso: si aún no está registrado devuelve `kind: 'missing'` y el consumidor
+ * aplica su fallback local (`lib/terminal/font.ts`). El payload se interpreta de
+ * forma tolerante porque el contrato todavía no está congelado.
+ */
+export async function guiDefaults(): Promise<CommandOutcome<unknown>> {
+  return optionalCommand<unknown>('gui_defaults');
+}

@@ -201,6 +201,79 @@ se mueve).
 2. `spring.set()` lee internamente `spring.current`, así que sin `untrack` el efecto se reejecuta
    en cada tick del spring, lo reinicia y el valor oscila sin asentarse.
 
+## 6ter. Tipografía de la terminal y menú de contexto nativo (reporte en vivo)
+
+### (a) La terminal no usaba el token `--font-mono`
+
+xterm.js **no resuelve variables CSS**: `new Terminal({ fontFamily: 'var(--font-mono)' })` es una
+lista de familias inválida para el canvas, así que el WebView2 caía en su monoespaciada por
+defecto (y el token de `tokens.css` nunca llegaba). Además el `fontSize: 13` estaba a pelo.
+
+Solución (`lib/terminal/font.ts`, `lib/terminal/pool.ts`, `main.ts`):
+
+- **`gui_defaults`** (backend, `docs/03`): devuelve la familia resuelta en la máquina por cascada
+  (`Cascadia Code` → `Cascadia Mono` → `Consolas`), el tamaño (`terminal_font_size_px`) y el
+  interlineado. El cliente lo pide al arrancar; si el command todavía no existe (`kind: 'missing'`),
+  falla o revienta, se aplica el **fallback local** con la misma pila y los mismos valores, así que
+  la app nunca se rompe ni se queda sin fuente.
+- **Pila real**: `'Cascadia Code', 'Cascadia Mono', Consolas, monospace` (la familia del backend va
+  delante; el resto son red de seguridad y no se repiten). Nada de `var(...)`.
+- **Tamaño e interlineado juntos**: `terminalOptions(font)` deriva las tres opciones del mismo
+  preset (13 px / 1.0, los valores del backend).
+- **Celdas cuadradas**: al llegar el preset se repinta lo ya abierto (`pool.applyFont`) y, con las
+  fuentes del sistema cargadas (`whenFontsReady()` → `document.fonts.ready`), se rehace el `fit` de
+  todas las instancias (`pool.refitAll`) avisando del nuevo tamaño al bridge si cambió. Sin esto,
+  xterm mide la celda con la fuente de reserva y la rejilla queda descuadrada.
+- La tipografía de la GUI (**Geist**) no cambia.
+
+Medido en navegador real (`tests/e2e/font-menu.spec.ts`, imprime `[hd-font]`):
+
+```json
+{"fontFamily":"'Cascadia Code', 'Cascadia Mono', Consolas, monospace","fontSize":13,"lineHeight":1,
+ "cellWidth":7,"anchos":[{"familia":"'Cascadia Code'","ancho":7.62,"disponible":true},
+                          {"familia":"'Cascadia Mono'","ancho":7.62,"disponible":true},
+                          {"familia":"Consolas","ancho":7.15,"disponible":true},
+                          {"familia":"monospace","ancho":7.15,"disponible":true}]}
+```
+
+La primera familia de la pila existe en la máquina (es la que pinta el navegador) y el ancho de
+celda que calcula xterm cae en su rango.
+
+### (b) El menú de contexto del WebView2
+
+Los menús propios (terminal, paneles, pestañas, espacios) se abrían, pero el nativo seguía
+apareciendo en cualquier otra zona: `openPaneMenu`/`openTabMenu`/`openWorkspaceMenu` no llamaban a
+`preventDefault`.
+
+- **Supresión global** (`lib/ui/context-menu.ts`, instalada en el `onMount` de `App.svelte`): un
+  único listener en fase de **captura** sobre `window` que solo hace `preventDefault`. Corre antes
+  que los handlers propios y no corta la propagación, así que los menús de la app se abren igual.
+- **`preventDefault` también en los tres handlers** de `flows.ts` (defensa en profundidad).
+- **No se toca** `mousedown`/`mouseup`/`auxclick`/`selectstart`: el pegado con botón central, la
+  selección de texto del terminal y los atajos `Ctrl+C`/`Ctrl+V` siguen igual.
+
+Verificado en la ventana real (sesión `herdr-desk-dev`): clic derecho dentro de un panel → menú
+propio con «Copiar/Pegar» (estilo glass, en español) y sin menú del navegador; clic derecho en la
+barra de estado (zona sin menú propio) → **ningún** menú.
+
+### Tests
+
+28 unit nuevos (`font.test.ts` 15, `pool-font.test.ts` 5, `context-menu.test.ts` 8) y 2 e2e
+(`font-menu.spec.ts`). El arnés e2e responde a `gui_defaults` con el payload real del backend.
+
+De paso se arreglaron dos carreras preexistentes de `reconnect.spec.ts` (no relacionadas con este
+cambio): el estado «reintentando» dura ~250 ms y el polling lo perdía, así que ahora se comprueba
+sobre una historia del DOM registrada desde el arranque; y el conteo exacto de `terminal_open`
+tras una caída competía con el temporizador de gracia (se fija la gracia larga en el test y se
+acota el conteo a 1–2: sin tormenta de reattaches).
+
+### Pendiente en el plan maestro (no editado)
+
+El plan asume el enfoque roto en dos sitios: **línea 143** (`--font-mono: "JetBrains Mono Variable",
+"Cascadia Mono", monospace;` como fuente de la terminal) y **línea 588**
+(`new Terminal({ …, fontFamily: 'var(--font-mono)', … })`). Además la tabla del §5 no incluye
+`gui_defaults` (ya documentado por el backend en `docs/03`). Lo anota el usuario.
+
 ## 7. Huecos del contrato §5 encontrados
 
 1. `session_current` no está en el §5 y la UI lo usa para el nombre de la sesión: hoy cae a
@@ -298,13 +371,13 @@ pnpm install            OK
 pnpm format:check       OK
 pnpm lint               OK (0 problemas)
 pnpm check              svelte-check: 0 errores, 0 warnings
-pnpm test               137 tests en 11 archivos (frames, errores, cliente + clasificación de
+pnpm test               165 tests en 14 archivos (frames, errores, cliente + clasificación de
                         errores de command, codegen, reconcile, snapshot, árbol de splits,
-                        parser de atajos, keymap + los 29 nuevos: presets de animación y
-                        CardSplitAccordion en jsdom)
-pnpm e2e                68 pruebas en 9 specs (shell, shell F1 con regresión de layout,
+                        parser de atajos, keymap, presets de animación, CardSplitAccordion en
+                        jsdom + los 28 de tipografía de terminal y menú de contexto)
+pnpm e2e                70 pruebas en 10 specs (shell, shell F1 con regresión de layout,
                         terminal, foco, layout, acciones, atajos, sesiones, reconexión y
-                        caída/vuelta del servidor)
+                        caída/vuelta del servidor + font-menu)
 pnpm build              dist/assets/index-*.js 491,46 kB min (134,73 kB gzip) + CSS 35,05 kB
                         → dentro del presupuesto (§4: ≤ 600 KB con xterm)
 ```

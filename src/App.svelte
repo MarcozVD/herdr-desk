@@ -21,6 +21,7 @@
   import { session } from './lib/stores/session.svelte';
   import { settings } from './lib/stores/settings.svelte';
   import { ui } from './lib/stores/ui.svelte';
+  import { suppressNativeContextMenu } from './lib/ui/context-menu';
   import ConfirmDialog from './lib/ui/ConfirmDialog.svelte';
   import ContextMenu from './lib/ui/ContextMenu.svelte';
   import PromptDialog from './lib/ui/PromptDialog.svelte';
@@ -147,7 +148,13 @@
 
   onMount(() => {
     window.addEventListener('keydown', onKeydown, true);
-    return () => window.removeEventListener('keydown', onKeydown, true);
+    // El menú de contexto nativo del WebView2 no se quiere en ninguna zona: los
+    // menús propios (terminal, paneles, pestañas, espacios) siguen abriéndose.
+    const unsuppress = suppressNativeContextMenu(window);
+    return () => {
+      window.removeEventListener('keydown', onKeydown, true);
+      unsuppress();
+    };
   });
 </script>
 

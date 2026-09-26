@@ -10,6 +10,7 @@ import { keymap } from './lib/keys/keymap';
 import { session } from './lib/stores/session.svelte';
 import { settings } from './lib/stores/settings.svelte';
 import { ui } from './lib/stores/ui.svelte';
+import { loadTerminalFont, whenFontsReady } from './lib/terminal/font';
 import { pool } from './lib/terminal/pool';
 
 declare global {
@@ -43,6 +44,17 @@ async function boot(): Promise<void> {
   });
 
   void session.bootstrap();
+
+  // Tipografía de la terminal: la familia la resuelve el backend (`gui_defaults`,
+  // la misma que usa Windows Terminal) con fallback local. Cuando llega se
+  // repinta lo ya abierto y, con las fuentes del sistema cargadas, se rehace el
+  // `fit` para que las celdas queden cuadradas.
+  void (async () => {
+    const font = await loadTerminalFont();
+    pool.applyFont(font);
+    await whenFontsReady();
+    pool.refitAll();
+  })();
 
   // `ui_ready` hace window.show() en el backend y cierra el cronómetro de
   // arranque: se manda con el primer frame ya pintado.

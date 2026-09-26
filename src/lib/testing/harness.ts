@@ -288,6 +288,13 @@ export function installHarness(): void {
       }
       case 'ui_ready':
         return null;
+      case 'gui_defaults':
+        // Mismo payload que el backend (src-tauri/src/commands/system.rs).
+        return {
+          terminal_font_family: 'Cascadia Code',
+          terminal_font_size_px: 13,
+          terminal_line_height: 1,
+        };
       default:
         return null;
     }
