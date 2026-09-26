@@ -1,5 +1,8 @@
 pub mod commands;
+pub mod overlay;
 pub mod state;
+pub mod toast_identity;
+pub mod tray;
 mod window;
 
 #[cfg(all(test, feature = "sandbox"))]
@@ -71,6 +74,12 @@ pub fn run() {
                 }
             });
 
+            // identidad de toasts (AUMID) y bandeja del sistema
+            toast_identity::setup_toast_identity();
+            if let Err(err) = tray::setup_tray(app.handle()) {
+                tracing::warn!("no se pudo iniciar el tray: {err}");
+            }
+
             // watcher: respawn de bridges + conexión S (make-before-break, debounce 100 ms)
             let watcher_state = state_arc.clone();
             tauri::async_runtime::spawn(async move {
@@ -113,6 +122,9 @@ pub fn run() {
             commands::system::gui_defaults,
             commands::cli_run::cli_run,
             commands::cli_run::agent_kinds,
+            tray::tray_update,
+            overlay::taskbar_overlay,
+            toast_identity::toast_identity,
             commands::terminal::terminal_open,
             commands::terminal::terminal_input,
             commands::terminal::terminal_input_bytes,

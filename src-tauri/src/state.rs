@@ -21,6 +21,8 @@ pub struct AppState {
     /// Suscripción al store activa (solo la última vive; el re-suscribir cancela la
     /// anterior de verdad: la tarea termina y sus mensajes se descartan).
     pub store_subs: Mutex<StoreSubs>,
+    /// Estado del tray (sesiones + agentes), actualizado por el frontend y los eventos.
+    pub tray: Mutex<crate::tray::TrayState>,
 }
 
 /// Registro de la suscripcion al store vigente.
@@ -59,6 +61,7 @@ impl AppState {
             bridges: Mutex::new(BridgeRegistry::new()),
             event_channels: Mutex::new(Vec::new()),
             store_subs: Mutex::new(StoreSubs::new()),
+            tray: Mutex::new(crate::tray::TrayState::default()),
         }
     }
 
@@ -94,6 +97,33 @@ impl AppState {
             .lock()
             .unwrap()
             .retain(|c| c.send(payload.clone()).is_ok());
+
+        // el tray sigue los cambios de estado de agentes por la conexión S
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line)
+            && value["event"] == "pane.agent_status_changed"
+        {
+            let agent = crate::tray::TrayAgent {
+                pane_id: value["data"]["pane_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                agent: value["data"]["agent"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                display: value["data"]["display_agent"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                status: value["data"]["agent_status"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+            };
+            if !agent.pane_id.is_empty() {
+                self.tray.lock().unwrap().upsert_agent(agent);
+            }
+        }
     }
 }
 
