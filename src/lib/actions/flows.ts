@@ -28,6 +28,29 @@ import { pool } from '../terminal/pool';
 
 export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 
+/**
+ * Panel, tab y espacio de las acciones de la GUI: manda el foco LOCAL (lo que el
+ * usuario ve), pero solo si ese id existe de verdad en la sesión. Un id viejo
+ * —o un tab guardado por error como panel— no puede silenciar la acción ni
+ * actuar sobre un panel de una pestaña que no se está viendo.
+ */
+export function actionTarget(): {
+  paneId: string | null;
+  tabId: string | null;
+  workspaceId: string | null;
+} {
+  return ui.actionTarget({
+    server: {
+      paneId: session.focusedPaneId,
+      tabId: session.focusedTabId,
+      workspaceId: session.focusedWorkspaceId,
+    },
+    panes: session.panes.map((pane) => pane.pane_id),
+    tabs: session.tabs.map((tab) => tab.tab_id),
+    workspaces: session.workspaces.map((workspace) => workspace.workspace_id),
+  });
+}
+
 function fail(raw: unknown, method?: string): void {
   ui.notify(
     describeApiError(raw, { method, session: session.sessionName ?? es.app.sessionUnknown }),
@@ -106,13 +129,40 @@ export const flows = {
     }
   },
 
+  /**
+   * Cambia de espacio en la GUI (R11: local por defecto; con «Sincronizar foco
+   * con TUI» también se lo pide a herdr).
+   *
+   * El foco local tiene que quedar COMPLETO y con ids reales: espacio, tab (el
+   * último visitado de ese espacio, si no el primero) y un panel de ese tab. Con
+   * un id inventado la vista no seguía el clic y las acciones apuntaban a un
+   * panel inexistente.
+   */
   focusWorkspace(workspaceId: string): void {
-    // R11: foco local por defecto; con «Sincronizar foco con TUI» además se pide a herdr.
     ui.focusWorkspaceLocally(workspaceId);
-    const firstTab = session.tabs.find((tab) => tab.workspace_id === workspaceId);
-    if (firstTab) ui.focusPaneLocally(firstTab.tab_id);
+    const tabs = session.tabs.filter((tab) => tab.workspace_id === workspaceId);
+    const remembered = ui.tabByWorkspace[workspaceId];
+    const activeTabId = session.workspaces.find(
+      (item) => item.workspace_id === workspaceId,
+    )?.active_tab_id;
+    const tab =
+      tabs.find((item) => item.tab_id === remembered) ??
+      tabs.find((item) => item.tab_id === activeTabId) ??
+      tabs[0] ??
+      null;
+    ui.focusTabLocally(tab?.tab_id ?? null, workspaceId);
+    const paneId = tab ? this.firstPaneOfTab(tab.tab_id) : null;
+    if (paneId) ui.focusPaneLocally(paneId);
     if (settings.values.sync_focus_with_tui)
       void workspaceApi.focus(workspaceId).catch(() => undefined);
+  },
+
+  /** Primer panel de un tab: el del árbol exportado o el que trae el snapshot. */
+  firstPaneOfTab(tabId: string): string | null {
+    const exported = session.layouts.find((item) => item.tab_id === tabId);
+    const fromLayout = exported?.panes.find((pane) => pane.pane_id)?.pane_id ?? null;
+    if (fromLayout) return fromLayout;
+    return session.panes.find((pane) => pane.tab_id === tabId)?.pane_id ?? null;
   },
 
   async moveWorkspace(workspaceId: string, delta: number): Promise<void> {
@@ -202,6 +252,10 @@ export const flows = {
   },
 
   async focusTab(tabId: string): Promise<void> {
+    // El foco local manda en la vista: se marca el tab (y su espacio) ya, y el
+    // backend además mueve el foco del server (que es de donde cuelga el árbol).
+    const tab = session.tabs.find((item) => item.tab_id === tabId);
+    if (tab) ui.focusTabLocally(tabId, tab.workspace_id);
     try {
       await tabApi.focus(tabId);
     } catch (raw) {
@@ -225,7 +279,7 @@ export const flows = {
   /* ---- Paneles ---- */
 
   async splitPane(direction: 'right' | 'down', paneId?: string | null): Promise<void> {
-    const target = paneId ?? session.focusedPaneId;
+    const target = paneId ?? actionTarget().paneId;
     try {
       await paneApi.split({
         direction,
@@ -285,6 +339,11 @@ export const flows = {
 
   /** Foco de panel: local por defecto; con sincronización también en herdr. */
   focusPane(paneId: string): void {
+    const pane = session.panes.find((item) => item.pane_id === paneId);
+    if (pane) {
+      ui.focusTabLocally(pane.tab_id, pane.workspace_id);
+      ui.focusWorkspaceLocally(pane.workspace_id);
+    }
     ui.focusPaneLocally(paneId);
     if (settings.values.sync_focus_with_tui) void paneApi.focus(paneId).catch(() => undefined);
   },
@@ -292,14 +351,14 @@ export const flows = {
   async focusPaneDirection(direction: PaneDirection): Promise<void> {
     if (settings.values.sync_focus_with_tui) {
       try {
-        await paneApi.focusDirection(direction, session.focusedPaneId);
+        await paneApi.focusDirection(direction, actionTarget().paneId);
         return;
       } catch (raw) {
         fail(raw, 'pane.focus_direction');
         return;
       }
     }
-    const current = session.focusedPaneId;
+    const current = actionTarget().paneId;
     if (!current) return;
     const neighbor = neighborPane(layout.tree, current, direction);
     if (neighbor?.paneId) ui.focusPaneLocally(neighbor.paneId);
@@ -309,7 +368,10 @@ export const flows = {
   cyclePane(delta: number): void {
     const panes = (layout.tree ? findPane(layout.tree, '') : null) ?? null;
     void panes;
-    const ids = session.panesOfFocusedTab.map((pane) => pane.pane_id);
+    const visibleTab = actionTarget().tabId;
+    const ids = session.panes
+      .filter((pane) => pane.tab_id === visibleTab)
+      .map((pane) => pane.pane_id);
     if (ids.length === 0) return;
     const index = ids.indexOf(session.focusedPaneId ?? '');
     const next = ids[(index + delta + ids.length) % ids.length];
@@ -424,8 +486,8 @@ export const flows = {
 
   /** Siguiente/anterior agente en la cola de atención (atajos de la TUI). */
   nextAgent(step: 1 | -1): void {
-    // El foco que el usuario ve: el local manda sobre el del snapshot.
-    const current = ui.localFocusedPaneId ?? session.focusedPaneId;
+    // El foco que el usuario ve: el local manda sobre el del snapshot (validado).
+    const current = actionTarget().paneId;
     const target = cycleAgent(session.agentsByPriority, current, step);
     if (target) this.focusAgent(target.pane_id);
   },
@@ -561,7 +623,7 @@ export const flows = {
    * diálogo apuntando al panel recién creado (que `pane.split` devuelve).
    */
   async startAgentInNewSplit(direction: SplitDirection): Promise<void> {
-    const paneId = ui.localFocusedPaneId ?? session.focusedPaneId;
+    const paneId = actionTarget().paneId;
     if (!paneId) return;
     try {
       const created = await paneApi.split({ direction, target_pane_id: paneId, focus: true });

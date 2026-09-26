@@ -16,12 +16,16 @@
   import { session } from '../../lib/stores/session.svelte';
   import { settings } from '../../lib/stores/settings.svelte';
   import { ui } from '../../lib/stores/ui.svelte';
+  import { actionTarget } from '../../lib/actions/flows';
 
   let query = $state('');
   let activeIndex = $state(0);
   let listEl = $state<HTMLDivElement | undefined>(undefined);
   let inputEl = $state<HTMLInputElement | undefined>(undefined);
 
+  // El contexto usa el foco LOCAL validado: los comandos «enfocar/renombrar el
+  // panel actual» tienen que apuntar al panel que el usuario está viendo.
+  const target = $derived(actionTarget());
   const commands = $derived(
     withShortcuts(
       buildCommands({
@@ -29,9 +33,9 @@
         tabs: session.tabs,
         panes: session.panes,
         agents: session.agents,
-        focusedPaneId: session.focusedPaneId,
-        focusedTabId: session.focusedTabId,
-        focusedWorkspaceId: session.focusedWorkspaceId,
+        focusedPaneId: target.paneId,
+        focusedTabId: target.tabId,
+        focusedWorkspaceId: target.workspaceId,
       }),
     ),
   );

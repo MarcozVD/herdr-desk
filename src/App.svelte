@@ -37,7 +37,26 @@
   import TextViewer from './lib/ui/TextViewer.svelte';
   import WorkspaceDialog from './lib/ui/WorkspaceDialog.svelte';
 
-  const tree = $derived(layout.zoomed ? zoomedTree(layout.tree, session.focusedPaneId) : layout.tree);
+  /**
+   * Tab que se está viendo: manda el foco local de la GUI (R11) y, si no hay,
+   * el del servidor. Es lo que hace que un clic en la barra de espacios o de
+   * pestañas se vea de verdad.
+   */
+  const visibleTabId = $derived(ui.localFocusedTabId ?? session.focusedTabId);
+  const visiblePaneId = $derived(ui.localFocusedPaneId ?? session.focusedPaneId);
+  const tree = $derived(layout.zoomed ? zoomedTree(layout.tree, visiblePaneId) : layout.tree);
+
+  // Si el SERVIDOR mueve el foco a otro tab (lo movió la TUI, no la GUI) se
+  // adopta: el foco local manda solo hasta que el server diga otra cosa.
+  let lastServerTab: string | null = null;
+  $effect(() => {
+    const serverTab = session.focusedTabId;
+    if (serverTab === lastServerTab) return;
+    const previous = lastServerTab;
+    lastServerTab = serverTab;
+    if (previous === null) return;
+    if (serverTab !== null && serverTab !== ui.localFocusedTabId) ui.clearLocalTab();
+  });
 
   // Un panel que ya no existe en la sesión suelta su bridge: cerrar un panel SÍ
   // cierra (ocultar —cambiar de pestaña— no). Solo con la sesión en línea: un
@@ -54,7 +73,7 @@
   // El árbol del tab visible se pide al entrar al tab y se vuelve a pedir cuando
   // el backend publica un snapshot nuevo (`revision` sube con cada refresco).
   $effect(() => {
-    const tabId = session.focusedTabId;
+    const tabId = visibleTabId;
     const revision = session.revision;
     layout.schedule(tabId, revision);
   });
@@ -62,7 +81,7 @@
   // Al (re)conectar se rehace el árbol: los paneles visibles reabren sus bridges.
   $effect(() => {
     const epoch = session.connectionEpoch;
-    if (epoch > 0) void layout.refreshNow(session.focusedTabId);
+    if (epoch > 0) void layout.refreshNow(visibleTabId);
   });
 
   $effect(() => {
@@ -124,6 +143,9 @@
     if (gui) {
       event.preventDefault();
       event.stopPropagation();
+      // Un atajo de la GUI sale del modo prefix: si no, la siguiente tecla se
+      // interpretaría como combinación con prefijo (y ejecutaría otra acción).
+      ui.prefixActive = false;
       void runAction(gui);
       return;
     }

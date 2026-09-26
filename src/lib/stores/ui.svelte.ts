@@ -78,7 +78,13 @@ class UiStore {
 
   /** Foco local: lo que la GUI considera enfocado (no toca herdr, R11). */
   localFocusedWorkspaceId = $state<string | null>(null);
+  localFocusedTabId = $state<string | null>(null);
   localFocusedPaneId = $state<string | null>(null);
+  /**
+   * Último tab visitado de cada espacio. Al volver a un espacio se muestra el
+   * que estabas viendo, no siempre el primero.
+   */
+  tabByWorkspace = $state<Record<string, string>>({});
   /** Historial de paneles para `last_pane` (T3.1 lo usará). */
   paneHistory = $state<string[]>([]);
 
@@ -136,6 +142,43 @@ class UiStore {
     this.localFocusedWorkspaceId = workspaceId;
   }
 
+  focusTabLocally(tabId: string | null, workspaceId?: string): void {
+    this.localFocusedTabId = tabId;
+    if (tabId && workspaceId)
+      this.tabByWorkspace = { ...this.tabByWorkspace, [workspaceId]: tabId };
+  }
+
+  clearLocalTab(): void {
+    this.localFocusedTabId = null;
+  }
+
+  /** Recuerda el tab de un espacio sin cambiar el foco (al pintar el árbol). */
+  rememberTab(workspaceId: string, tabId: string): void {
+    if (this.tabByWorkspace[workspaceId] === tabId) return;
+    this.tabByWorkspace = { ...this.tabByWorkspace, [workspaceId]: tabId };
+  }
+
+  /**
+   * Panel y tab a los que apuntan las acciones de la GUI. Manda el foco local,
+   * pero SOLO si ese id sigue existiendo de verdad: un id viejo (o un tab
+   * guardado por error como panel) no puede silenciar la acción; en ese caso se
+   * usa el del servidor.
+   */
+  actionTarget(input: {
+    server: { paneId: string | null; tabId: string | null; workspaceId: string | null };
+    panes: readonly string[];
+    tabs: readonly string[];
+    workspaces: readonly string[];
+  }): { paneId: string | null; tabId: string | null; workspaceId: string | null } {
+    const pick = (local: string | null, known: readonly string[], fallback: string | null) =>
+      local !== null && known.includes(local) ? local : fallback;
+    return {
+      paneId: pick(this.localFocusedPaneId, input.panes, input.server.paneId),
+      tabId: pick(this.localFocusedTabId, input.tabs, input.server.tabId),
+      workspaceId: pick(this.localFocusedWorkspaceId, input.workspaces, input.server.workspaceId),
+    };
+  }
+
   focusPaneLocally(paneId: string): void {
     if (this.localFocusedPaneId && this.localFocusedPaneId !== paneId) {
       this.paneHistory = [
@@ -157,8 +200,10 @@ class UiStore {
    */
   resetSessionState(): void {
     this.localFocusedWorkspaceId = null;
+    this.localFocusedTabId = null;
     this.localFocusedPaneId = null;
     this.paneHistory = [];
+    this.tabByWorkspace = {};
     // Un visor o un diálogo abiertos apuntan a la sesión vieja: se cierran.
     this.viewer = null;
     this.agentPromptTarget = null;

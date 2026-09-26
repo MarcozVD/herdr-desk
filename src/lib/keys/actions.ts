@@ -4,8 +4,7 @@
 import { es } from '../i18n/es';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-import { flows } from '../actions/flows';
-import { session } from '../stores/session.svelte';
+import { actionTarget, flows } from '../actions/flows';
 import { ui } from '../stores/ui.svelte';
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -108,9 +107,10 @@ export async function runAction(action: string): Promise<void> {
     return;
   }
 
-  const focusedPane = session.focusedPaneId;
-  const focusedTab = session.focusedTabId;
-  const focusedWorkspace = session.focusedWorkspaceId;
+  // Lo que el usuario VE manda: el foco local validado contra la sesión (si el
+  // id no existe, el del servidor). Con `session.*` a pelo, tras cambiar de
+  // pestaña el atajo podía apuntar a un panel que ya no estaba a la vista.
+  const { paneId: focusedPane, tabId: focusedTab, workspaceId: focusedWorkspace } = actionTarget();
 
   switch (action) {
     case 'help':
