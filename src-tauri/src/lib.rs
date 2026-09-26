@@ -12,6 +12,8 @@ mod config_sandbox_tests;
 #[cfg(all(test, feature = "sandbox"))]
 mod sandbox_guard;
 #[cfg(all(test, feature = "sandbox"))]
+mod server_sandbox_tests;
+#[cfg(all(test, feature = "sandbox"))]
 mod session_switch_tests;
 #[cfg(all(test, feature = "sandbox"))]
 mod terminal_cycle_tests;
@@ -134,6 +136,12 @@ pub fn run() {
             commands::worktrees::worktree_create,
             commands::worktrees::worktree_open,
             commands::worktrees::worktree_remove,
+            commands::server::server_status,
+            commands::server::agent_manifests,
+            commands::server::agent_manifests_reload,
+            commands::integrations::integration_status,
+            commands::integrations::integration_install,
+            commands::integrations::integration_uninstall,
             tray::tray_update,
             overlay::taskbar_overlay,
             toast_identity::toast_identity,
