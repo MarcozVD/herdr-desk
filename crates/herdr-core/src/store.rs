@@ -1,5 +1,6 @@
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub type BoxFut<T> = Pin<Box<dyn Future<Output = T> + Send>>;
 pub type SnapshotRaw = Arc<str>;
@@ -12,6 +13,8 @@ pub struct Store {
     tx: tokio::sync::watch::Sender<SnapshotRaw>,
     rx: tokio::sync::watch::Receiver<SnapshotRaw>,
     kick: std::sync::Arc<tokio::sync::Notify>,
+    closed: Arc<AtomicBool>,
+    close_notify: Arc<tokio::sync::Notify>,
 }
 
 impl Default for Store {
@@ -24,16 +27,20 @@ impl Store {
     /// Creates the store without spawning anything, for hosts that manage their own runtime.
     pub fn new() -> Self {
         let (tx, rx) = tokio::sync::watch::channel(SnapshotRaw::from("{}"));
-        let kick = std::sync::Arc::new(tokio::sync::Notify::new());
-        Self { tx, rx, kick }
+        Self {
+            tx,
+            rx,
+            kick: Arc::new(tokio::sync::Notify::new()),
+            closed: Arc::new(AtomicBool::new(false)),
+            close_notify: Arc::new(tokio::sync::Notify::new()),
+        }
     }
 
     /// Spawns the refresher task: at most one in-flight refresh; extra kicks coalesce.
     pub fn spawn<S: SnapshotSource>(source: S) -> Self {
         let store = Self::new();
-        let kick = store.kick.clone();
-        let tx = store.tx.clone();
-        tokio::spawn(refresher(source, tx, kick));
+        let task = store.refresher_task(source);
+        tokio::spawn(task);
         store
     }
 
@@ -42,9 +49,24 @@ impl Store {
         &self,
         source: S,
     ) -> impl Future<Output = ()> + Send + 'static {
-        let kick = self.kick.clone();
-        let tx = self.tx.clone();
-        refresher(source, tx, kick)
+        refresher(
+            source,
+            self.tx.clone(),
+            self.kick.clone(),
+            self.closed.clone(),
+            self.close_notify.clone(),
+        )
+    }
+
+    /// Cierra el store: el refresher termina y deja de publicar (usado al cambiar
+    /// de sesion para que el store viejo no haga IO ni pise snapshots nuevos).
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.close_notify.notify_waiters();
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
     }
 
     pub fn snapshot(&self) -> SnapshotRaw {
@@ -68,10 +90,22 @@ async fn refresher<S: SnapshotSource>(
     source: S,
     tx: tokio::sync::watch::Sender<SnapshotRaw>,
     kick: std::sync::Arc<tokio::sync::Notify>,
+    closed: Arc<AtomicBool>,
+    close_notify: Arc<tokio::sync::Notify>,
 ) {
     loop {
+        if closed.load(Ordering::SeqCst) {
+            return;
+        }
         // bootstrap: primer refresh sin esperar kicks (sin eventos no habria snapshot)
-        match source.fetch().await {
+        let fetched = tokio::select! {
+            result = source.fetch() => result,
+            _ = close_notify.notified() => return,
+        };
+        if closed.load(Ordering::SeqCst) {
+            return;
+        }
+        match fetched {
             Ok(raw) => {
                 let current = tx.borrow().clone();
                 if raw != current {
@@ -82,7 +116,10 @@ async fn refresher<S: SnapshotSource>(
                 tracing::warn!("snapshot refresh fallo: {err}");
             }
         }
-        kick.notified().await;
+        tokio::select! {
+            _ = kick.notified() => {}
+            _ = close_notify.notified() => return,
+        }
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
         drain(&kick).await;
     }

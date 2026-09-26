@@ -16,27 +16,51 @@ pub async fn herdr_call(
 }
 
 /// Reenvía el snapshot crudo del store de la sesión ACTIVA. Si el frontend
-/// reconecta (session_connect), debe volver a suscribirse.
+/// reconecta (session_connect), debe volver a suscribirse: la suscripción
+/// anterior se cancela de verdad (su tarea termina y sus mensajes se descartan).
 #[tauri::command]
 pub async fn store_subscribe(
     state: State<'_, std::sync::Arc<AppState>>,
     on_msg: Channel<InvokeResponseBody>,
 ) -> Result<(), ApiError> {
+    subscribe_store(state.inner().clone(), on_msg);
+    Ok(())
+}
+
+/// Lógica testeable de la suscripción al store. Registra la suscripción nueva
+/// (rotando la anterior: su tarea muere por el token de cancelación aunque este
+/// command ya haya devuelto Ok) y lanza la tarea de reenvío.
+pub fn subscribe_store(state: std::sync::Arc<AppState>, on_msg: Channel<InvokeResponseBody>) {
+    let (generation, cancel) = state.store_subs.lock().unwrap().rotate();
     let runtime = state.current();
     let mut rx = runtime.store.watch();
     let _ = on_msg.send(InvokeResponseBody::Json(
         runtime.store.snapshot().to_string(),
     ));
     tauri::async_runtime::spawn(async move {
+        let mut cancel = std::pin::pin!(cancel.notified());
         loop {
-            if rx.changed().await.is_err() {
-                return;
+            tokio::select! {
+                changed = rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    let snap = rx.borrow().clone();
+                    if on_msg
+                        .send(InvokeResponseBody::Json(snap.to_string()))
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+                _ = &mut cancel => {
+                    // suscripcion obsoleta: se cierra de verdad y nada mas sale
+                    tracing::debug!("store subscription gen {generation} cancelada");
+                    return;
+                }
             }
-            let snap = rx.borrow().clone();
-            let _ = on_msg.send(InvokeResponseBody::Json(snap.to_string()));
         }
     });
-    Ok(())
 }
 
 /// Canal de eventos (conexión S + eventos de sesión) para el frontend.

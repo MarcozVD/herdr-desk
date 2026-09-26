@@ -85,6 +85,28 @@ de la máquina. Detectado en esta máquina: `Cascadia Code`.
 FRONTEND (`preventDefault` en el evento `contextmenu` del DOM), no del backend ni de la
 configuración de la ventana. No reintentarlo por el lado de Tauri/ventana.
 
+## Suscripción al store (contrato)
+
+- `store_subscribe(on_msg)`: entrega el snapshot crudo de la sesión activa (primer mensaje
+  inmediato, bootstrap sin esperar eventos) y luego cada cambio coalescido.
+- **Regla de exclusividad**: solo la ÚLTIMA suscripción está activa. Cada
+  `store_subscribe` rota la generación: la tarea anterior recibe un token de cancelación
+  (`StoreSubs::rotate`), **termina de verdad** y sus mensajes se descartan — esto funciona
+  aunque el command ya haya devuelto Ok (el token vive en `AppState`).
+- **Cambio de sesión** (`session_connect`, extensión documentada de §5: la respuesta es
+  `SessionConnected { session }` para que el frontend descarte residuos de la anterior;
+  los params no cambian):
+  1. ping contra la sesión nueva;
+  2. `Store::close()` del store viejo → su refresher termina y deja de publicar/IO;
+  3. release + purga de **TODOS** los bridges de la sesión anterior (registro vacío);
+  4. swap del runtime + cancelación de la suscripción store vieja;
+  5. el store nuevo publica su snapshot inicial propio por el canal nuevo (el frontend
+     re-llama `store_subscribe` y `events_forward`).
+- Un canal obsoleto (suscripción cancelada) no entrega nada más: la tarea muere y el
+  frontend nunca debe mezclar snapshots de dos sesiones por el mismo canal.
+- Tests: `session_switch_tests.rs` (solo la última suscripción entrega y el snapshot es de
+  la sesión nueva; registro vacío y store viejo cerrado tras el switch).
+
 ## Conexión y bootstrap (fix bug en vivo, F1)
 
 - **Refresh inicial del store**: el refresher hace un fetch inmediato al arrancar, ANTES de

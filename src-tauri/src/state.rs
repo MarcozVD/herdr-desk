@@ -18,6 +18,38 @@ pub struct AppState {
     pub runtime: std::sync::RwLock<Arc<Runtime>>,
     pub bridges: Mutex<BridgeRegistry>,
     pub event_channels: Mutex<Vec<Channel<InvokeResponseBody>>>,
+    /// Suscripción al store activa (solo la última vive; el re-suscribir cancela la
+    /// anterior de verdad: la tarea termina y sus mensajes se descartan).
+    pub store_subs: Mutex<StoreSubs>,
+}
+
+/// Registro de la suscripcion al store vigente.
+pub struct StoreSubs {
+    pub generation: u64,
+    pub cancel: Arc<tokio::sync::Notify>,
+}
+
+impl StoreSubs {
+    pub fn new() -> Self {
+        Self {
+            generation: 0,
+            cancel: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// Rota la suscripcion: cancela la anterior y devuelve el token de la nueva.
+    pub fn rotate(&mut self) -> (u64, Arc<tokio::sync::Notify>) {
+        self.generation += 1;
+        let prev = std::mem::replace(&mut self.cancel, Arc::new(tokio::sync::Notify::new()));
+        prev.notify_waiters();
+        (self.generation, self.cancel.clone())
+    }
+}
+
+impl Default for StoreSubs {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AppState {
@@ -26,6 +58,7 @@ impl AppState {
             runtime: std::sync::RwLock::new(Arc::new(runtime)),
             bridges: Mutex::new(BridgeRegistry::new()),
             event_channels: Mutex::new(Vec::new()),
+            store_subs: Mutex::new(StoreSubs::new()),
         }
     }
 
@@ -33,14 +66,22 @@ impl AppState {
         self.runtime.read().unwrap().clone()
     }
 
+    /// Cambia de sesion: cierra el store viejo (refresher y suscripciones mueren),
+    /// libera y limpia TODOS los bridges de la sesion anterior.
     pub fn swap(&self, runtime: Runtime) {
-        *self.runtime.write().unwrap() = Arc::new(runtime);
-        // los bridges de la sesión anterior quedan sin sentido
-        let mut reg = self.bridges.lock().unwrap();
-        for entry in reg.bridges.values_mut() {
-            entry.bridge.release();
-            entry.alive = false;
+        let old = self.runtime.read().unwrap().clone();
+        old.store.close();
+        {
+            let mut reg = self.bridges.lock().unwrap();
+            for entry in reg.bridges.values_mut() {
+                entry.bridge.release();
+                entry.alive = false;
+            }
+            reg.clear_all();
         }
+        *self.runtime.write().unwrap() = Arc::new(runtime);
+        // cancela la suscripcion al store vieja (si el frontend no re-suscribio aun)
+        self.store_subs.lock().unwrap().rotate();
     }
 
     pub fn subscribe_events(&self, channel: Channel<InvokeResponseBody>) {
@@ -134,6 +175,11 @@ impl BridgeRegistry {
     pub fn purge_non_respawnable(&mut self, live_panes: &[String]) {
         self.bridges
             .retain(|_, e| e.alive || (e.respawnable() && live_panes.contains(&e.pane_id)));
+    }
+
+    /// Vacía el registro (cambio de sesión: nada de la sesión anterior se conserva).
+    pub fn clear_all(&mut self) {
+        self.bridges.clear();
     }
 
     pub fn alive_panes(&self) -> Vec<String> {

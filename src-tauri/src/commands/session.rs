@@ -49,11 +49,26 @@ pub async fn session_start(name: String) -> Result<(), ApiError> {
     }
 }
 
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct SessionConnected {
+    pub session: String,
+}
+
 #[tauri::command]
 pub async fn session_connect(
     state: State<'_, std::sync::Arc<AppState>>,
     name: Option<String>,
-) -> Result<(), ApiError> {
+) -> Result<SessionConnected, ApiError> {
+    connect_session(state.inner(), name).await
+}
+
+/// Lógica testeable del cambio de sesión. Extensión documentada del §5: la
+/// respuesta incluye la sesión activa para que el frontend descarte snapshots
+/// de sesiones anteriores (los params no cambian).
+pub async fn connect_session(
+    state: &std::sync::Arc<AppState>,
+    name: Option<String>,
+) -> Result<SessionConnected, ApiError> {
     let name = match name {
         Some(n) if !n.is_empty() => n,
         // sin nombre: ultima guardada (settings GUI, F3); por ahora default
@@ -80,7 +95,7 @@ pub async fn session_connect(
 
     let pipe = herdr_core::paths::pipe_name(&herdr_core::paths::session_socket(&name));
     let client = Arc::new(RpcClient::new(pipe));
-    // verifica vivo antes de swap
+    // verifica vivo antes de swap (ping contra la sesion nueva)
     client
         .call("ping", &Value::Object(Default::default()))
         .await
@@ -94,12 +109,14 @@ pub async fn session_connect(
     let store2 = store.clone();
     tauri::async_runtime::spawn(store2.refresher_task(client2));
 
+    // swap coherente: cierra el store viejo (refresher + suscripciones mueren),
+    // libera y purga TODOS los bridges de la sesion anterior
     state.swap(Runtime {
-        session: name,
+        session: name.clone(),
         client,
         store,
     });
-    Ok(())
+    Ok(SessionConnected { session: name })
 }
 
 #[tauri::command]
