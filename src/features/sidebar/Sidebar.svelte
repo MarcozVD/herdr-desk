@@ -4,8 +4,8 @@
   import { flows } from '../../lib/actions/flows';
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
+  import { visible } from '../../lib/stores/visible.svelte';
   import { settings } from '../../lib/stores/settings.svelte';
-  import { ui } from '../../lib/stores/ui.svelte';
   import AgentPanel from '../agents/AgentPanel.svelte';
   import AgentRollup from '../../lib/ui/AgentRollup.svelte';
   import { agentsOfWorkspace } from '../../lib/agents/agentPanel';
@@ -36,8 +36,7 @@
           data-testid="workspace-row"
           data-workspace-id={workspace.workspace_id}
           data-status={workspace.agent_status}
-          aria-current={(ui.localFocusedWorkspaceId ?? session.focusedWorkspaceId) ===
-            workspace.workspace_id}
+          aria-current={visible.workspaceId === workspace.workspace_id}
           onclick={() => flows.focusWorkspace(workspace.workspace_id)}
           ondblclick={() => void flows.renameWorkspace(workspace.workspace_id)}
           oncontextmenu={(event) => flows.openWorkspaceMenu(event, workspace.workspace_id)}

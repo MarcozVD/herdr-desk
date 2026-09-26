@@ -21,6 +21,7 @@ import {
 } from '../agents/agentActions';
 import { findPane, neighborPane } from '../layout/tree';
 import { session } from '../stores/session.svelte';
+import { visible } from '../stores/visible.svelte';
 import { settings } from '../stores/settings.svelte';
 import { ui } from '../stores/ui.svelte';
 import { layout } from '../stores/layout.svelte';
@@ -68,7 +69,7 @@ function defaultLabel(kind: 'workspace' | 'tab'): string {
     const next = session.workspaces.length + 1;
     return `espacio-${next}`;
   }
-  const next = session.tabsOfFocusedWorkspace.length + 1;
+  const next = visible.tabs.length + 1;
   return `tab-${next}`;
 }
 
@@ -193,7 +194,9 @@ export const flows = {
   /* ---- Pestañas ---- */
 
   async newTab(): Promise<void> {
-    const workspaceId = session.focusedWorkspaceId;
+    // Se crea en el espacio que se está VIENDO (no en el del servidor): si no, la
+    // pestaña nacía en otro espacio y parecía que no se había creado.
+    const workspaceId = visible.workspaceId;
     if (!workspaceId) return;
     let label: string | null = null;
     if (settings.values.prompt_new_tab_name) {
@@ -208,7 +211,7 @@ export const flows = {
     try {
       await tabApi.create({
         workspace_id: workspaceId,
-        cwd: session.focusedPane?.cwd ?? null,
+        cwd: session.panes.find((pane) => pane.pane_id === visible.paneId)?.cwd ?? null,
         label,
         focus: true,
       });
@@ -264,15 +267,15 @@ export const flows = {
   },
 
   async nextTab(delta: number): Promise<void> {
-    const tabs = session.tabsOfFocusedWorkspace;
+    const tabs = visible.tabs;
     if (tabs.length === 0) return;
-    const index = tabs.findIndex((tab) => tab.tab_id === session.focusedTabId);
+    const index = tabs.findIndex((tab) => tab.tab_id === visible.tabId);
     const next = tabs[(index + delta + tabs.length) % tabs.length];
     if (next) await this.focusTab(next.tab_id);
   },
 
   async switchTabNumber(number: number): Promise<void> {
-    const tab = session.tabsOfFocusedWorkspace.find((item) => item.number === number);
+    const tab = visible.tabs.find((item) => item.number === number);
     if (tab) await this.focusTab(tab.tab_id);
   },
 

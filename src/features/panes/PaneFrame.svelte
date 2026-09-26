@@ -7,7 +7,7 @@
   import { paneTitle, shortPath } from '../../lib/stores/snapshot';
   import { session } from '../../lib/stores/session.svelte';
   import { settings } from '../../lib/stores/settings.svelte';
-  import { ui } from '../../lib/stores/ui.svelte';
+  import { visible } from '../../lib/stores/visible.svelte';
   import AgentDot from '../../lib/ui/AgentDot.svelte';
 
   interface Props {
@@ -18,7 +18,7 @@
 
   const pane = $derived(session.panes.find((item) => item.pane_id === paneId) ?? null);
   const status = $derived(pane?.agent_status ?? 'unknown');
-  const active = $derived((ui.localFocusedPaneId ?? session.focusedPaneId) === paneId);
+  const active = $derived(visible.paneId === paneId);
   const title = $derived(paneTitle(pane) || paneId);
 
   function focus(): void {

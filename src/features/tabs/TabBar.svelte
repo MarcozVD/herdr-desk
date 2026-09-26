@@ -4,11 +4,16 @@
   import { flows } from '../../lib/actions/flows';
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
+  import { visible } from '../../lib/stores/visible.svelte';
   import { settings } from '../../lib/stores/settings.svelte';
   import AgentRollup from '../../lib/ui/AgentRollup.svelte';
   import { agentsOfTab } from '../../lib/agents/agentPanel';
 
-  const tabs = $derived(session.tabsOfFocusedWorkspace);
+  // Pestañas del espacio que se está VIENDO (foco local con respaldo del
+  // servidor, `lib/stores/visible.svelte.ts`): antes se filtraban por el espacio
+  // del servidor y al cambiar de espacio en la sidebar la barra se quedaba con
+  // las pestañas del espacio anterior.
+  const tabs = $derived(visible.tabs);
   const hidden = $derived(settings.values.hide_tab_bar_when_single_tab && tabs.length <= 1);
 </script>
 
@@ -26,7 +31,7 @@
         data-testid="tab"
         data-tab-id={tab.tab_id}
         data-status={tab.agent_status}
-        aria-current={tab.focused}
+        aria-current={tab.tab_id === visible.tabId}
         onclick={() => void flows.focusTab(tab.tab_id)}
         ondblclick={() => void flows.renameTab(tab.tab_id)}
         oncontextmenu={(event) => flows.openTabMenu(event, tab.tab_id)}

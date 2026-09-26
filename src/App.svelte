@@ -27,6 +27,7 @@
   import { layout } from './lib/stores/layout.svelte';
   import { pool } from './lib/terminal/pool';
   import { session } from './lib/stores/session.svelte';
+  import { visible } from './lib/stores/visible.svelte';
   import { settings } from './lib/stores/settings.svelte';
   import { ui } from './lib/stores/ui.svelte';
   import { suppressNativeContextMenu } from './lib/ui/context-menu';
@@ -38,12 +39,13 @@
   import WorkspaceDialog from './lib/ui/WorkspaceDialog.svelte';
 
   /**
-   * Tab que se está viendo: manda el foco local de la GUI (R11) y, si no hay,
-   * el del servidor. Es lo que hace que un clic en la barra de espacios o de
-   * pestañas se vea de verdad.
+   * Tab y panel que se están viendo: los resuelve `visible` en un solo sitio
+   * (foco local de la GUI con respaldo en el del servidor; ver
+   * `lib/stores/visible.svelte.ts`). Es lo que hace que un clic en la barra de
+   * espacios se vea de verdad.
    */
-  const visibleTabId = $derived(ui.localFocusedTabId ?? session.focusedTabId);
-  const visiblePaneId = $derived(ui.localFocusedPaneId ?? session.focusedPaneId);
+  const visibleTabId = $derived(visible.tabId);
+  const visiblePaneId = $derived(visible.actionPaneId);
   const tree = $derived(layout.zoomed ? zoomedTree(layout.tree, visiblePaneId) : layout.tree);
 
   // Si el SERVIDOR mueve el foco a otro tab (lo movió la TUI, no la GUI) se
