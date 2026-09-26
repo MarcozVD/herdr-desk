@@ -3,6 +3,8 @@ pub mod state;
 mod window;
 
 #[cfg(all(test, feature = "sandbox"))]
+mod cli_run_sandbox_tests;
+#[cfg(all(test, feature = "sandbox"))]
 mod sandbox_guard;
 #[cfg(all(test, feature = "sandbox"))]
 mod session_switch_tests;
@@ -109,6 +111,8 @@ pub fn run() {
             commands::session::session_stop,
             commands::session::session_delete,
             commands::system::gui_defaults,
+            commands::cli_run::cli_run,
+            commands::cli_run::agent_kinds,
             commands::terminal::terminal_open,
             commands::terminal::terminal_input,
             commands::terminal::terminal_input_bytes,
