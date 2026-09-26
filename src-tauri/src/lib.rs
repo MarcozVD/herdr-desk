@@ -5,6 +5,8 @@ mod window;
 #[cfg(all(test, feature = "sandbox"))]
 mod sandbox_guard;
 #[cfg(all(test, feature = "sandbox"))]
+mod session_switch_tests;
+#[cfg(all(test, feature = "sandbox"))]
 mod terminal_cycle_tests;
 
 use std::sync::Arc;
