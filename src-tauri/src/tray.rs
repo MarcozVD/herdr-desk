@@ -70,6 +70,14 @@ pub const PREFIX_FOCUS: &str = "agent-focus:";
 static TRAY_ICON: std::sync::Mutex<Option<tauri::tray::TrayIcon<Wry>>> =
     std::sync::Mutex::new(None);
 
+/// Icono de la bandeja en NEGRO, embebido en tiempo de compilacion
+/// (include_bytes, sin ficheros en runtime). Sobre una barra de tareas clara
+/// el icono BLANCO del ejecutable seria invisible: la bandeja lleva su propio
+/// negro, la ventana/el exe llevan el blanco. Fuente: assets/icons/
+/// herdr-black.png procesada con `tauri icon` (32x32, trazo negro, fondo
+/// transparente).
+const TRAY_ICON_PNG: &[u8] = include_bytes!("../icons/tray-black.png");
+
 pub fn blocked_count(agents: &[TrayAgent]) -> usize {
     agents.iter().filter(|a| a.status == "blocked").count()
 }
@@ -194,10 +202,12 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         build_menu(app, &tray_state, &active)?
     };
 
-    let icon = app.default_window_icon().cloned();
+    // icono explicito de la bandeja (NEGRO): NO usamos default_window_icon,
+    // que seria el blanco del ejecutable y desaparece en barras claras
     let mut builder = tauri::tray::TrayIconBuilder::with_id("main-tray");
-    if let Some(icon) = icon {
-        builder = builder.icon(icon);
+    match tauri::image::Image::from_bytes(TRAY_ICON_PNG) {
+        Ok(icon) => builder = builder.icon(icon),
+        Err(err) => tracing::warn!("icono negro del tray no decodificable: {err}"),
     }
     let tray = builder
         .tooltip("herdr-desk")

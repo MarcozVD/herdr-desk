@@ -2,7 +2,26 @@
 /dist/
 /node_modules/
 /src-tauri/gen/
+/src-tauri/target/
 /test-results/
 /playwright-report/
+/coverage/
 .hermes/
+docs/_privado/
 *.log
+
+# Configuración local y secretos
+.env
+.env.*
+!.env.example
+*.local
+
+# Playwright temporal usado para los e2e aislados
+/playwright.tmp.config.ts
+
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tsbuildinfo

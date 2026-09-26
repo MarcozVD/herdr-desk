@@ -33,6 +33,11 @@ use herdr_core::model::SessionSnapshot;
 use herdr_core::{RpcClient, Store, events};
 use tauri::Manager;
 
+/// Icono de la ventana principal (BLANCO), embebido en tiempo de compilacion
+/// y coherente con el recurso del ejecutable: la barra de tareas saca el
+/// icono del exe, que sale de assets/icons/herdr-white.svg via `tauri icon`.
+const WINDOW_ICON_PNG: &[u8] = include_bytes!("../icons/128x128.png");
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -90,6 +95,22 @@ pub fn run() {
             toast_identity::setup_toast_identity();
             if let Err(err) = tray::setup_tray(app.handle()) {
                 tracing::warn!("no se pudo iniciar el tray: {err}");
+            }
+
+            // icono explicito de la ventana principal: BLANCO, coherente con el
+            // recurso del ejecutable (bundle.icon regenerado desde
+            // assets/icons/herdr-white.svg). La bandeja usa su negro propio.
+            // No interfiere con el overlay de la barra de tareas (overlay.rs
+            // pinta el overlay sobre el handle, no sobre el icono base).
+            if let Some(main) = app.get_webview_window("main") {
+                match tauri::image::Image::from_bytes(WINDOW_ICON_PNG) {
+                    Ok(icon) => {
+                        if let Err(err) = main.set_icon(icon) {
+                            tracing::warn!("no se pudo poner el icono de la ventana: {err}");
+                        }
+                    }
+                    Err(err) => tracing::warn!("icono de ventana no decodificable: {err}"),
+                }
             }
 
             // watcher: respawn de bridges + conexión S (make-before-break, debounce 100 ms)
