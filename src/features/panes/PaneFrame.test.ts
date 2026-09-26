@@ -235,6 +235,9 @@ describe('PaneFrame: los botones del header responden', () => {
 
     expect(ui.contextMenu).not.toBeNull();
     expect(ui.contextMenu?.items.map((item) => item.id)).toEqual([
+      // T2.3: arrancar agente en este panel o en un split nuevo.
+      'start-agent',
+      'start-agent-right',
       'split-right',
       'split-down',
       'zoom',

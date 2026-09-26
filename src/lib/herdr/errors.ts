@@ -87,6 +87,10 @@ export function describeApiError(raw: unknown, context: ErrorContext = {}): stri
       return es.errors.agent_blocked;
     case 'agent_prompt_stalled':
       return es.errors.agent_prompt_stalled;
+    case 'agent_not_ready':
+      return es.errors.agent_not_ready;
+    case 'agent_not_found':
+      return es.errors.agent_not_found;
     case 'stream_conflict':
       return es.errors.stream_conflict;
     case 'popup_not_open':

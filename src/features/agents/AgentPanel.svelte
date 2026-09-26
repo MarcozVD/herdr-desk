@@ -121,7 +121,9 @@
             data-status={agent.agent_status}
             data-agent={agent.agent ?? ''}
             aria-current={agent.pane_id === session.focusedPaneId}
-            onclick={() => flows.focusPane(agent.pane_id)}
+            onclick={() => flows.focusAgent(agent.pane_id)}
+            oncontextmenu={(event) => flows.openAgentMenu(event, agent.pane_id)}
+            title={es.agents.rowHint}
           >
             {#each agentRowsFor(agent, rowsConfig) as row, rowIndex (rowIndex)}
               <span class="agent-row__line">

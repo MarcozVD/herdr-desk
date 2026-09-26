@@ -2,8 +2,22 @@
 // paneles y el motor de atajos. Cada flujo avisa por toast si herdr responde error.
 
 import { es } from '../i18n/es';
-import { paneApi, serverApi, tabApi, workspaceApi } from '../herdr/actions';
+import type * as Api from '../herdr/types.gen';
+import type { SplitDirection } from '../herdr/types.gen';
+import { agentApi, paneApi, serverApi, tabApi, workspaceApi } from '../herdr/actions';
 import { describeApiError, errorText, parseApiError } from '../herdr/errors';
+import {
+  AGENT_KEY,
+  agentAtAttentionIndex,
+  agentLabel,
+  clampAgentStartTimeout,
+  cycleAgent,
+  DEFAULT_AGENT_WAIT_MS,
+  prettyJson,
+  TRANSCRIPT_LINES,
+  validateAgentName,
+  type AgentKeyName,
+} from '../agents/agentActions';
 import { findPane, neighborPane } from '../layout/tree';
 import { session } from '../stores/session.svelte';
 import { settings } from '../stores/settings.svelte';
@@ -392,6 +406,256 @@ export const flows = {
     });
   },
 
+  /* ---- Agentes (T2.2/T2.3) ---- */
+
+  /** El `target` de las acciones de agente es el id del panel (verificado en vivo). */
+  focusAgent(paneId: string): void {
+    ui.focusPaneLocally(paneId);
+    // `agent.focus` marca el agente como visto en el servidor. Sin sincronía de
+    // foco no se toca la TUI, así que un fallo aquí no se le cuenta al usuario.
+    const report = settings.values.sync_focus_with_tui;
+    void agentApi.focus(paneId).catch((raw: unknown) => {
+      if (report) fail(raw, 'agent.focus');
+    });
+  },
+
+  /** Siguiente/anterior agente en la cola de atención (atajos de la TUI). */
+  nextAgent(step: 1 | -1): void {
+    // El foco que el usuario ve: el local manda sobre el del snapshot.
+    const current = ui.localFocusedPaneId ?? session.focusedPaneId;
+    const target = cycleAgent(session.agentsByPriority, current, step);
+    if (target) this.focusAgent(target.pane_id);
+  },
+
+  /** N-ésimo agente de la cola de atención (`focus_agent: N`). */
+  focusAgentNumber(index: number): void {
+    const target = agentAtAttentionIndex(session.agentsByPriority, index);
+    if (target) this.focusAgent(target.pane_id);
+  },
+
+  /**
+   * Manda un prompt al agente. `wait` lo rellena el diálogo (`until` + timeout):
+   * con espera, el RPC no vuelve hasta que el agente llega a ese estado.
+   */
+  async promptAgent(
+    paneId: string,
+    text: string,
+    wait: { until: Api.AgentStatus[]; timeout_ms?: number | null } | null = null,
+  ): Promise<boolean> {
+    const body = text.trim();
+    if (body.length === 0) return false;
+    try {
+      await agentApi.prompt(paneId, body, wait);
+      return true;
+    } catch (raw) {
+      fail(raw, 'agent.prompt');
+      return false;
+    }
+  },
+
+  /** Teclas al agente: Escape y Ctrl+C (los botones del plan). */
+  async sendAgentKey(paneId: string, key: AgentKeyName): Promise<void> {
+    try {
+      await agentApi.sendKeys(paneId, [key]);
+    } catch (raw) {
+      fail(raw, 'agent.send_keys');
+    }
+  },
+
+  /** Renombrar el agente (validación del plan; vacío = quitar el nombre). */
+  async renameAgent(paneId: string): Promise<void> {
+    const agent = session.agents.find((item) => item.pane_id === paneId);
+    const value = await ui.prompt({
+      title: es.agents.rename,
+      label: es.agents.nameLabel,
+      value: agent?.name ?? '',
+      placeholder: es.agents.namePlaceholder,
+      hint: es.agents.nameHint,
+      submitLabel: es.dialog.save,
+      validate: (raw) => (raw.trim().length === 0 ? null : validateAgentName(raw)),
+    });
+    if (value === null) return;
+    const name = value.trim();
+    try {
+      await agentApi.rename(paneId, name.length === 0 ? null : name);
+    } catch (raw) {
+      fail(raw, 'agent.rename');
+    }
+  },
+
+  /** Transcript del agente (200 líneas, `recent_unwrapped`) en el visor. */
+  async showAgentTranscript(paneId: string): Promise<void> {
+    const agent = session.agents.find((item) => item.pane_id === paneId);
+    const name = agent ? agentLabel(agent) : paneId;
+    try {
+      const read = await agentApi.read(paneId, TRANSCRIPT_LINES);
+      ui.openViewer({
+        title: es.agents.transcriptTitle.replace('{name}', name),
+        text: read?.text ?? '',
+        kind: 'text',
+      });
+    } catch (raw) {
+      fail(raw, 'agent.read');
+    }
+  },
+
+  /** Espera a que el agente llegue a un estado (timeout por defecto del plan). */
+  async waitAgent(paneId: string, until: Api.AgentStatus): Promise<void> {
+    const agent = session.agents.find((item) => item.pane_id === paneId);
+    const name = agent ? agentLabel(agent) : paneId;
+    const state = es.agentStatus[until];
+    ui.notify(es.agents.waiting.replace('{name}', name).replace('{state}', state), 'info');
+    try {
+      await agentApi.wait(paneId, [until], DEFAULT_AGENT_WAIT_MS);
+      ok(es.agents.waited.replace('{name}', name).replace('{state}', state));
+    } catch (raw) {
+      fail(raw, 'agent.wait');
+    }
+  },
+
+  /** `agent.explain` en el visor, como JSON legible. */
+  async explainAgent(paneId: string): Promise<void> {
+    const agent = session.agents.find((item) => item.pane_id === paneId);
+    try {
+      const explain = await agentApi.explain(paneId);
+      ui.openViewer({
+        title: es.agents.explainTitle.replace('{name}', agent ? agentLabel(agent) : paneId),
+        text: prettyJson(explain),
+        kind: 'json',
+      });
+    } catch (raw) {
+      fail(raw, 'agent.explain');
+    }
+  },
+
+  /** Suelta el agente (el backend deja de saber de él en ese panel). */
+  async releaseAgent(paneId: string): Promise<void> {
+    const agent = session.agents.find((item) => item.pane_id === paneId);
+    if (!agent) return;
+    const name = agentLabel(agent);
+    const confirmed = await ui.confirm({
+      title: es.agents.release,
+      message: es.agents.releaseConfirm.replace('{name}', name),
+      confirmLabel: es.agents.release,
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      await agentApi.release(paneId, agent.agent ?? name);
+      ok(es.agents.released.replace('{name}', name));
+    } catch (raw) {
+      fail(raw, 'pane.release_agent');
+    }
+  },
+
+  /** Abre el diálogo de iniciar agente para ese panel (T2.3). */
+  openStartAgent(paneId: string, name: string): void {
+    ui.openStartAgent(paneId, name);
+  },
+
+  /**
+   * «Iniciar agente en un split nuevo»: parte el panel enfocado y abre el
+   * diálogo apuntando al panel recién creado (que `pane.split` devuelve).
+   */
+  async startAgentInNewSplit(direction: SplitDirection): Promise<void> {
+    const paneId = ui.localFocusedPaneId ?? session.focusedPaneId;
+    if (!paneId) return;
+    try {
+      const created = await paneApi.split({ direction, target_pane_id: paneId, focus: true });
+      if (!created) return;
+      await layout.refreshNow();
+      ui.openStartAgent(created.pane_id, created.pane_id);
+    } catch (raw) {
+      fail(raw, 'pane.split');
+    }
+  },
+
+  /**
+   * Arranca un agente en el panel y lo reporta con la fuente de la GUI: así
+   * aparece en el panel de agentes al momento, sin esperar al detector.
+   */
+  async startAgent(
+    paneId: string,
+    form: { kind: string; name: string; args: string[]; timeoutMs: number | null },
+  ): Promise<boolean> {
+    if (validateAgentName(form.name) !== null) return false;
+    try {
+      const started = await agentApi.start({
+        pane_id: paneId,
+        kind: form.kind,
+        name: form.name.trim(),
+        args: form.args,
+        timeout_ms: clampAgentStartTimeout(form.timeoutMs),
+      });
+      if (!started) return false;
+      await agentApi.report(paneId, form.kind, 'working');
+      this.focusAgent(paneId);
+      ok(
+        es.agents.started
+          .replace('{name}', form.name.trim())
+          .replace('{kind}', form.kind)
+          .replace('{argv}', started.argv.join(' ')),
+      );
+      return true;
+    } catch (raw) {
+      fail(raw, 'agent.start');
+      return false;
+    }
+  },
+
+  /** Menú contextual de una fila del panel de agentes. */
+  openAgentMenu(event: MouseEvent, paneId: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const agent = session.agents.find((item) => item.pane_id === paneId);
+    if (!agent) return;
+    ui.openContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { id: 'agent-focus', label: es.agents.focus, run: () => this.focusAgent(paneId) },
+        {
+          id: 'agent-prompt',
+          label: es.agents.prompt,
+          run: () => ui.openAgentPrompt(paneId, agentLabel(agent)),
+        },
+        {
+          id: 'agent-escape',
+          label: es.agents.sendEscape,
+          run: () => this.sendAgentKey(paneId, AGENT_KEY.escape),
+        },
+        {
+          id: 'agent-interrupt',
+          label: es.agents.sendInterrupt,
+          run: () => this.sendAgentKey(paneId, AGENT_KEY.interrupt),
+        },
+        { id: 'agent-rename', label: es.agents.rename, run: () => this.renameAgent(paneId) },
+        {
+          id: 'agent-transcript',
+          label: es.agents.transcript,
+          run: () => this.showAgentTranscript(paneId),
+        },
+        {
+          id: 'agent-wait-idle',
+          label: `${es.agents.wait}: ${es.agentStatus.idle}`,
+          run: () => this.waitAgent(paneId, 'idle'),
+        },
+        {
+          id: 'agent-wait-done',
+          label: `${es.agents.wait}: ${es.agentStatus.done}`,
+          run: () => this.waitAgent(paneId, 'done'),
+        },
+        { id: 'agent-explain', label: es.agents.explain, run: () => this.explainAgent(paneId) },
+        {
+          id: 'agent-release',
+          label: es.agents.release,
+          danger: true,
+          run: () => this.releaseAgent(paneId),
+        },
+      ],
+    });
+  },
+
   openPaneMenu(event: MouseEvent, paneId: string): void {
     // Sin esto el WebView2 abriría su propio menú encima del nuestro.
     event.preventDefault();
@@ -403,6 +667,16 @@ export const flows = {
       x: event.clientX,
       y: event.clientY,
       items: [
+        {
+          id: 'start-agent',
+          label: es.agents.start,
+          run: () => this.openStartAgent(paneId, paneId),
+        },
+        {
+          id: 'start-agent-right',
+          label: es.agents.startSplit,
+          run: () => this.startAgentInNewSplit('right'),
+        },
         {
           id: 'split-right',
           label: es.panes.splitRight,

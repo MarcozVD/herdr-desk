@@ -67,9 +67,6 @@ const LATER: Record<string, string> = {
   new_worktree: 'Los worktrees llegan en F3.',
   open_worktree: 'Los worktrees llegan en F3.',
   remove_worktree: 'Los worktrees llegan en F3.',
-  previous_agent: 'La navegación de agentes llega en F2.',
-  next_agent: 'La navegación de agentes llega en F2.',
-  focus_agent: 'La navegación de agentes llega en F2.',
   edit_scrollback: 'La edición de scrollback llega en F3.',
   resize_mode: 'El modo redimensionar llega en F3.',
   navigate_workspace_up: 'El modo navegar llega en F3.',
@@ -95,7 +92,7 @@ export async function runAction(action: string): Promise<void> {
     return;
   }
   if (action.startsWith('focus_agent:')) {
-    ui.notify(LATER.focus_agent ?? 'F2', 'warn');
+    flows.focusAgentNumber(Number(action.split(':')[1]));
     return;
   }
   if (action.startsWith('gui.')) {
@@ -139,6 +136,12 @@ export async function runAction(action: string): Promise<void> {
       break;
     case 'next_workspace':
       await flows.nextWorkspace(1);
+      break;
+    case 'previous_agent':
+      flows.nextAgent(-1);
+      break;
+    case 'next_agent':
+      flows.nextAgent(1);
       break;
     case 'remote_image_paste':
       ui.notify('Solo aplica a herdr --remote (fuera de v1).', 'warn');

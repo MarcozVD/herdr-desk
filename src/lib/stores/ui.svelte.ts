@@ -80,6 +80,13 @@ class UiStore {
   /** Historial de paneles para `last_pane` (T3.1 lo usará). */
   paneHistory = $state<string[]>([]);
 
+  /** Visor de texto/JSON (transcript del agente, `agent.explain`…). */
+  viewer = $state<{ title: string; text: string; kind: 'text' | 'json' } | null>(null);
+  /** Panel al que se le va a mandar un prompt (T2.2). */
+  agentPromptTarget = $state<{ paneId: string; name: string } | null>(null);
+  /** Panel en el que se va a arrancar un agente (T2.3). */
+  startAgentTarget = $state<{ paneId: string; name: string } | null>(null);
+
   toasts = $state<ToastMessage[]>([]);
   contextMenu = $state<ContextMenuState | null>(null);
   pendingConfirm = $state<PendingConfirm | null>(null);
@@ -148,6 +155,10 @@ class UiStore {
     this.localFocusedWorkspaceId = null;
     this.localFocusedPaneId = null;
     this.paneHistory = [];
+    // Un visor o un diálogo abiertos apuntan a la sesión vieja: se cierran.
+    this.viewer = null;
+    this.agentPromptTarget = null;
+    this.startAgentTarget = null;
   }
 
   notify(text: string, kind: ToastMessage['kind'] = 'info'): void {
@@ -155,6 +166,30 @@ class UiStore {
     this.toasts = [...this.toasts, { id, text, kind }];
     const timer = setTimeout(() => this.dismissToast(id), settings.values.toast_ms);
     this.#toastTimers.set(id, timer);
+  }
+
+  openViewer(view: { title: string; text: string; kind?: 'text' | 'json' }): void {
+    this.viewer = { title: view.title, text: view.text, kind: view.kind ?? 'text' };
+  }
+
+  closeViewer(): void {
+    this.viewer = null;
+  }
+
+  openAgentPrompt(paneId: string, name: string): void {
+    this.agentPromptTarget = { paneId, name };
+  }
+
+  closeAgentPrompt(): void {
+    this.agentPromptTarget = null;
+  }
+
+  openStartAgent(paneId: string, name: string): void {
+    this.startAgentTarget = { paneId, name };
+  }
+
+  closeStartAgent(): void {
+    this.startAgentTarget = null;
   }
 
   dismissToast(id: number): void {

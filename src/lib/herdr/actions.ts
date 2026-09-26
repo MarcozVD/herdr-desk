@@ -113,6 +113,125 @@ export const paneApi = {
   },
 };
 
+/**
+ * Fuente con la que la GUI reporta/libera los agentes que arranca ella misma
+ * (`pane.report_agent` / `pane.release_agent`). El backend acepta cualquier
+ * `source`: se usa una propia para poder distinguir lo que ha lanzado la GUI.
+ */
+export const GUI_AGENT_SOURCE = 'custom:herdr-desk';
+
+export const agentApi = {
+  async list(): Promise<Api.AgentInfo[]> {
+    const result = await call('agent.list', {});
+    return result.type === 'agent_list' ? result.agents : [];
+  },
+
+  async get(target: string): Promise<Api.AgentInfo | null> {
+    const result = await call('agent.get', { target });
+    return result.type === 'agent_info' ? result.agent : null;
+  },
+
+  /** Enfoca el agente en el servidor (la TUI lo marca como visto). */
+  async focus(target: string): Promise<Api.AgentInfo | null> {
+    const result = await call('agent.focus', { target });
+    return result.type === 'agent_info' ? result.agent : null;
+  },
+
+  /** Renombra el agente; `null` limpia el nombre (`--clear`). */
+  async rename(target: string, name: string | null): Promise<Api.AgentInfo | null> {
+    const result = await call('agent.rename', { target, name });
+    return result.type === 'agent_info' ? result.agent : null;
+  },
+
+  /** Teclas al agente: `esc` (Escape) y `ctrl+c` (interrumpir) son las de T2.2. */
+  async sendKeys(target: string, keys: string[]): Promise<Api.AgentInfo | null> {
+    const result = await call('agent.send_keys', { target, keys });
+    return result.type === 'agent_info' ? result.agent : null;
+  },
+
+  async prompt(
+    target: string,
+    text: string,
+    wait?: Api.AgentPromptWaitOptions | null,
+  ): Promise<Api.AgentInfo | null> {
+    const result = await call('agent.prompt', { target, text, wait: wait ?? null });
+    return result.type === 'agent_prompted' ? result.agent : null;
+  },
+
+  /** Transcript del agente (`recent_unwrapped` como en la TUI). */
+  async read(target: string, lines = 200): Promise<Api.PaneReadResult | null> {
+    const result = await call('agent.read', {
+      target,
+      source: 'recent_unwrapped',
+      lines,
+      format: 'text',
+      strip_ansi: true,
+    });
+    return result.type === 'pane_read' ? result.read : null;
+  },
+
+  /** Espera a que el agente llegue a alguno de esos estados. */
+  async wait(
+    target: string,
+    until?: Api.AgentStatus[],
+    timeoutMs?: number | null,
+  ): Promise<Api.AgentInfo | null> {
+    const result = await call('agent.wait', {
+      target,
+      until: until ?? [],
+      timeout_ms: timeoutMs ?? null,
+    });
+    return result.type === 'agent_info' ? result.agent : null;
+  },
+
+  /** Explicación de la detección (JSON crudo, para el visor). */
+  async explain(target: string): Promise<unknown> {
+    const result = await call('agent.explain', { target });
+    return result.type === 'agent_explain' ? result.explain : null;
+  },
+
+  /**
+   * Reporta el agente que la GUI acaba de arrancar. El estado es `PaneAgentState`
+   * (idle | working | blocked | unknown): `done` NO se puede reportar —lo pone el
+   * detector del backend cuando el agente termina—.
+   */
+  async report(paneId: string, agent: string, state: Api.PaneAgentState): Promise<void> {
+    await call('pane.report_agent', {
+      pane_id: paneId,
+      source: GUI_AGENT_SOURCE,
+      agent,
+      state,
+    });
+  },
+
+  /** Suelta el agente (la GUI lo hace con su propia fuente). */
+  async release(paneId: string, agent: string): Promise<void> {
+    await call('pane.release_agent', {
+      pane_id: paneId,
+      source: GUI_AGENT_SOURCE,
+      agent,
+    });
+  },
+
+  /** Arranca un agente en un panel; devuelve el agente y el argv real. */
+  async start(params: {
+    pane_id: string;
+    kind: string;
+    name: string;
+    args?: string[];
+    timeout_ms?: number | null;
+  }): Promise<{ agent: Api.AgentInfo; argv: string[] } | null> {
+    const result = await call('agent.start', {
+      pane_id: params.pane_id,
+      kind: params.kind,
+      name: params.name,
+      args: params.args ?? [],
+      timeout_ms: params.timeout_ms ?? null,
+    });
+    return result.type === 'agent_started' ? { agent: result.agent, argv: result.argv } : null;
+  },
+};
+
 export const layoutApi = {
   /** Árbol del tab visible (`layout.export`). */
   async export(tabId: string): Promise<Api.LayoutNode | null> {

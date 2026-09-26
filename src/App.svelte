@@ -5,6 +5,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  import AgentPromptDialog from './features/agents/AgentPromptDialog.svelte';
+  import StartAgentDialog from './features/agents/StartAgentDialog.svelte';
   import SessionsDialog from './features/sessions/SessionsDialog.svelte';
   import Sidebar from './features/sidebar/Sidebar.svelte';
   import StatusBar from './features/statusbar/StatusBar.svelte';
@@ -28,6 +30,7 @@
   import ContextMenu from './lib/ui/ContextMenu.svelte';
   import PromptDialog from './lib/ui/PromptDialog.svelte';
   import ToastHost from './lib/ui/ToastHost.svelte';
+  import TextViewer from './lib/ui/TextViewer.svelte';
   import WorkspaceDialog from './lib/ui/WorkspaceDialog.svelte';
 
   const tree = $derived(
@@ -194,6 +197,10 @@
 
   <StatusBar />
 </div>
+
+<AgentPromptDialog />
+<StartAgentDialog />
+<TextViewer />
 
 {#if ui.paletteOpen}
   <div class="overlay">
