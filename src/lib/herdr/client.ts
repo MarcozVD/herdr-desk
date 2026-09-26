@@ -226,6 +226,16 @@ export async function sessionDelete(name: string): Promise<CommandOutcome<null>>
   return optionalCommand<null>('session_delete', { name });
 }
 
+/* ---- Barra de tareas (T2.4) ---- */
+
+/** Overlay del icono en la barra de tareas con el conteo de bloqueados (o sin
+ *  overlay con `null`). Command `taskbar_overlay` del backend. */
+export async function taskbarOverlay(
+  count: number | null,
+): Promise<CommandOutcome<{ count: number | null; applied: boolean }>> {
+  return optionalCommand('taskbar_overlay', { count });
+}
+
 /* ---- Terminal (bridges) ---- */
 
 function toFrameBuffer(frame: unknown): ArrayBuffer | null {

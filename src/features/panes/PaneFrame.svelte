@@ -118,6 +118,7 @@
 
 <style>
   .pane-frame {
+    position: relative;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-block-size: 0;
@@ -127,6 +128,73 @@
     border-radius: var(--radius-sm);
     background: var(--panel-bg-solid);
     overflow: hidden;
+  }
+
+  /* T2.4 — Glow de estado del agente en el marco. La sombra es FIJA y solo se
+     anima `opacity`: animar `box-shadow` o `filter` obliga a repintar el marco
+     entero (guardarraíl del plan §4). Cada estado usa un token de color de
+     herdr; `unknown` no pinta nada porque es el estado de un panel SIN agente
+     (encendería todos los paneles) y `idle` es un latido apagado. */
+  .pane-frame::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--pane-glow, transparent) 60%, transparent),
+      0 0 10px color-mix(in oklab, var(--pane-glow, transparent) 35%, transparent);
+    opacity: 0;
+    transition: opacity 180ms var(--ease);
+  }
+
+  .pane-frame[data-status='working'] {
+    --pane-glow: var(--blue);
+  }
+
+  .pane-frame[data-status='blocked'] {
+    --pane-glow: var(--yellow);
+  }
+
+  .pane-frame[data-status='done'] {
+    --pane-glow: var(--green);
+  }
+
+  .pane-frame[data-status='idle'] {
+    --pane-glow: var(--text-dim);
+  }
+
+  .pane-frame[data-status='working']::after,
+  .pane-frame[data-status='blocked']::after,
+  .pane-frame[data-status='done']::after {
+    opacity: 0.75;
+  }
+
+  .pane-frame[data-status='idle']::after {
+    opacity: 0.35;
+  }
+
+  /* `working` late para que se vea que el agente está vivo (solo opacity). */
+  .pane-frame[data-status='working']::after {
+    animation: pane-glow-pulse 1.6s var(--ease) infinite;
+  }
+
+  @keyframes pane-glow-pulse {
+    0%,
+    100% {
+      opacity: 0.45;
+    }
+
+    50% {
+      opacity: 0.85;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pane-frame[data-status='working']::after {
+      animation: none;
+      opacity: 0.7;
+    }
   }
 
   .pane-frame[data-borders='true'] {

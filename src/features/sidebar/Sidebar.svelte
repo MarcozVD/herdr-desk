@@ -6,8 +6,9 @@
   import { session } from '../../lib/stores/session.svelte';
   import { settings } from '../../lib/stores/settings.svelte';
   import { ui } from '../../lib/stores/ui.svelte';
-  import AgentDot from '../../lib/ui/AgentDot.svelte';
   import AgentPanel from '../agents/AgentPanel.svelte';
+  import AgentRollup from '../../lib/ui/AgentRollup.svelte';
+  import { agentsOfWorkspace } from '../../lib/agents/agentPanel';
 
   const collapsedMode = $derived(settings.values.sidebar_collapsed_mode);
 </script>
@@ -41,9 +42,9 @@
           oncontextmenu={(event) => flows.openWorkspaceMenu(event, workspace.workspace_id)}
         >
           <span class="workspace-row__number">{workspace.number}</span>
-          <AgentDot
+          <AgentRollup
+            agents={agentsOfWorkspace(session.agents, workspace.workspace_id)}
             status={workspace.agent_status}
-            label={es.agentStatus[workspace.agent_status]}
           />
           <span class="workspace-row__label">{workspace.label}</span>
           <span

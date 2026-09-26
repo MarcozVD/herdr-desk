@@ -11,6 +11,8 @@
   import TabBar from './features/tabs/TabBar.svelte';
   import ReconnectBanner from './features/titlebar/ReconnectBanner.svelte';
   import Titlebar from './features/titlebar/Titlebar.svelte';
+  import { blockedCount } from './lib/agents/agentPanel';
+  import { syncBlockedOverlay } from './lib/agents/taskbarOverlay';
   import { es } from './lib/i18n/es';
   import { runAction } from './lib/keys/actions';
   import Cheatsheet from './lib/keys/Cheatsheet.svelte';
@@ -51,6 +53,13 @@
 
   $effect(() => {
     document.documentElement.style.setProperty('--sidebar-width', `${settings.widthPx}px`);
+  });
+
+  // T2.4 — El conteo de agentes bloqueados va al overlay del icono de la barra
+  // de tareas (el backend lo pinta). Solo se llama cuando el número cambia.
+  $effect(() => {
+    const blocked = blockedCount(session.agents);
+    void syncBlockedOverlay(blocked);
   });
 
   function isTypingTarget(target: EventTarget | null): boolean {

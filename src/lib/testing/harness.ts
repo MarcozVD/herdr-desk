@@ -209,6 +209,9 @@ export function installHarness(): void {
     const payload = (args ?? {}) as Record<string, unknown>;
     calls.push({ cmd, args: payload });
     switch (cmd) {
+      // T2.4 — overlay del icono con el conteo de agentes bloqueados.
+      case 'taskbar_overlay':
+        return { count: payload.count ?? null, applied: true };
       case 'session_list':
         return {
           sessions: [

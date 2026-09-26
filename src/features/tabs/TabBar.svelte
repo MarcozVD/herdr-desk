@@ -5,7 +5,8 @@
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
   import { settings } from '../../lib/stores/settings.svelte';
-  import AgentDot from '../../lib/ui/AgentDot.svelte';
+  import AgentRollup from '../../lib/ui/AgentRollup.svelte';
+  import { agentsOfTab } from '../../lib/agents/agentPanel';
 
   const tabs = $derived(session.tabsOfFocusedWorkspace);
   const hidden = $derived(settings.values.hide_tab_bar_when_single_tab && tabs.length <= 1);
@@ -30,7 +31,7 @@
         ondblclick={() => void flows.renameTab(tab.tab_id)}
         oncontextmenu={(event) => flows.openTabMenu(event, tab.tab_id)}
       >
-        <AgentDot status={tab.agent_status} label={es.agentStatus[tab.agent_status]} />
+        <AgentRollup agents={agentsOfTab(session.agents, tab.tab_id)} status={tab.agent_status} />
         <span class="tab__number">{tab.number}</span>
         <span class="tab__label">{tab.label}</span>
         <span
