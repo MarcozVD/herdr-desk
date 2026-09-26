@@ -491,9 +491,20 @@ body {
 }
 
 .terminal-host {
+  /* Item flex de .pane-frame__body (display:flex): sin flex/tamaño propios se
+     dimensionaba por contenido y no seguía el alto/ancho real del marco al
+     redimensionar la ventana. Ancho y alto completos, sin padding que recorte
+     celdas (el padding asimétrico cortaba la primera columna). Además host
+     propio en flex (fila) para alinear la superficie de xterm con su barra de
+     scroll, que es lo que pide `.terminal-surface { flex: 1 1 auto }`. */
   position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
   min-block-size: 0;
-  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  padding: 0;
   /* Fondo casi opaco: la terminal nunca lleva backdrop-filter (§3 capa 3). */
   background: var(--panel-bg-solid);
   overflow: hidden;

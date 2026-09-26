@@ -139,6 +139,17 @@ class UiStore {
     return this.paneHistory.find((id) => id !== this.localFocusedPaneId) ?? null;
   }
 
+  /**
+   * Cambio de sesión: el foco local y el historial apuntan a panes y espacios de
+   * la sesión anterior (ids que ya no existen). Se limpian para que el snapshot
+   * nuevo marque el foco real, sin panes «activos» fantasma.
+   */
+  resetSessionState(): void {
+    this.localFocusedWorkspaceId = null;
+    this.localFocusedPaneId = null;
+    this.paneHistory = [];
+  }
+
   notify(text: string, kind: ToastMessage['kind'] = 'info'): void {
     const id = (this.#toastId += 1);
     this.toasts = [...this.toasts, { id, text, kind }];

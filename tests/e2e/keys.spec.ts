@@ -3,7 +3,14 @@
 
 import { expect, test } from '@playwright/test';
 
-import { bootApp, pushFrame, recordedCalls, recordedMethodCalls, terminalText } from './harness';
+import {
+  bootApp,
+  pushFrame,
+  recordedCalls,
+  recordedMethodCalls,
+  terminalText,
+  waitBridgeOpen,
+} from './harness';
 
 async function terminalInputs(page: import('@playwright/test').Page): Promise<string[]> {
   const calls = await recordedCalls(page, 'terminal_input');
@@ -78,6 +85,7 @@ test('Ctrl+Shift+P abre la paleta (atajo reservado por la GUI)', async ({ page }
 
 test('Ctrl+Shift+C copia la selección al portapapeles', async ({ page }) => {
   await bootApp(page);
+  await waitBridgeOpen(page);
   await pushFrame(page, { text: 'hola mundo', seq: 1, full: true });
   await page.getByTestId('terminal-host').click();
   await expect.poll(async () => (await terminalText(page)).includes('hola mundo')).toBe(true);

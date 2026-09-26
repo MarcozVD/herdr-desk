@@ -18,7 +18,15 @@
 </script>
 
 {#if node.kind === 'pane' && node.paneId}
-  <PaneFrame paneId={node.paneId} />
+  <!-- `{#key}` por pane_id: si en esta posición del árbol el panel cambia (se
+       cierra uno y su hueco lo ocupa otro panel), Svelte no puede reutilizar el
+       componente —se quedaría con la instancia de xterm y el bridge del panel
+       que ya no está, y el marco sobrevivía con un overlay de «desconectado»—.
+       Con la clave, el panel que se fue se desmonta entero (el pool suelta su
+       terminal y su bridge) y el que llega monta su propia instancia. -->
+  {#key node.paneId}
+    <PaneFrame paneId={node.paneId} />
+  {/key}
 {:else if node.first && node.second}
   <div
     class="split"

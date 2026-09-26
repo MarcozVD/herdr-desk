@@ -176,7 +176,6 @@ export const es = {
   },
   terminal: {
     closed: 'La terminal se desconectó ({reason}).',
-    retake: 'Retomar control',
     reconnecting: 'Reconectando con el servidor…',
     connecting: 'Conectando terminal…',
     controlledByOther: 'Controlado por otra conexión',

@@ -38,6 +38,12 @@ export const BACKOFF_MAX_MS = 5000;
 /** Si el backend acepta la suscripción pero no manda snapshot en este plazo, se
  *  considera caído (el server cerró la conexión sin avisar). */
 export const SNAPSHOT_TIMEOUT_MS = 2500;
+/**
+ * Cada cuánto se comprueba, mientras la sesión está «en línea», que el servidor
+ * sigue respondiendo (un `ping` por el IPC). Es la ÚNICA señal fiable de caída
+ * del server: un bridge de terminal que se cierra no es una caída.
+ */
+export const HEARTBEAT_MS = 5000;
 
 export function backoffDelayMs(attempt: number): number {
   const raw = BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1);
@@ -107,6 +113,14 @@ class SessionStore {
 
   #retryTimer: ReturnType<typeof setTimeout> | null = null;
   #snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+  #heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Token de suscripción: sube en cada `connect()`. Los mensajes de un canal
+   * anterior (sesión vieja) se descartan aunque lleguen tarde. El backend ya
+   * rota la suscripción al cambiar de sesión; esto es la red de seguridad del
+   * lado UI para que NUNCA haya dos canales alimentando el store.
+   */
+  #subToken = 0;
   #connecting = false;
   #stopped = false;
 
@@ -148,22 +162,29 @@ class SessionStore {
     this.#connecting = true;
     this.#clearRetry();
     this.connection = 'connecting';
+    // Token nuevo: lo que llegue por un canal anterior se ignora (cambio de
+    // sesión). El canal viejo queda inerte aunque el backend tarde en cerrarlo.
+    const token = (this.#subToken += 1);
     try {
-      await storeSubscribe((message) => this.apply(message));
+      await storeSubscribe((message) => {
+        if (token !== this.#subToken) return;
+        this.apply(message);
+      });
       this.retryAttempt = 0;
       this.nextRetryInMs = null;
       this.startServerFailed = false;
       this.#armSnapshotWatchdog();
+      this.#armHeartbeat();
       // Un ping por conexión: fija versión/protocolo y alimenta la p50 que
       // muestra la píldora de conexión.
       void this.ping();
     } catch (raw) {
       // Fuera de Tauri (navegador suelto) el invoke no existe: se dice claro.
-      this.lastError = isMissingTauriBridge(raw)
-        ? { code: 'no_bridge', message: es.connection.noBridge }
-        : parseApiError(raw);
-      this.connection = 'offline';
-      this.scheduleRetry();
+      this.#goOffline(
+        isMissingTauriBridge(raw)
+          ? { code: 'no_bridge', message: es.connection.noBridge }
+          : parseApiError(raw),
+      );
     } finally {
       this.#connecting = false;
     }
@@ -179,12 +200,15 @@ class SessionStore {
       this.version = result.version;
       // El ping solo confirma que el IPC responde; la sesión se da por «en línea»
       // cuando llega un snapshot (sin datos la UI no sirve para nada).
-      if (this.snapshot !== null) this.connection = 'online';
+      if (this.snapshot !== null) {
+        this.connection = 'online';
+        this.#armHeartbeat();
+      }
       this.refreshLatency();
       return true;
     } catch (raw) {
-      this.lastError = parseApiError(raw);
-      this.connection = 'offline';
+      // Primer aviso de que el server no está: el latido pasa por aquí.
+      this.#goOffline(parseApiError(raw));
       this.refreshLatency();
       return false;
     }
@@ -245,22 +269,99 @@ class SessionStore {
   }
 
   /**
-   * Un bridge se cerró porque el servidor cayó. El store del backend NO avisa en
-   * ese canal, así que sin esto la sesión seguía «en línea» con los paneles
-   * muertos y los bridges no se reabrían nunca: se pasa a offline y el bucle de
-   * reintento (que ya existe) reconecta y sube `connectionEpoch`.
+   * Caída REAL de transporte (el servidor dejó de responder). NO se llama desde
+   * el cierre de un bridge de terminal: cerrar una terminal —o que su PTY muera—
+   * no es una caída del servidor, y tomarlo por tal tumbaba la app entera.
+   * Las señales válidas de caída son: el store, el watchdog del snapshot y el
+   * `ping` fallando (latido), todas por `#goOffline`.
    */
   noteOutage(reason: string): void {
+    this.#goOffline({ code: 'transport', message: reason });
+  }
+
+  /**
+   * Única puerta a «desconectado»: guarda el error, para el latido y programa el
+   * reintento con backoff (el bucle ya existía; antes vivía duplicado en tres
+   * sitios y uno de ellos era el cierre de un bridge).
+   */
+  #goOffline(error: ApiError, options: { retry?: boolean } = {}): void {
+    this.#clearHeartbeat();
     if (this.connection === 'offline') return;
     this.connection = 'offline';
-    this.lastError = { code: 'transport', message: reason };
+    this.lastError = error;
+    if (options.retry === false || this.#stopped) return;
     this.retryAttempt = 0;
     this.scheduleRetry();
   }
 
-  /** Cambia de sesión activa (T1.11): el backend decide y la UI reconecta. */
-  async setSessionName(name: string): Promise<void> {
+  /** Latido: mientras estemos «en línea», un ping periódico confirma el server. */
+  #armHeartbeat(): void {
+    this.#clearHeartbeat();
+    if (this.#stopped) return;
+    this.#heartbeatTimer = setInterval(() => {
+      if (this.connection !== 'online') return;
+      void this.#heartbeatTick();
+    }, HEARTBEAT_MS);
+  }
+
+  /**
+   * Un latido: confirma que el server responde (ping) y, si el store no ha
+   * empujado nada desde el latido anterior, pide el snapshot por RPC.
+   *
+   * El canal del store es la vía normal, pero solo empuja cuando el backend
+   * refresca SU snapshot. Si eso no ocurre —el kick de la conexión de eventos
+   * del backend se dispara al cerrarse la conexión, no en cada evento—, la UI se
+   * quedaba CONGELADA: los splits y cierres hechos desde la propia GUI no se
+   * veían reflejados (el panel nuevo no aparecía, el cerrado seguía en pantalla)
+   * aunque la píldora dijera «en línea». Este catch-up la devuelve al estado
+   * real, con un coste de ~1 ms y solo cuando no hay pushes.
+   */
+  async #heartbeatTick(): Promise<void> {
+    const alive = await this.ping();
+    if (!alive) return;
+    if (this.#recent()) return;
+    await this.refreshSnapshot();
+  }
+
+  /** ¿Hubo mensajes del store en el último intervalo del latido? */
+  #recent(): boolean {
+    if (this.lastMessageAt === null) return false;
+    return performance.now() - this.lastMessageAt < HEARTBEAT_MS;
+  }
+
+  /**
+   * Pide `session.snapshot` y aplica el resultado. Lo usan el latido (catch-up)
+   * y las acciones de la GUI, que así se ven reflejadas de inmediato sin
+   * depender de que el store empuje.
+   */
+  async refreshSnapshot(): Promise<void> {
+    try {
+      const result = await call('session.snapshot', {});
+      if (result.type !== 'session_snapshot') return;
+      this.applySnapshot(result.snapshot);
+    } catch {
+      // Sin ruido: el siguiente latido lo reintenta.
+    }
+  }
+
+  #clearHeartbeat(): void {
+    if (this.#heartbeatTimer !== null) {
+      clearInterval(this.#heartbeatTimer);
+      this.#heartbeatTimer = null;
+    }
+  }
+
+  /**
+   * Cambio de sesión activa (T1.11): TODO el estado de la sesión anterior se
+   * descarta ANTES de aplicar la nueva — snapshot, colecciones, foco, versión,
+   * epoch y reintentos. Sin esto se veían los panes de la sesión vieja con
+   * terminales en «desconectado» y los canales antiguos seguían mandando
+   * mensajes. La suscripción vieja queda ignorada por el token de `connect`.
+   */
+  async switchTo(name: string): Promise<void> {
     this.sessionName = name;
+    this.reset();
+    await this.connect();
   }
 
   /** R11: solo se llama cuando el usuario activa «Sincronizar foco con TUI». */
@@ -279,7 +380,14 @@ class SessionStore {
         this.applySnapshot(message.snapshot);
         break;
       case 'state':
-        this.connection = message.state;
+        // El store del backend también manda el estado de la conexión: es una de
+        // las señales válidas de caída (junto al watchdog y al latido).
+        if (message.state === 'offline') {
+          this.#goOffline({ code: 'store', message: es.connection.offlineDetail });
+        } else {
+          this.connection = message.state;
+          if (message.state === 'online') this.#armHeartbeat();
+        }
         break;
       default:
         break;
@@ -342,17 +450,22 @@ class SessionStore {
     this.protocol = snapshot.protocol;
     this.version = snapshot.version;
     this.revision += 1;
+    this.#armHeartbeat();
   }
 
   stop(): void {
     this.#stopped = true;
     this.#clearRetry();
     this.#clearSnapshotWatchdog();
+    this.#clearHeartbeat();
   }
 
   reset(): void {
     this.stop();
     this.#stopped = false;
+    // Invalida la suscripción anterior: lo que llegue por el canal viejo (sesión
+    // anterior) se descarta aunque `connect()` tarde en re-suscribir.
+    this.#subToken += 1;
     this.snapshot = null;
     this.workspaces = [];
     this.tabs = [];
@@ -369,6 +482,10 @@ class SessionStore {
     this.revision = 0;
     this.rpcLatency = null;
     this.rpcSamples = 0;
+    this.startServerFailed = false;
+    this.version = null;
+    this.protocol = null;
+    this.lastMessageAt = null;
     this.focusedWorkspaceId = null;
     this.focusedTabId = null;
     this.focusedPaneId = null;
@@ -388,8 +505,7 @@ class SessionStore {
     this.#snapshotTimer = setTimeout(() => {
       this.#snapshotTimer = null;
       if (this.connection === 'online' && this.revision > 0) return;
-      this.connection = 'offline';
-      this.scheduleRetry();
+      this.#goOffline({ code: 'timeout', message: es.connection.offlineDetail });
     }, SNAPSHOT_TIMEOUT_MS);
   }
 

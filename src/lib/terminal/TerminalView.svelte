@@ -233,38 +233,24 @@
       <span>{es.terminal.connecting}</span>
     </div>
   {:else if bridgeState === 'reconnecting'}
-    <!-- El server se cayó: el backend respawnea con el mismo bridge y los frames
-         devuelven el panel a «open»; el botón fuerza el reenganche a mano. -->
+    <!-- El server se cayó: el pool ya tiene su propia temporización de reenganche
+         (gracia + reintento automático si el respawn no manda frames, ver
+         pool.ts `#scheduleReopen`). Nada que ofrecer aquí: si el bridge vuelve,
+         el panel vuelve solo a «open». -->
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="reconnecting">
       <span data-testid="terminal-reconnecting">{es.terminal.reconnecting}</span>
-      <button
-        type="button"
-        onclick={() =>
-          void pool.open(
-            paneId,
-            entry?.terminal.cols ?? 80,
-            entry?.terminal.rows ?? 24,
-            session.connectionEpoch,
-          )}
-      >
-        {es.terminal.retake}
-      </button>
     </div>
   {:else if bridgeState === 'closed'}
+    <!-- Cierre real (no reenganchable desde aquí): se muestra el motivo real,
+         sin botón manual — la recuperación es automática y silenciosa o no lo es. -->
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="closed">
       <span data-testid="terminal-close-reason">
         {es.terminal.closed.replace('{reason}', closeReason)}
       </span>
-      <button type="button" onclick={() => void pool.open(paneId, 80, 24, session.connectionEpoch)}>
-        {es.terminal.retake}
-      </button>
     </div>
   {:else if bridgeState === 'error'}
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="error">
       <span data-testid="terminal-error">{errorText}</span>
-      <button type="button" onclick={() => void pool.open(paneId, 80, 24, session.connectionEpoch)}>
-        {es.terminal.retake}
-      </button>
     </div>
   {/if}
 </div>

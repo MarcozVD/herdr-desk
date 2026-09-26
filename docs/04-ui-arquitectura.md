@@ -364,6 +364,158 @@ canal viejo, así que el reenganche lo resolvió la UI (timer de `bridge_reopen_
 prefiere ser él quien respawnee los bridges de la UI, basta con que reemita frames por el
 mismo `bridge_id`/Channel: el panel vuelve a «open» solo y el timer se cancela.
 
+## 7quater. Ronda de fallos en vivo (5 reportes) — diagnóstico y arreglo
+
+Cinco fallos reportados sobre la app viva (`herdr-desk-dev`, ventana real). Lo
+que sigue es el diagnóstico, la causa raíz y el arreglo de cada uno, más la
+verificación en vivo (capturas de la ventana + API del pane como fuente de
+verdad, que no depende de la vista).
+
+### (a) La terminal no llenaba el marco al agrandar la ventana
+
+`.terminal-host` es un ítem flex de `.pane-frame__body` (`display: flex`) y no
+tenía `flex` ni tamaño propios: se dimensionaba **por contenido**, así que al
+redimensionar la ventana el marco crecía y la terminal no. Además llevaba
+padding asimétrico (`var(--space-2) 0 var(--space-2) var(--space-3)`) con
+`overflow: hidden`, que recorta celdas por la izquierda.
+
+- Arreglo: `.terminal-host` ocupa el 100 % × 100 % del cuerpo (`flex: 1 1 auto;
+  inline-size: 100%; block-size: 100%; min-inline-size: 0; min-block-size: 0`) y
+  **padding 0** (el aire lo pone el `padding` del propio cuerpo del marco, que
+  forma parte del contenedor y no recorta celdas). El `ResizeObserver` del pool
+  re-hace el `fit` de xterm y el bridge recibe `terminal_resize` cuando cambian
+  las cols/rows reales (debounce 60 ms, ya existente).
+- Test: `src/lib/terminal/terminal-host-size.test.ts` fija el contrato de CSS
+  (host 100 %×100 % del cuerpo del marco, sin padding asimétrico, y `.terminal-surface`
+  llenando el host).
+
+### (b) «Retomar control»: fuera; la recuperación es automática y silenciosa
+
+Se elimina el botón manual y los tres overlays que lo ofrecían
+(`reconnecting`, `closed` y `error`) en `TerminalView.svelte`, y la clave
+`retake` de `i18n/es.ts`. Si el bridge vuelve, el panel pasa a `open` sin pedir
+nada; si no vuelve, el panel muestra **el estado real del error** y el reenganche
+automático se queda con la temporización del pool (`bridge_reopen_grace_ms`).
+Los tests de `terminal.spec.ts` se reescriben para el contrato «sin botón
+manual».
+
+### (c) Cerrar un panel dejaba el marco en pantalla con overlay de desconectado
+
+Dos causas, ambas de frontend:
+
+1. **Render sin clave**: `SplitTree.svelte` montaba `<PaneFrame paneId=…>` sin
+   `{#key}`. Cuando el hueco de un panel cerrado lo ocupaba otro pane, Svelte
+   **reutilizaba la instancia**: el terminal y el bridge seguían siendo los del
+   pane viejo (ya cerrado en el server) con el `paneId` nuevo en el árbol. De ahí
+   el marco fantasma con «La terminal se desconectó». Arreglo: `{#key node.paneId}`
+   → al cambiar el pane de un hueco, la instancia se destruye (con `pool.release`:
+   bridge cerrado y terminal soltada) y se monta una nueva.
+2. **Export de layout viejo**: ver (f). El árbol podía quedarse con el layout
+   anterior y mostrar un pane que ya no existe.
+
+- Tests: `src/lib/layout/SplitTree.test.ts` (jsdom + xterm real) fija que al
+  cerrarse un pane desaparece su marco, que su entrada del pool se libera y que
+  el hueco reutilizado monta una instancia NUEVA (el test falla sin el `{#key}`).
+
+### (d) Los botones del header de los paneles no respondían
+
+`PaneFrame.svelte` hacía `focus()` en **cada** `pointerdown` del `<article>`,
+incluidos los botones del header; si ese cambio de foco re-clavaba el árbol de
+paneles entre `pointerdown` y `click`, el botón nunca recibía el clic.
+
+- Arreglo 1 (acotar): el `pointerdown` del marco ya no toca el foco si el evento
+  nace en un control interactivo (`closest('button, a, input, textarea, select')`);
+  el clic en el **cuerpo** o en el **título** sí enfoca el panel (sigue pasando el
+  e2e de foco).
+- Arreglo 2 (estabilizar): los nodos del árbol van estabilizados por clave
+  (`{#key node.paneId}`, ver (c)), así un clic siempre se completa.
+- Arreglo 3 (menú): el botón «…» abría y cerraba el menú en el mismo gesto porque
+  el `click` subía hasta el `window` de `ContextMenu` —que cierra el menú con
+  cualquier clic—. Los tres abridores del menú (`flows.openPaneMenu`,
+  `openTabMenu`, `openWorkspaceMenu`) ahora hacen `stopPropagation()`. Además el
+  menú se **corre hacia dentro** si el clic fue pegado al borde (antes se recortaba
+  contra la ventana y no se leían las etiquetas).
+- Tests: `src/features/panes/PaneFrame.test.ts` (jsdom) hace clic en los cinco
+  botones y comprueba su acción (`pane.split` con su dirección, `pane.zoom`,
+  el menú, `pane.close` con confirmación) y que el `pointerdown` de un botón no
+  cambia el foco local; `src/lib/ui/ContextMenu.test.ts` fija el corrimiento;
+  e2e nuevo en `actions.spec.ts` («el botón «…» del panel abre el menú con un
+  clic izquierdo y se queda abierto», el caso que el e2e no cubría porque sólo
+  usaba clic derecho).
+
+### (e) Control de espacios: cambio de sesión y de workspace
+
+`session.connect()` re-suscribía al store pero **no limpiaba** el estado de la
+sesión anterior: snapshot, workspaces, tabs, panes, agentes, layouts, foco,
+árbol de layout, terminales y bridges. De ahí paneles de la sesión vieja con
+terminales «desconectados».
+
+- `flows.switchSession(name)` (nuevo, y el que usa `SessionsDialog`) ordena el
+  cambio: `pool.disposeAll()` (bridges y terminales fuera) → `layout.reset()`
+  (árbol a null; el área queda en «sin panel») → `ui.resetSessionState()` (foco
+  local, historial de paneles y zoom) → `session.switchTo(name)` (nombre +
+  `reset()` + `connect()`).
+- `session.reset()` amplía lo que descarta (versión, protocolo, último mensaje,
+  error de arranque) e **invalida la suscripción anterior**.
+- **Una sola suscripción viva**: `connect()` toma un token de suscripción y el
+  callback descarta todo mensaje que llegue por un canal viejo (el backend además
+  rota la suscripción; esto es la red de seguridad del lado UI).
+- Verificación: e2e `tests/e2e/session-switch.spec.ts` (cambio de sesión sin
+  restos + estado nuevo encima + un solo bridge del pane nuevo) y
+  `src/lib/actions/switch-session.test.ts` (unidad: nada del estado anterior, y
+  los mensajes del canal viejo se ignoran).
+
+### (f) El snapshot del store se quedaba congelado (causa raíz encontrada en vivo)
+
+Verificado en vivo: con la app abierta, un `pane.split` hecho **por el API**
+creaba el pane en el server pero la UI no lo veía (sidebar «spike-r3 (5)» contra
+9 panes reales) durante minutos; al recargar la página sí aparecía. Es decir: el
+estado se refrescaba al arrancar/reconectar, pero **no durante la operación
+normal**.
+
+Causa (backend, fuera del alcance de esta tarea de frontend): en
+`crates/herdr-core/src/events.rs`, `run_with` llama `kick.notify_one()` **sólo
+cuando la conexión de eventos termina** (o falla), no por evento recibido; el
+bucle que consume `ev_tx` en `lib.rs` sólo traza. Como la conexión L se mantiene
+abierta, el store no vuelve a hacer fetch y su `watch` no emite: el canal
+`store_subscribe` no manda nada nuevo. El comentario del propio `lib.rs` («L:
+eventos globales → kick del store (coalescing)») describe el diseño; falta el
+kick por evento (p. ej. `store_kick.notify_one()` en el consumidor de `ev_rx`,
+que coalesce solo, o dentro de `subscribe_once` al reenviar cada evento).
+
+Mitigación en el frontend (esta tarea): el **latido** que ya existía para
+detectar la caída del server hace ahora también de catch-up — si el store no ha
+empujado nada en el último intervalo (`HEARTBEAT_MS`, 5 s), pide
+`session.snapshot` por RPC (~1 ms) y lo aplica. Y cada acción de la GUI
+(split, cierre, zoom, rename, tabs, espacios) refresca el snapshot al terminar,
+así la acción se ve reflejada de inmediato en vez de esperar al siguiente
+latido. Con el canal del store funcionando, el catch-up no hace peticiones
+(el push reciente lo cancela).
+
+- Test: `src/lib/stores/session-refresh.test.ts` (aplica el snapshot; el latido
+  pide el snapshot cuando el store está callado y **no** lo pide si acaba de
+  empujar).
+
+### Validación en vivo de esta ronda (ventana real + API del pane)
+
+La ventana se captura con `CopyFromScreen` y cada acción se contrasta contra la
+API del pane (`pane.list`, `layout.export`), que no depende de la vista. El
+usuario estaba trabajando en la misma máquina y la ventana se movía entre
+capturas, así que los clics se hacen calculando la posición desde el rect vivo y
+sólo si el GUI tiene el foco (si otra ventana está encima, se aborta el clic en
+vez de arriesgar un clic en la ventana equivocada).
+
+| Comprobación | Resultado |
+|---|---|
+| Terminal a todo el marco | llena el marco sin hueco lateral, en la ventana de arranque (1296×809) y tras el redimensionado del usuario (1671×809 → 1296×809) |
+| Sin «Retomar control» | el botón no aparece en ningún estado; el panel muestra el motivo real del cierre |
+| `◫` dividir a la derecha | **crea pane de verdad**: 8→9 paneles (y 3→4 en la segunda tanda), con el marco nuevo en pantalla |
+| `⬓` dividir abajo / `⤢` zoom | zoom leído por `layout.export` antes/después: `false` → `true` → `false`; el área queda con un solo panel y el indicador «zoom» en la barra de estado |
+| `…` menú | el menú se abre con clic izquierdo y **se queda abierto** (5 entradas: Dividir, Dividir, Alternar, Renombrar, Cerrar) |
+| `×` cerrar | cubierto por e2e (clic real + confirmación) y por el cierre en vivo por API: el marco del pane cerrado **desaparece**, el contador baja (5→4) y no queda ningún panel huérfano ni overlay de desconectado |
+| Catch-up del snapshot | `pane.split` por API con la app abierta y **sin recargar**: la UI converge sola en ~8 s (sidebar y barra de estado 9→10 paneles) |
+| Cambio de sesión (ida y vuelta) | desde el selector, «Conectar» a una sesión temporal vacía (`hd-verify`, creada por API con un solo espacio `verify-ws`): el título pasa a «Sesión: hd-verify», el sidebar muestra **sólo** `verify-ws (1)`, el área queda con **un** panel (`w1:p1`) y **no queda ningún rastro** de `spike-r3`/`docs-r11` ni de sus 4 paneles. Al volver a `herdr-desk-dev`, el sidebar y los 4 paneles vuelven tal cual. La sesión temporal se paró y se borró después |
+
 ## 8. Verificación de F1 (frontend)
 
 ```text
@@ -371,14 +523,17 @@ pnpm install            OK
 pnpm format:check       OK
 pnpm lint               OK (0 problemas)
 pnpm check              svelte-check: 0 errores, 0 warnings
-pnpm test               165 tests en 14 archivos (frames, errores, cliente + clasificación de
+pnpm test               197 tests en 21 archivos (frames, errores, cliente + clasificación de
                         errores de command, codegen, reconcile, snapshot, árbol de splits,
                         parser de atajos, keymap, presets de animación, CardSplitAccordion en
-                        jsdom + los 28 de tipografía de terminal y menú de contexto)
-pnpm e2e                70 pruebas en 10 specs (shell, shell F1 con regresión de layout,
-                        terminal, foco, layout, acciones, atajos, sesiones, reconexión y
-                        caída/vuelta del servidor + font-menu)
-pnpm build              dist/assets/index-*.js 491,46 kB min (134,73 kB gzip) + CSS 35,05 kB
+                        jsdom + los 28 de tipografía de terminal y menú de contexto + los 32
+                        nuevos de esta ronda: host de terminal, cierre de paneles con clave,
+                        botones de header, menú contextual, cambio de sesión y catch-up del
+                        snapshot)
+pnpm e2e                72 pruebas en 11 specs (shell, shell F1 con regresión de layout,
+                        terminal, foco, layout, acciones, atajos, sesiones, cambio de sesión,
+                        reconexión y caída/vuelta del servidor + font-menu)
+pnpm build              dist/assets/index-*.js 498,32 kB min (136,76 kB gzip) + CSS 35,51 kB
                         → dentro del presupuesto (§4: ≤ 600 KB con xterm)
 ```
 
@@ -406,3 +561,12 @@ Mediciones de la corrida de F1:
   (`config_read`) y el codegen de settings (`scripts/gen-settings.mjs`).
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
+- **Kick del store por evento (backend, no tocado en esta ronda)**: `events::run_with` sólo
+  hace `kick.notify_one()` al cerrarse la conexión de eventos, así que el store no se refresca
+  durante la operación normal y el canal `store_subscribe` queda mudo (ver §7quater(f)). La UI
+  lo mitiga con el catch-up del latido y con un refresco tras cada acción, pero el arreglo de
+  raíz es de una línea en `crates/herdr-core/src/events.rs` o en el consumidor de `ev_rx` de
+  `lib.rs` (un kick por evento; `Notify` coalesce). Queda para el frente de backend.
+- **Clics en vivo con la ventana tapada**: si el usuario tiene otra ventana encima, el GUI no
+  puede ganar el foco y la verificación en vivo de botones no es posible (los clics irían a la
+  ventana de encima). Los scripts de verificación abortan en ese caso.

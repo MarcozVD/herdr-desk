@@ -103,7 +103,7 @@ test('la rueda pide el scroll a herdr (el scrollback vive en el server)', async 
   expect(scrolls[0]?.lines).toBe(3);
 });
 
-test('un terminal.closed muestra el motivo y permite retomar el control', async ({ page }) => {
+test('un terminal.closed muestra el motivo, sin botón manual', async ({ page }) => {
   await bootApp(page);
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
 
@@ -112,11 +112,7 @@ test('un terminal.closed muestra el motivo y permite retomar el control', async 
   const overlay = page.getByTestId('terminal-overlay');
   await expect(overlay).toHaveAttribute('data-kind', 'closed');
   await expect(page.getByTestId('terminal-close-reason')).toContainText('stream_conflict');
-  await expect(page.getByRole('button', { name: 'Retomar control' })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Retomar control' }).click();
-  await expect.poll(async () => (await recordedCalls(page, 'terminal_open')).length).toBe(2);
-  await expect(page.getByTestId('terminal-overlay')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retomar control' })).toHaveCount(0);
 });
 
 test('sin snapshot no hay terminal abierta', async ({ page }) => {

@@ -5,6 +5,34 @@
 
   const menu = $derived(ui.contextMenu);
 
+  let el = $state<HTMLDivElement | null>(null);
+  let placed = $state<{ x: number; y: number } | null>(null);
+  let lastMenu: unknown = null;
+
+  // El menú se ancla al punto del clic.
+  $effect(() => {
+    if (!menu) {
+      lastMenu = null;
+      placed = null;
+      return;
+    }
+    if (menu === lastMenu) return;
+    lastMenu = menu;
+    placed = { x: menu.x, y: menu.y };
+  });
+
+  // …pero se CORRE hacia dentro si no cabe: abierto desde el panel del borde
+  // derecho se recortaba contra la ventana y no se leían sus etiquetas.
+  $effect(() => {
+    const at = placed;
+    if (!el || !at) return;
+    const rect = el.getBoundingClientRect();
+    const margin = 6;
+    const x = Math.max(margin, Math.min(at.x, window.innerWidth - rect.width - margin));
+    const y = Math.max(margin, Math.min(at.y, window.innerHeight - rect.height - margin));
+    if (x !== at.x || y !== at.y) placed = { x, y };
+  });
+
   function run(item: { disabled?: boolean; run: () => void | Promise<void> }): void {
     if (item.disabled) return;
     ui.closeContextMenu();
@@ -27,7 +55,8 @@
     role="menu"
     tabindex="-1"
     data-testid="context-menu"
-    style="left:{menu.x}px; top:{menu.y}px"
+    bind:this={el}
+    style="left:{placed?.x ?? menu.x}px; top:{placed?.y ?? menu.y}px"
     onkeydown={onKeydown}
     onclick={(event) => event.stopPropagation()}
   >

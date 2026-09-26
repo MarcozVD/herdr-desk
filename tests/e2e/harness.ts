@@ -153,3 +153,17 @@ export async function recordedMethodCalls(
 export async function openPanes(page: Page): Promise<string[]> {
   return page.evaluate(() => window.__HD_TEST__?.openPanes() ?? []);
 }
+
+/**
+ * Espera a que el panel tenga su bridge abierto. El arranque es asíncrono (el
+ * árbol de layout llega por RPC y el terminal abre después), así que empujar
+ * frames/cierres justo tras `bootApp` es una carrera; esto la quita.
+ */
+export async function waitBridgeOpen(page: Page, index = 0): Promise<void> {
+  await page.waitForFunction(
+    (i) =>
+      document.querySelectorAll('[data-testid="terminal-host"]')[i]?.getAttribute('data-bridge') ===
+      'open',
+    index,
+  );
+}

@@ -2,7 +2,14 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { bootApp, pushFrame, readSnapshotFixture, recordedCalls, terminalText } from './harness';
+import {
+  bootApp,
+  pushFrame,
+  readSnapshotFixture,
+  recordedCalls,
+  terminalText,
+  waitBridgeOpen,
+} from './harness';
 
 interface BannerSample {
   state: string;
@@ -182,12 +189,19 @@ test('si el servidor se cae, la UI lo nota y reabre los paneles al volver', asyn
   await bootApp(page);
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
 
-  // El bridge se cierra porque el server se fue (el store del backend no avisa).
+  // El bridge se cierra porque el server se fue. El panel queda «reconectando»…
   await page.evaluate(() => window.__HD_TEST__?.pushClosed('server is shutting down'));
-  await expect(page.getByTestId('reconnect-banner')).toBeVisible({ timeout: 5000 });
-  await expect(page.getByTestId('reconnect-error')).toContainText('server is shutting down');
-  await expect(page.getByTestId('terminal-reconnecting')).toBeVisible();
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'reconnecting');
+  await expect(page.getByTestId('terminal-reconnecting')).toBeVisible();
+  // …y SOLO con el cierre de un bridge la sesión NO se da por caída: cerrar una
+  // terminal (o que su PTY muera) no puede tumbar la app entera.
+  await expect(page.getByTestId('reconnect-banner')).toHaveCount(0);
+
+  // La caída real la confirman el store, el watchdog del snapshot o el latido
+  // (`session.ping`): aquí se simula la señal del store.
+  await page.evaluate(() => window.__HD_TEST__?.pushState('offline'));
+  await expect(page.getByTestId('reconnect-banner')).toBeVisible({ timeout: 5000 });
+  await expect(page.getByTestId('reconnect-error')).toContainText('sin conexión');
 
   // Vuelve el server: el backend respawnea con el mismo bridge/Channel y los
   // frames devuelven el panel a «open» sin volver a atachar (evita «taken over»).
@@ -206,6 +220,7 @@ test('si el servidor se cae, la UI lo nota y reabre los paneles al volver', asyn
 
 test('un cierre normal (terminal terminada) NO se toma como caída', async ({ page }) => {
   await bootApp(page);
+  await waitBridgeOpen(page);
   await page.evaluate(() => window.__HD_TEST__?.pushClosed('terminal term_x exited'));
   await expect(page.getByTestId('terminal-close-reason')).toContainText('term_x exited');
   await expect(page.getByTestId('reconnect-banner')).toHaveCount(0);

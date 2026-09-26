@@ -24,6 +24,22 @@
   function focus(): void {
     if (!active) flows.focusPane(paneId);
   }
+
+  /**
+   * Foco local del panel desde el pointerdown del marco, ACOTADO: si el
+   * pointerdown nace en un control interactivo (los botones del header, la
+   * barra de scroll de la terminal…) no se toca el foco. Un cambio de foco
+   * disparado desde ahí puede desmontar o re-clavar el nodo entre el
+   * pointerdown y el mouseup, y el navegador entonces NO entrega el `click`
+   * (mousedown y mouseup deben apuntar al mismo nodo vivo): los botones del
+   * panel dejaban de responder. El resto del marco (título, fondo del cuerpo)
+   * sigue enfocando como antes.
+   */
+  function onFramePointerDown(event: PointerEvent): void {
+    const target = event.target as Element | null;
+    if (target?.closest('button, a, input, textarea, select, [data-no-pane-focus]')) return;
+    focus();
+  }
 </script>
 
 <article
@@ -34,7 +50,7 @@
   data-status={status}
   data-active={active}
   data-borders={settings.values.pane_borders}
-  onpointerdown={focus}
+  onpointerdown={onFramePointerDown}
 >
   <header
     class="pane-header"

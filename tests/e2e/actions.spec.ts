@@ -136,6 +136,20 @@ test('renombrar panel llama a pane.rename', async ({ page }) => {
   expect(call).toMatchObject({ params: { pane_id: 'w1:p1', label: 'servidor' } });
 });
 
+test('el botón «…» del panel abre el menú con un clic izquierdo y se queda abierto', async ({
+  page,
+}) => {
+  await bootApp(page);
+  await page.getByTestId('pane-menu').click();
+
+  const menu = page.getByTestId('context-menu');
+  await expect(menu).toBeVisible();
+  await expect(page.getByTestId('context-item')).toHaveCount(5);
+
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+});
+
 test('si herdr responde error, sale un toast en español', async ({ page }) => {
   await bootApp(page);
   // El arnés responde `ok` a todo: se fuerza el error pidiendo un cierre de un id

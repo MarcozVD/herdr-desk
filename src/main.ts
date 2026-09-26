@@ -37,10 +37,15 @@ async function boot(): Promise<void> {
 
   mount(App, { target: document.getElementById('app') as HTMLElement });
 
-  // Si un bridge se cierra porque el servidor desapareció, la UI lo toma como
-  // caída de conexión: pasa a «desconectado», reintenta y reabre los paneles.
+  // Un bridge que se cierra NO es una caída del servidor: es ese panel, y el
+  // pool se encarga de él (reenganche o «Retomar control»). Si esto marcara la
+  // sesión offline, cerrar una terminal —o que su PTY muriera— tumbaba la app
+  // entera. La caída real la detectan el store, el watchdog del snapshot y el
+  // latido (`session.ping` cada HEARTBEAT_MS).
   pool.subscribe({
-    onOutage: (_paneId, reason) => session.noteOutage(reason),
+    onOutage: (paneId, reason) => {
+      console.warn(`[herdr-desk] bridge de ${paneId} caído: ${reason}`);
+    },
   });
 
   void session.bootstrap();

@@ -9,6 +9,7 @@
     sessionStart,
     sessionStop,
   } from '../../lib/herdr/client';
+  import { flows } from '../../lib/actions/flows';
   import { describeApiError, errorText } from '../../lib/herdr/errors';
   import type { SessionInfo } from '../../lib/herdr/types';
   import { es } from '../../lib/i18n/es';
@@ -71,8 +72,9 @@
       return;
     }
     session.reportSessionError(null);
-    await session.setSessionName(target.name);
-    await session.connect();
+    // Cambio de sesión completo: se descarta el estado de la anterior (panes,
+    // árbol, terminales y bridges, foco local) y el store reconecta.
+    await flows.switchSession(target.name);
     ui.notify(`${es.app.session}: ${target.name}`, 'info');
     ui.closeSessions();
   }
