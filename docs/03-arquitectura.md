@@ -188,6 +188,40 @@ el snapshot (`purge_non_respawnable` limpia panes inexistentes y cierres pedidos
   **emite snake_case** (`workspace_created`). `events::normalize_event_type` lo lleva a
   dotted para todo el código (frontend incluido).
 
+## Integración con la CLI (`cli_run`, lista blanca)
+
+- `cli_run { argv: string[] } -> CliRunOutput { exit_code, stdout, stderr }`.
+  El argv se compara **elemento a elemento** (sin shell, sin `cmd /c`, sin redirecciones)
+  contra `commands::cli_run::WHITELIST`; cualquier diferencia se rechaza con `ApiError`
+  antes de crear el proceso. Los spawns llevan `CREATE_NO_WINDOW` (guardarraíl R8).
+- Lista blanca actual (8 entradas, pensada para F2–F4):
+  `herdr agent start --help`, `herdr status --json`, `herdr --default-config`,
+  `herdr config check`, `herdr integration status`, `herdr plugin config-dir`,
+  `git branch --format=%(refname:short)`, `git status --porcelain=v2 --branch`.
+  Añadir una entrada es añadir una fila: es la vía **única** por la que la GUI lee la
+  CLI, para no repetir el `cmd /c` con strings de usuario que prohíbe el §7 del plan.
+- `agent_kinds { refresh?: bool } -> AgentKinds { kinds, reason, cached }`:
+  parsea los `possible values` de `herdr agent start --help`, con cache en memoria y TTL
+  corto. Si la ayuda no trae la lista, devuelve `kinds: []` **con `reason`**, nunca un
+  error fatal: el diálogo de "iniciar agente" degrada a entrada libre.
+
+## Bandeja del sistema, overlay e identidad de toasts (T2.4, T2.5)
+
+- `tray_update { sessions: TraySession[], agents: TrayAgent[] }`:
+  - `TraySession { name, running, active, default }`
+  - `TrayAgent { pane_id, agent, display, status }`
+  El menú se reconstruye desde ese estado: lista de sesiones (conectar, detener con
+  confirmación fuerte, salir) y agentes con su estado. `blocked_count()` calcula el
+  conteo de bloqueados que alimenta el overlay de la barra de tareas. `setup_tray` se
+  llama en el arranque y el proceso no debe sobrevivir a la salida de la app.
+- `taskbar_overlay { count?: number | null } -> OverlayApplied { count, applied }`:
+  dibuja el número de bloqueados como imagen RGBA (`overlay_rgba`, 32×32) sobre el
+  icono de la ventana. `null` quita el overlay. Solo Windows: en el resto de plataformas
+  es no-op y devuelve `applied: false` en vez de fallar.
+- `toast_identity() -> { aumid, display_name, registered }`: el AUMID se registra en el
+  `HKCU\...\AppUserModelId` de la app para que los toasts muestren el nombre de la
+  aplicación y no "Windows PowerShell" (patrón `windows-toast-identity.md`).
+
 ## Protocolo (hallazgos vigentes)
 
 1. 1 request por conexión; respuesta `{"id","result"}` o `{"id","error":{code,message}}`.
