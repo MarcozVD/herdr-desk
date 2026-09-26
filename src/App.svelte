@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
 
   import AgentPromptDialog from './features/agents/AgentPromptDialog.svelte';
+  import { noticeCenter } from './lib/agents/noticeCenter';
   import StartAgentDialog from './features/agents/StartAgentDialog.svelte';
   import SessionsDialog from './features/sessions/SessionsDialog.svelte';
   import Sidebar from './features/sidebar/Sidebar.svelte';
@@ -56,6 +57,23 @@
 
   $effect(() => {
     document.documentElement.style.setProperty('--sidebar-width', `${settings.widthPx}px`);
+  });
+
+  // T2.5 — Avisos de agente: se compara el snapshot nuevo con el anterior en
+  // cada refresco del store (que ya refresca por evento) y, si el usuario los
+  // tiene activados, se agrupan antes de pintar el toast.
+  $effect(() => {
+    // La revisión sube con cada refresco del store (aunque la lista venga
+    // igual): el centro la usa para no mirar dos veces el mismo snapshot.
+    const revision = session.revision;
+    noticeCenter.observe(
+      session.agents,
+      {
+        focusedPaneId: ui.localFocusedPaneId ?? session.focusedPaneId,
+        windowFocused: document.hasFocus(),
+      },
+      revision,
+    );
   });
 
   // T2.4 — El conteo de agentes bloqueados va al overlay del icono de la barra

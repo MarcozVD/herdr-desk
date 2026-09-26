@@ -43,6 +43,12 @@
   /** Filas en blanco entre agentes (`row_gap` de la config). */
   const gaps = $derived(Array.from({ length: agentRowGap(rowsConfig) }, (_, index) => index));
 
+  const notifyOn = $derived(settings.values.toast_delivery === 'herdr');
+
+  function toggleNotifications(): void {
+    settings.set('toast_delivery', notifyOn ? 'off' : 'herdr');
+  }
+
   function toggleSort(): void {
     settings.set('agent_panel_sort', sortMode === 'spaces' ? 'priority' : 'spaces');
   }
@@ -89,6 +95,20 @@
       onclick={toggleSort}
     >
       {sortMode === 'spaces' ? es.sidebar.sortSpaces : es.sidebar.sortPriority}
+    </button>
+    <!-- T2.5: la preferencia de notificaciones (herdr la lee de
+         `[ui.toast] delivery`); la GUI la recuerda en sus ajustes. -->
+    <button
+      type="button"
+      class="agent-panel__bell"
+      data-testid="agent-panel-bell"
+      data-on={notifyOn}
+      aria-pressed={notifyOn}
+      title={notifyOn ? es.sidebar.notifyOff : es.sidebar.notifyOn}
+      aria-label={notifyOn ? es.sidebar.notifyOff : es.sidebar.notifyOn}
+      onclick={toggleNotifications}
+    >
+      {notifyOn ? '🔔' : '🔕'}
     </button>
   </div>
 

@@ -5,6 +5,7 @@ import { es } from '../i18n/es';
 import type * as Api from '../herdr/types.gen';
 import type { SplitDirection } from '../herdr/types.gen';
 import { agentApi, paneApi, serverApi, tabApi, workspaceApi } from '../herdr/actions';
+import { noticeCenter } from '../agents/noticeCenter';
 import { describeApiError, errorText, parseApiError } from '../herdr/errors';
 import {
   AGENT_KEY,
@@ -345,6 +346,8 @@ export const flows = {
     pool.disposeAll();
     layout.reset();
     ui.resetSessionState();
+    // Los avisos de agente no se comparan entre sesiones distintas.
+    noticeCenter.reset();
     await session.switchTo(name);
   },
 

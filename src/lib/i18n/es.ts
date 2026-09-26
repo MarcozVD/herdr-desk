@@ -52,6 +52,8 @@ export const es = {
     tabsCount: '{n} pestañas',
     newWorkspace: 'Nuevo espacio',
     filterAgents: 'Filtrar agentes…',
+    notifyOn: 'Avisar cuando un agente se bloquee o termine',
+    notifyOff: 'No avisar de los agentes',
     sortAgentsHint: 'Cambiar el orden del panel de agentes',
     sortSpaces: 'Espacios',
     sortPriority: 'Prioridad',

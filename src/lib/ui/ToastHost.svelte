@@ -29,7 +29,10 @@
     pointer-events: none;
   }
 
+  /* Entrada discreta: opacidad y unos píxeles de desplazamiento (nada de
+     sombras ni filtros animados). */
   .toast {
+    animation: toast-in 140ms ease-out;
     pointer-events: auto;
     display: flex;
     align-items: center;
@@ -55,5 +58,21 @@
     cursor: pointer;
     font-size: 16px;
     line-height: 1;
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toast {
+      animation: none;
+    }
   }
 </style>

@@ -14,6 +14,9 @@ export type SidebarCollapsedMode = 'compact' | 'hidden';
 export type TabBarPosition = 'top' | 'bottom';
 export type AgentPanelSort = 'spaces' | 'priority';
 
+/** Reparto de notificaciones de herdr (`[ui.toast] delivery`). */
+export type ToastDelivery = 'off' | 'herdr' | 'terminal' | 'system';
+
 /** Filas de un agente en el panel: array de filas y cada fila un array de tokens. */
 export type AgentRowsConfig = AgentTokenSpec[][];
 
@@ -52,6 +55,11 @@ export interface UiSettings {
   /** ms que se espera al respawn del backend antes de reenganchar el bridge. */
   bridge_reopen_grace_ms: number;
   toast_ms: number;
+  /** `[ui.toast] delivery` de herdr: off | herdr | terminal | system.
+   *  La GUI solo puede pintar los toasts in-app (`herdr`). */
+  toast_delivery: ToastDelivery;
+  /** `[ui.toast] delay_seconds`: lo que se espera para agrupar una ráfaga. */
+  toast_group_ms: number;
 }
 
 /** Valores por defecto, tomados del `--default-config` de herdr 0.8.0-preview. */
@@ -84,6 +92,8 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   bridge_grace_ms: 3000,
   bridge_reopen_grace_ms: 3000,
   toast_ms: 4000,
+  toast_delivery: 'off',
+  toast_group_ms: 1000,
 };
 
 const STORAGE_KEY = 'herdr-desk.settings';
