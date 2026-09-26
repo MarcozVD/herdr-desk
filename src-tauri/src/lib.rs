@@ -8,6 +8,8 @@ mod window;
 #[cfg(all(test, feature = "sandbox"))]
 mod cli_run_sandbox_tests;
 #[cfg(all(test, feature = "sandbox"))]
+mod config_sandbox_tests;
+#[cfg(all(test, feature = "sandbox"))]
 mod sandbox_guard;
 #[cfg(all(test, feature = "sandbox"))]
 mod session_switch_tests;
