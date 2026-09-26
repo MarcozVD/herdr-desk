@@ -101,6 +101,7 @@ pub fn run() {
             commands::session::session_start,
             commands::session::session_stop,
             commands::session::session_delete,
+            commands::system::gui_defaults,
             commands::terminal::terminal_open,
             commands::terminal::terminal_input,
             commands::terminal::terminal_input_bytes,

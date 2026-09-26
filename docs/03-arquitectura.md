@@ -57,6 +57,34 @@ src-tauri (capa fina)
      `on_frame`, tamaño recordado cols/rows);
   2. rearma la conexión S (make-before-break).
 
+## Defaults de GUI para el terminal (`gui_defaults`)
+
+Command de solo lectura `gui_defaults() -> GuiDefaults` (§5: estilo `session_current`,
+`Result<_, ApiError>`, valores centralizados en consts sin strings mágicos). Es la fuente
+de verdad del backend para que el frontend no adivine la fuente de la terminal:
+
+```json
+{ "terminal_font_family": "Cascadia Code", "terminal_font_size_px": 13, "terminal_line_height": 1.0 }
+```
+
+Cascada de detección (registros Fonts de HKLM y HKCU; matching case-insensitive por nombre
+de valor, ej. `"Cascadia Code Regular (TrueType)"`):
+
+| Orden | Familia | Origen |
+|---|---|---|
+| 1 | `Cascadia Code` | Windows 11 la trae de serie |
+| 2 | `Cascadia Mono` | Windows 11 la trae de serie (default de Windows Terminal) |
+| 3 | `Consolas` | incluida desde XP; siempre presente en la práctica |
+| fallback | `monospace` | genérico CSS; resuelve siempre aunque nada esté instalado |
+
+La resolución es inyectable (`resolve_terminal_font_family(is_installed)` +
+`build_gui_defaults(is_installed)`): los tests unitarios no dependen de las fuentes reales
+de la máquina. Detectado en esta máquina: `Cascadia Code`.
+
+**Menú contextual del WebView2**: la supresión del menú del navegador es cosa del
+FRONTEND (`preventDefault` en el evento `contextmenu` del DOM), no del backend ni de la
+configuración de la ventana. No reintentarlo por el lado de Tauri/ventana.
+
 ## Conexión y bootstrap (fix bug en vivo, F1)
 
 - **Refresh inicial del store**: el refresher hace un fetch inmediato al arrancar, ANTES de
