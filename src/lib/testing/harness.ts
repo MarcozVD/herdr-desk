@@ -23,6 +23,8 @@ interface HarnessConfig {
   sessionStartError?: 'missing' | { code: string; message: string };
   /** `session_current` no está registrado en el backend. */
   sessionCurrentMissing?: boolean;
+  /** Respuesta del command `agent_kinds` (T2.3). */
+  agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
 }
 
 export interface RecordedCall {
@@ -161,6 +163,55 @@ function defaultResponse(method: string, config: HarnessConfig): unknown {
           truncated: false,
         },
       };
+    case 'agent.start':
+      return {
+        type: 'agent_started',
+        agent: {
+          pane_id: String(
+            (config.snapshot as { panes?: Array<{ pane_id: string }> })?.panes?.[0]?.pane_id ??
+              'w1:p1',
+          ),
+          terminal_id: 'term_65c51d72380f41',
+          workspace_id: 'w1',
+          tab_id: 'w1:t1',
+          focused: true,
+          agent_status: 'working',
+          revision: 0,
+        },
+        argv: ['claude'],
+      };
+    case 'agent.read':
+      return {
+        type: 'pane_read',
+        read: {
+          pane_id: 'w1:p1',
+          workspace_id: 'w1',
+          tab_id: 'w1:t1',
+          revision: 0,
+          source: 'recent_unwrapped',
+          format: 'text',
+          text: 'hola desde el transcript\n' + 'segunda linea del agente',
+          truncated: false,
+        },
+      };
+    case 'agent.explain':
+      return {
+        type: 'agent_explain',
+        explain: { matched_rule: 'hd-bot', manifest_source: 'builtin', reason: 'nombre' },
+      };
+    case 'agent.wait':
+      return {
+        type: 'agent_info',
+        agent: {
+          pane_id: 'w1:p1',
+          terminal_id: 'term_65c51d72380f41',
+          workspace_id: 'w1',
+          tab_id: 'w1:t1',
+          focused: true,
+          agent_status: 'idle',
+          revision: 0,
+        },
+      };
     case 'workspace.list':
       return { type: 'workspace_list', workspaces: [] };
     case 'server.reload_config':
@@ -212,6 +263,15 @@ export function installHarness(): void {
       // T2.4 — overlay del icono con el conteo de agentes bloqueados.
       case 'taskbar_overlay':
         return { count: payload.count ?? null, applied: true };
+      // T2.3 — tipos de agente del CLI (el backend los saca de `agent start --help`).
+      case 'agent_kinds':
+        return (
+          config.agentKinds ?? {
+            kinds: ['claude', 'opencode', 'aider'],
+            reason: null,
+            cached: !payload.refresh,
+          }
+        );
       case 'session_list':
         return {
           sessions: [

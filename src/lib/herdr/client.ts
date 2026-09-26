@@ -236,6 +236,22 @@ export async function taskbarOverlay(
   return optionalCommand('taskbar_overlay', { count });
 }
 
+/* ---- Agentes: tipos para el diálogo de arranque (T2.3) ---- */
+
+/** Lo que devuelve el command `agent_kinds`: los tipos que acepta
+ *  `herdr agent start` (leídos de su ayuda), el motivo cuando no hay lista y si
+ *  venían de la caché del backend. */
+export interface AgentKindsResult {
+  kinds: string[];
+  reason: string | null;
+  cached: boolean;
+}
+
+/** Tipos de agente del CLI, con caché en el backend (`refresh` la salta). */
+export async function agentKinds(refresh = false): Promise<CommandOutcome<AgentKindsResult>> {
+  return optionalCommand<AgentKindsResult>('agent_kinds', { refresh });
+}
+
 /* ---- Terminal (bridges) ---- */
 
 function toFrameBuffer(frame: unknown): ArrayBuffer | null {

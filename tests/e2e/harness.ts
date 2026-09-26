@@ -27,6 +27,8 @@ export interface BootOptions {
   layoutTree?: unknown;
   sessionStartError?: 'missing' | { code: string; message: string };
   sessionCurrentMissing?: boolean;
+  /** Respuesta del command `agent_kinds` (T2.3). */
+  agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
 }
 
 export async function bootApp(page: Page, options: BootOptions = {}): Promise<void> {
@@ -36,6 +38,7 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     autoSnapshot: options.autoSnapshot ?? true,
     terminalOpenDelayMs: options.terminalOpenDelayMs ?? 0,
     layoutTree: options.layoutTree ?? null,
+    agentKinds: options.agentKinds ?? null,
     sessionStartError: options.sessionStartError ?? null,
     sessionCurrentMissing: options.sessionCurrentMissing ?? false,
   };

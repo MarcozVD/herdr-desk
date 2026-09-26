@@ -144,7 +144,8 @@ test('el botón «…» del panel abre el menú con un clic izquierdo y se queda
 
   const menu = page.getByTestId('context-menu');
   await expect(menu).toBeVisible();
-  await expect(page.getByTestId('context-item')).toHaveCount(5);
+  // 5 acciones del panel + las 2 de arrancar agente (T2.3).
+  await expect(page.getByTestId('context-item')).toHaveCount(7);
 
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
