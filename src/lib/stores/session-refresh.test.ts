@@ -103,4 +103,39 @@ describe('catch-up del snapshot (latido y acciones)', () => {
 
     expect(snapshotCalls()).toBe(1);
   });
+
+  // El catch-up es un PARCHE TEMPORAL por el backend (el kick del store solo se
+  // dispara al cerrar la conexión de eventos). Tiene que poder apagarse de una
+  // pieza: `session.setSnapshotCatchUp(false)`.
+  it('el parche se apaga de una pieza con setSnapshotCatchUp(false)', async () => {
+    await session.refreshSnapshot();
+    expect(snapshotCalls()).toBe(1);
+
+    session.setSnapshotCatchUp(false);
+    expect(session.snapshotCatchUp).toBe(false);
+
+    // Ni la llamada directa ni las acciones refrescan.
+    await session.refreshSnapshot();
+    expect(snapshotCalls()).toBe(1);
+
+    session.setSnapshotCatchUp(true);
+    await session.refreshSnapshot();
+    expect(snapshotCalls()).toBe(2);
+  });
+
+  it('con el parche apagado el latido sigue comprobando el server pero no pide snapshot', async () => {
+    vi.useFakeTimers();
+    await session.connect();
+    await session.refreshSnapshot();
+    expect(snapshotCalls()).toBe(1);
+
+    session.setSnapshotCatchUp(false);
+    session.lastMessageAt = null;
+
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS + 50);
+
+    // Solo el ping del latido (detección de caída, no es parte del parche).
+    expect(snapshotCalls()).toBe(1);
+    expect(calls.filter((call) => call.method === 'ping').length).toBeGreaterThan(1);
+  });
 });

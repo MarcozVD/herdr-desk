@@ -45,6 +45,27 @@ export const SNAPSHOT_TIMEOUT_MS = 2500;
  */
 export const HEARTBEAT_MS = 5000;
 
+/**
+ * ⚠️ PARCHE TEMPORAL — RETIRAR cuando el backend haga el kick del store por
+ * evento (hoy `events::run_with` de `crates/herdr-core` solo hace
+ * `kick.notify_one()` al CERRARSE la conexión de eventos, así que el store no
+ * refresca durante la operación normal y el canal `store_subscribe` se queda
+ * mudo). Mientras eso siga así, la UI se queda congelada: los splits y cierres
+ * hechos desde la propia GUI no se ven, aunque la píldora diga «en línea».
+ *
+ * Con el parche ACTIVO (por defecto) se compensa de dos formas, y solo estas dos:
+ *   1. el latido (`#heartbeatTick`) pide `session.snapshot` por RPC si el store
+ *      no ha empujado nada en el último intervalo (`HEARTBEAT_MS`);
+ *   2. cada acción de la GUI (`flows.syncSnapshot`) refresca tras mutar, para
+ *      verse reflejada de inmediato en vez de esperar al latido.
+ * Las dos pasan por el mismo interruptor: `session.setSnapshotCatchUp(false)`
+ * las apaga de golpe (el `ping` del latido, que es la detección de caída del
+ * server, NO se apaga: eso no es parte del parche).
+ *
+ * NO extender esto a más sitios: el arreglo de raíz es del backend.
+ */
+export const SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK = true;
+
 export function backoffDelayMs(attempt: number): number {
   const raw = BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1);
   return Math.min(BACKOFF_MAX_MS, raw);
@@ -123,6 +144,8 @@ class SessionStore {
   #subToken = 0;
   #connecting = false;
   #stopped = false;
+  /** Interruptor del parche de catch-up (ver SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK). */
+  #catchUp = SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK;
 
   async bootstrap(): Promise<void> {
     const current = await sessionCurrent();
@@ -319,6 +342,8 @@ class SessionStore {
   async #heartbeatTick(): Promise<void> {
     const alive = await this.ping();
     if (!alive) return;
+    // ⚠️ Parche temporal: sin él, el latido solo comprueba que el server vive.
+    if (!this.#catchUp) return;
     if (this.#recent()) return;
     await this.refreshSnapshot();
   }
@@ -333,8 +358,13 @@ class SessionStore {
    * Pide `session.snapshot` y aplica el resultado. Lo usan el latido (catch-up)
    * y las acciones de la GUI, que así se ven reflejadas de inmediato sin
    * depender de que el store empuje.
+   *
+   * Es la única puerta del parche temporal: con `setSnapshotCatchUp(false)` no
+   * hace nada (y el latido tampoco lo llama). Ver
+   * `SNAPSHOT_CATCH_UP_FOR_BACKEND_KICK`.
    */
   async refreshSnapshot(): Promise<void> {
+    if (!this.#catchUp) return;
     try {
       const result = await call('session.snapshot', {});
       if (result.type !== 'session_snapshot') return;
@@ -458,6 +488,19 @@ class SessionStore {
     this.#clearRetry();
     this.#clearSnapshotWatchdog();
     this.#clearHeartbeat();
+  }
+
+  /**
+   * Apaga (o vuelve a encender) el parche de catch-up del snapshot. Es el
+   * interruptor único del workaround: cuando el backend haga el kick por evento,
+   * basta con `session.setSnapshotCatchUp(false)` (o borrar el parche).
+   */
+  setSnapshotCatchUp(enabled: boolean): void {
+    this.#catchUp = enabled;
+  }
+
+  get snapshotCatchUp(): boolean {
+    return this.#catchUp;
   }
 
   reset(): void {
