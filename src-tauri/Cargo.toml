@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 description = "herdr-desk: GUI glassmorphism para herdr"
-authors = ["mvale"]
+authors = ["MarcozVD"]
 
 [lib]
 name = "herdr_desk_lib"

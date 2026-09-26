@@ -2,6 +2,6 @@
   "type": "split",
   "direction": "right",
   "ratio": 0.5,
-  "first": { "type": "pane", "pane_id": "w1:p1", "cwd": "C:\\Users\\mvale\\Documents\\herdr" },
-  "second": { "type": "pane", "pane_id": "w1:p2", "cwd": "C:\\Users\\mvale\\Documents\\herdr" }
+  "first": { "type": "pane", "pane_id": "w1:p1", "cwd": "C:\\Users\\dev\\Documents\\herdr" },
+  "second": { "type": "pane", "pane_id": "w1:p2", "cwd": "C:\\Users\\dev\\Documents\\herdr" }
 }

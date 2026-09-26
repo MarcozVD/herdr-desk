@@ -83,7 +83,7 @@ function pane(id: string): PaneInfo {
     focused: true,
     agent_status: 'unknown',
     revision: 0,
-    cwd: 'C:\\Users\\mvale\\Documents\\herdr',
+    cwd: 'C:\\Users\\dev\\Documents\\herdr',
   } as unknown as PaneInfo;
 }
 

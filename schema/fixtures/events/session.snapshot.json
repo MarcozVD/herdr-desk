@@ -56,7 +56,7 @@
     "panes": [
       {
         "agent_status": "unknown",
-        "cwd": "C:\\Users\\mvale\\Documents\\herdr\\crates\\herdr-core",
+        "cwd": "C:\\Users\\dev\\Documents\\herdr\\crates\\herdr-core",
         "focused": false,
         "pane_id": "w1:p1",
         "revision": 0,
@@ -71,7 +71,7 @@
       },
       {
         "agent_status": "unknown",
-        "cwd": "C:\\Users\\mvale\\Documents\\herdr\\crates\\herdr-core",
+        "cwd": "C:\\Users\\dev\\Documents\\herdr\\crates\\herdr-core",
         "focused": true,
         "label": "fx-p",
         "pane_id": "w1:p2",

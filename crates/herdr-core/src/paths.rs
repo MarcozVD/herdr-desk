@@ -65,10 +65,10 @@ mod tests {
 
     #[test]
     fn pipe_name_from_socket() {
-        let socket = PathBuf::from(r"C:\Users\mvale\AppData\Roaming\herdr\herdr.sock");
+        let socket = PathBuf::from(r"C:\Users\dev\AppData\Roaming\herdr\herdr.sock");
         assert_eq!(
             pipe_name(&socket),
-            r"\\.\pipe\C:\Users\mvale\AppData\Roaming\herdr\herdr.sock"
+            r"\\.\pipe\C:\Users\dev\AppData\Roaming\herdr\herdr.sock"
         );
     }
 }

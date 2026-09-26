@@ -15,8 +15,8 @@ use crate::state::AppState;
 // antigravity_cli, grok.
 // El estado se lee de `herdr integration status` (CLI, texto; la CLI no trae
 // --json: verificado). Formato real por línea:
-//   claude: current (v7) (C:\Users\mvale\.claude\hooks\herdr-agent-state.ps1)
-//   pi: not installed (C:\Users\mvale\.pi\agent\extensions\herdr-agent-state.ts)
+//   claude: current (v7) (C:\Users\dev\.claude\hooks\herdr-agent-state.ps1)
+//   pi: not installed (C:\Users\dev\.pi\agent\extensions\herdr-agent-state.ts)
 // ---------------------------------------------------------------------------
 
 pub const INTEGRATION_TARGETS: [&str; 16] = [

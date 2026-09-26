@@ -17,8 +17,8 @@ test('la terminal pinta los frames ANSI del bridge', async ({ page }) => {
   expect(Number(opens[0]?.cols)).toBeGreaterThan(0);
   expect(Number(opens[0]?.rows)).toBeGreaterThan(0);
 
-  await pushFrame(page, { text: 'PS C:\\Users\\mvale\\Documents\\herdr> ', seq: 1 });
-  await expect.poll(() => terminalText(page)).toContain('PS C:\\Users\\mvale\\Documents\\herdr>');
+  await pushFrame(page, { text: 'PS C:\\Users\\dev\\Documents\\herdr> ', seq: 1 });
+  await expect.poll(() => terminalText(page)).toContain('PS C:\\Users\\dev\\Documents\\herdr>');
 
   // Un frame full descarta lo anterior y se escribe igual (viewport completo).
   await pushFrame(page, { text: '\x1b[2J\x1b[Hhola herdr', seq: 2, full: true });

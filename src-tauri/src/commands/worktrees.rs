@@ -461,11 +461,11 @@ mod tests {
     fn parsea_fixture_real_de_worktree_list() {
         let parsed = parse_worktree_list(&fixture_result()).expect("parseo");
         assert_eq!(parsed.source.repo_name, "herdr");
-        assert_eq!(parsed.source.repo_root, r"C:\Users\mvale\Documents\herdr");
+        assert_eq!(parsed.source.repo_root, r"C:\Users\dev\Documents\herdr");
         assert_eq!(parsed.source.source_workspace_id.as_deref(), Some("w1"));
         assert_eq!(parsed.worktrees.len(), 1);
         let wt = &parsed.worktrees[0];
-        assert_eq!(wt.branch.as_deref(), Some("f1-nucleo"));
+        assert_eq!(wt.branch.as_deref(), Some("main"));
         assert_eq!(wt.label, "herdr");
         assert_eq!(wt.open_workspace_id.as_deref(), Some("w1"));
         assert!(!wt.is_bare && !wt.is_detached && !wt.is_prunable && !wt.is_linked_worktree);

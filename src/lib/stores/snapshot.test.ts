@@ -73,7 +73,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
         focused: false,
         agent_status: 'working',
         revision: 0,
-        cwd: 'C:\\Users\\mvale\\Documents\\herdr\\',
+        cwd: 'C:\\Users\\dev\\Documents\\herdr\\',
       },
       {
         pane_id: 'w1:p2',
@@ -83,7 +83,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
         focused: true,
         agent_status: 'unknown',
         revision: 3,
-        cwd: 'C:\\Users\\mvale\\Documents\\herdr\\',
+        cwd: 'C:\\Users\\dev\\Documents\\herdr\\',
       },
       {
         pane_id: 'w2:p1',
@@ -93,7 +93,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
         focused: false,
         agent_status: 'blocked',
         revision: 1,
-        cwd: 'C:\\Users\\mvale\\Documents',
+        cwd: 'C:\\Users\\dev\\Documents',
       },
     ],
     layouts: [],
@@ -199,7 +199,7 @@ describe('etiquetas', () => {
   });
 
   it('acorta rutas para la status bar', () => {
-    expect(shortPath('C:\\Users\\mvale\\Documents\\herdr\\')).toBe('Documents/herdr');
+    expect(shortPath('C:\\Users\\dev\\Documents\\herdr\\')).toBe('Documents/herdr');
     expect(shortPath('/home/user')).toBe('home/user');
     expect(shortPath('C:\\')).toBe('C:');
     expect(shortPath(null)).toBe('');
