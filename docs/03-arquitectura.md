@@ -300,6 +300,57 @@ Contrato verificado contra la CLI y el server reales (no deducido). Commands en
   por defecto, roundtrip con reload `applied` + backup real + segunda escritura sin
   backup, rechazo sin tocar el archivo, y `failed` → rollback).
 
+## Worktrees, estado del server, integraciones y notificaciones
+
+### Worktrees (`src-tauri/src/commands/worktrees.rs`, T3.4)
+
+- `worktree_list(workspace_id/cwd) -> WorktreeListResult { source, worktrees }`
+  - `WorktreeSourceInfo` describe el origen (workspace/cwd) y `WorktreeInfo` trae
+    `path, is_bare, is_detached, is_prunable, is_linked_worktree, label, branch,
+    open_workspace_id` (fiel a `worktree.list` del server).
+- `worktree_create(...) -> WorktreeCreated { workspace, tab, root_pane, worktree }`
+  (`workspace`/`tab`/`root_pane` son `Value` passthrough: fidelidad de protocolo sin
+  duplicar los tipos enormes del server). Ruta por defecto desde `[worktrees] directory`
+  de `config.toml` vía `toml_edit`, con expansión de `~` y respetando `HERDR_CONFIG_PATH`.
+- `worktree_open(...)` y `worktree_remove(force, confirm)`: la doble confirmación se
+  expone en el contrato —`confirm` debe ser `Some(true)` (guard local **antes** del RPC)
+  además del `force` del server; sin `confirm`, `invalid_params` con mensaje explícito.
+- Las ramas salen de `git branch --format=%(refname:short)` por la lista blanca.
+- Sandbox: ciclo completo contra un repo `git init` temporal en `%TEMP%`
+  (`commit --allow-empty` con `-c user.name/email`); nunca toca el repo del usuario.
+
+### Estado del server (`server.rs`, T4.3)
+
+- `server_status() -> ServerStatusReport { cli, cli_error, live, live_error }`: parsea
+  `herdr status --json` (versión, protocolo, capabilities) y contrasta con un `ping` al
+  server vivo. **Nunca devuelve `Err`**: si la CLI o el ping fallan, el reporte lo dice
+  en `cli_error`/`live_error` (degradación tipada, la UI decide qué mostrar).
+- Manifiestos con `server.agent_manifests` y recarga con
+  `server.reload_agent_manifests`; la recarga de config ya vive en `config.rs`.
+
+### Integraciones (`integrations.rs`, T4.2)
+
+- `integration_status() -> Vec<IntegrationStatusEntry>` con
+  `{ name, state, version, path, raw }`, parseando la salida real de
+  `herdr integration status`:
+  `not_installed` | `current` | `other` (cualquier estado nuevo se conserva en `raw`).
+- `integration_install` / `integration_uninstall` sobre `integration.install` /
+  `integration.uninstall`, normalizando nombres (`antigravity-cli` ↔ `antigravity_cli`).
+- Install/uninstall **no** se prueban en tests: escriben en el home real; solo se
+  validan la normalización y el rechazo de targets desconocidos.
+
+### Notificaciones nativas (`notifications.rs`, T2.5)
+
+- `notification_show(title?, body?, icon?, test?) -> NotificationShowOutcome`
+  con el AUMID de `toast_identity.rs`; `test: true` genera un toast de prueba con
+  contenido fijo. Si el registro del AUMID no está, reintenta una vez y responde
+  `delivered: false` con `reason` (degrada en silencio y avisa, sin error fatal).
+
+- Tests: 58 unitarios con fixtures reales (`worktree_list.json`, `status_json.json`,
+  `integration_status.txt`, lógica de AUMID, expansión de `~`, guards) más sandbox en
+  `hd-test-*` (ciclo de worktree, ping vivo con protocolo 19 + manifests + reload +
+  integration status vivo, y roundtrip de registro de AUMID).
+
 ## Protocolo (hallazgos vigentes)
 
 1. 1 request por conexión; respuesta `{"id","result"}` o `{"id","error":{code,message}}`.
