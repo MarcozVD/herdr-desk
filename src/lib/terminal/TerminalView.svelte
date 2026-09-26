@@ -196,22 +196,26 @@
       created.coreDisposers = [];
       created.host = null;
       unregisterTestTerminal(paneId);
-      // El pool cierra el bridge; la instancia se libera (el panel ya no existe).
-      pool.release(paneId);
+      // Ocultar NO es cerrar: el bridge y el buffer se quedan (cambiar de
+      // pestaña desmonta esta vista). Si el panel desaparece de la sesión, el
+      // `sync` del pool cierra su bridge.
+      pool.hide(paneId);
     };
   });
 
-  // Un pane visible abre bridge; al ocultarse se cierra y la instancia queda en
-  // el LRU del pool para volver sin parpadeo. Se sigue el epoch de conexión y el
-  // estado de conexión: al reconectar (o al volver el server) hay que reabrir.
+  // Un pane visible mantiene su bridge (ocultar no es cerrar): al ocultarse solo
+  // pasa al LRU y suelta WebGL; al volver se reengancha sin parpadeo de overlay.
+  // Se sigue el epoch de conexión y el estado de conexión: al reconectar (o al
+  // volver el server) hay que reabrir.
   $effect(() => {
     if (!ready || !entry) return;
     const epoch = session.connectionEpoch;
     const connected = session.connection !== 'offline';
     if (!active) {
-      pool.release(paneId, { keepInstance: true });
+      pool.hide(paneId);
       return;
     }
+    pool.show(paneId);
     // Sin server no se insiste: se espera al reintento (evita spam de open), y
     // si el panel está «reconectando» el respawn del backend ya reusa su bridge.
     if (!connected && entry.state !== 'idle') return;

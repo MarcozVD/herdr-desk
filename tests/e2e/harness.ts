@@ -31,6 +31,8 @@ export interface BootOptions {
   agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
   /** El primer `terminal_open` de cada panel no manda frames (canal muerto). */
   staleBridgeFirstOpen?: boolean;
+  /** Árbol de `layout.export` por tab (`{ 'w1:t1': root, ... }`). */
+  layoutTrees?: Record<string, unknown>;
 }
 
 export async function bootApp(page: Page, options: BootOptions = {}): Promise<void> {
@@ -40,6 +42,7 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     autoSnapshot: options.autoSnapshot ?? true,
     terminalOpenDelayMs: options.terminalOpenDelayMs ?? 0,
     layoutTree: options.layoutTree ?? null,
+    layoutTrees: options.layoutTrees ?? null,
     agentKinds: options.agentKinds ?? null,
     staleBridgeFirstOpen: options.staleBridgeFirstOpen ?? null,
     sessionStartError: options.sessionStartError ?? null,

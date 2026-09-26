@@ -19,6 +19,11 @@ interface HarnessConfig {
   terminalOpenDelayMs?: number;
   /** Árbol que devuelve layout.export (por defecto: un solo panel, el enfocado). */
   layoutTree?: unknown;
+  /**
+   * Árbol por tab (`layout.export`), como el servidor real: cada tab tiene su
+   * propio árbol. Tiene prioridad sobre `layoutTree`.
+   */
+  layoutTrees?: Record<string, unknown>;
   /** `session_start` falla: 'missing' (command inexistente) o un ApiError real. */
   sessionStartError?: 'missing' | { code: string; message: string };
   /** `session_current` no está registrado en el backend. */
@@ -79,7 +84,7 @@ function focusedPaneId(snapshot: unknown): string | null {
 }
 
 /** Respuestas mínimas con la forma que espera el cliente para cada método. */
-function defaultResponse(method: string, config: HarnessConfig): unknown {
+function defaultResponse(method: string, config: HarnessConfig, params?: unknown): unknown {
   switch (method) {
     case 'ping':
       return {
@@ -88,20 +93,30 @@ function defaultResponse(method: string, config: HarnessConfig): unknown {
         protocol: 19,
         capabilities: { live_handoff: false, detached_server_daemon: false },
       };
-    case 'layout.export':
+    case 'layout.export': {
+      const requested = (params as { tab_id?: string } | undefined)?.tab_id ?? 'w1:t1';
+      const snapshot = (config.snapshot ?? {}) as {
+        tabs?: Array<{ tab_id: string; workspace_id: string }>;
+        layouts?: Array<{ tab_id: string; zoomed?: boolean }>;
+      };
+      const workspaceId =
+        snapshot.tabs?.find((tab) => tab.tab_id === requested)?.workspace_id ?? 'w1';
+      const zoomed = snapshot.layouts?.find((item) => item.tab_id === requested)?.zoomed ?? false;
       return {
         type: 'layout_export',
         layout: {
-          workspace_id: 'w1',
-          tab_id: 'w1:t1',
-          zoomed: false,
+          workspace_id: workspaceId,
+          tab_id: requested,
+          zoomed,
           focused_pane_id: focusedPaneId(config.snapshot) ?? 'w1:p1',
-          root: config.layoutTree ?? {
-            type: 'pane',
-            pane_id: focusedPaneId(config.snapshot) ?? 'w1:p1',
-          },
+          root: config.layoutTrees?.[requested] ??
+            config.layoutTree ?? {
+              type: 'pane',
+              pane_id: focusedPaneId(config.snapshot) ?? 'w1:p1',
+            },
         },
       };
+    }
     case 'workspace.create':
       return {
         type: 'workspace_created',
@@ -319,7 +334,7 @@ export function installHarness(): void {
       case 'events_forward':
         return null;
       case 'herdr_call':
-        return defaultResponse(payload.method as string, config);
+        return defaultResponse(payload.method as string, config, payload.params);
       case 'store_subscribe': {
         const channel = payload.onMsg as Channel<unknown>;
         storeChannels.set('store', channel);

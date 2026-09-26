@@ -25,6 +25,7 @@
   import SplitTree from './lib/layout/SplitTree.svelte';
   import { zoomedTree } from './lib/layout/tree';
   import { layout } from './lib/stores/layout.svelte';
+  import { pool } from './lib/terminal/pool';
   import { session } from './lib/stores/session.svelte';
   import { settings } from './lib/stores/settings.svelte';
   import { ui } from './lib/stores/ui.svelte';
@@ -36,9 +37,16 @@
   import TextViewer from './lib/ui/TextViewer.svelte';
   import WorkspaceDialog from './lib/ui/WorkspaceDialog.svelte';
 
-  const tree = $derived(
-    layout.zoomed ? zoomedTree(layout.tree, session.focusedPaneId) : layout.tree,
-  );
+  const tree = $derived(layout.zoomed ? zoomedTree(layout.tree, session.focusedPaneId) : layout.tree);
+
+  // Un panel que ya no existe en la sesión suelta su bridge: cerrar un panel SÍ
+  // cierra (ocultar —cambiar de pestaña— no). Solo con la sesión en línea: un
+  // snapshot vacío durante una caída no debe vaciar el pool.
+  $effect(() => {
+    const paneIds = session.panes.map((pane) => pane.pane_id);
+    if (session.connection !== 'online' || paneIds.length === 0) return;
+    pool.sync(paneIds);
+  });
   const sidebarMode = $derived(
     ui.sidebarCollapsed ? settings.values.sidebar_collapsed_mode : 'expanded',
   );

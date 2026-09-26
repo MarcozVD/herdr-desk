@@ -4,8 +4,10 @@
 // bridge_id y el mismo Channel al respawnear tras una caída del server, y
 // aplica la gracia de 3 s al cerrar. Este pool decide, en el lado UI:
 //
-//   - qué panes tienen bridge: SOLO los visibles (`acquire` al montarse un
-//     Paneframe visible, `release` al ocultarse o desmontarse);
+//   - qué panes tienen bridge: TODOS los que existen en la sesión. Ocultar un
+//     panel (cambiar de pestaña, cambiar de espacio) NO cierra su bridge: solo
+//     se suelta su instancia al LRU (`hide`). El bridge se cierra cuando el
+//     panel desaparece de la sesión (`sync`) o al cambiar de sesión.
 //   - las instancias de xterm en LRU (máx. `terminal_lru_max`, 12 por defecto)
 //     para volver a un tab sin parpadeo;
 //   - WebGL como máximo en `webgl_max_panes` panes (8 por defecto); el resto usa
@@ -66,6 +68,10 @@ export interface TerminalEntry {
   lastRows: number;
   /** Vigilante de la primera señal de vida del bridge. */
   watchdog: ReturnType<typeof setTimeout> | null;
+  /** El panel está a la vista (los ocultos conservan bridge y buffer). */
+  visible: boolean;
+  /** Addon WebGL cargado, para poder soltarlo al ocultarse. */
+  webglAddon: WebglAddon | null;
 }
 
 export interface PoolEvents {
@@ -239,6 +245,8 @@ export class TerminalPool {
       lastCols: 80,
       lastRows: 24,
       watchdog: null,
+      visible: true,
+      webglAddon: null,
     };
 
     entry.onFrame = (buffer: ArrayBuffer) => {
@@ -305,11 +313,13 @@ export class TerminalPool {
       const webgl = new Webgl();
       webgl.onContextLoss(() => {
         entry.webgl = false;
+        entry.webglAddon = null;
         this.#openWebgl = Math.max(0, this.#openWebgl - 1);
         webgl.dispose();
       });
       entry.terminal.loadAddon(webgl);
       entry.webgl = true;
+      entry.webglAddon = webgl;
       this.#openWebgl += 1;
     } catch {
       // Sin WebGL, xterm usa el renderer DOM: la terminal sigue funcionando.
@@ -350,19 +360,58 @@ export class TerminalPool {
     return entry;
   }
 
-  /** Cierra el bridge (el backend aplica su gracia de 3 s) y libera el xterm. */
-  release(paneId: string, options: { keepInstance?: boolean } = {}): void {
+  /**
+   * El panel deja de estar a la vista (cambio de pestaña, de espacio…): NO se
+   * cierra su bridge — ocultar no es cerrar. Solo se suelta el contexto WebGL
+   * (son un recurso contado) y la instancia pasa al LRU con su buffer intacto.
+   */
+  hide(paneId: string): void {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
-    this.#clearReopen(paneId);
-    this.#clearWatchdog(paneId);
-    if (entry.bridgeId !== null) {
-      void terminalClose(entry.bridgeId).catch(() => undefined);
-      entry.bridgeId = null;
-      entry.state = 'closing';
-      this.#notifyState(entry);
+    entry.visible = false;
+    this.#detachWebgl(entry);
+    this.#touch(paneId);
+    this.#evictIfNeeded();
+  }
+
+  /** El panel vuelve a estar a la vista: reengancha WebGL si toca y refresca el LRU. */
+  show(paneId: string): void {
+    const entry = this.#entries.get(paneId);
+    if (!entry) return;
+    entry.visible = true;
+    this.#touch(paneId);
+    void this.attachWebgl(entry);
+  }
+
+  /** Suelta el addon WebGL (el contexto GPU es un recurso contado). */
+  #detachWebgl(entry: TerminalEntry): void {
+    if (!entry.webgl) return;
+    entry.webgl = false;
+    this.#openWebgl = Math.max(0, this.#openWebgl - 1);
+    const addon = entry.webglAddon;
+    entry.webglAddon = null;
+    try {
+      addon?.dispose();
+    } catch {
+      // El contexto ya se había perdido: no hay nada que soltar.
     }
-    if (!options.keepInstance) this.dispose(paneId);
+  }
+
+  /** El panel YA NO EXISTE en la sesión: cierra su bridge y destruye la instancia. */
+  release(paneId: string): void {
+    this.dispose(paneId);
+  }
+
+  /**
+   * Sincroniza el pool con los paneles que la sesión dice que existen: los que
+   * ya no están se sueltan de verdad (cerrar un panel sí cierra su bridge). Sin
+   * esto, un panel cerrado dejaría su bridge colgado para siempre.
+   */
+  sync(paneIds: readonly string[]): void {
+    const alive = new Set(paneIds);
+    for (const paneId of [...this.#entries.keys()]) {
+      if (!alive.has(paneId)) this.dispose(paneId);
+    }
   }
 
   /** Destruye la instancia de xterm y libera su WebGL. */
@@ -377,6 +426,13 @@ export class TerminalPool {
     if (entry.webgl) {
       entry.webgl = false;
       this.#openWebgl = Math.max(0, this.#openWebgl - 1);
+    }
+    const addon = entry.webglAddon;
+    entry.webglAddon = null;
+    try {
+      addon?.dispose();
+    } catch {
+      // contexto ya perdido
     }
     if (entry.watchdog) clearTimeout(entry.watchdog);
     for (const disposable of entry.coreDisposers) disposable.dispose();
@@ -525,7 +581,7 @@ export class TerminalPool {
     this.#lru = [paneId, ...this.#lru.filter((id) => id !== paneId)];
   }
 
-  /** LRU: se destruyen las instancias ocultas más viejas por encima del máximo. */
+  /** LRU: se destruyen las instancias OCULTAS más viejas por encima del máximo. */
   #evictIfNeeded(): void {
     const max = settings.values.terminal_lru_max;
     if (this.#entries.size <= max) return;
@@ -533,7 +589,7 @@ export class TerminalPool {
       if (this.#entries.size <= max) break;
       const entry = this.#entries.get(paneId);
       if (!entry) continue;
-      if (entry.state === 'open') continue; // visible en uso
+      if (entry.visible) continue; // a la vista: no se toca
       this.dispose(paneId);
     }
   }

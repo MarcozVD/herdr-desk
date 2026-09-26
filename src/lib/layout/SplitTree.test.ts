@@ -15,7 +15,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { LayoutNode } from '../herdr/actions';
 import { pool } from '../terminal/pool';
 import Harness from './SplitTreeHarness.svelte';
-import { buildTree } from './tree';
+import { buildTree, paneNodes } from './tree';
 
 beforeAll(() => {
   window.matchMedia = ((query: string) => ({
@@ -55,6 +55,10 @@ function mountHarness(node: LayoutNode | null): void {
 function setTree(node: LayoutNode | null): void {
   instance?.setTree(buildTree(node));
   flushSync();
+  // Como hace la app en cada snapshot: el pool se sincroniza con los paneles que
+  // EXISTEN en la sesión. Ocultar (cambio de pestaña) no cierra el bridge;
+  // cerrar un panel sí suelta su terminal y su bridge.
+  pool.sync(paneNodes(buildTree(node)).map((item) => item.paneId ?? ''));
 }
 
 function frames(): HTMLElement[] {
