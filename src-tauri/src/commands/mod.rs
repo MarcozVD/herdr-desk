@@ -3,6 +3,7 @@ pub mod cli_run;
 pub mod config;
 pub mod integrations;
 pub mod notifications;
+pub mod plugins;
 pub mod server;
 pub mod session;
 pub mod system;
