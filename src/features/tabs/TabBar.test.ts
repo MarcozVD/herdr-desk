@@ -83,7 +83,12 @@ function snapshot(): SessionSnapshot {
         agent_status: 'unknown',
       },
     ],
-    tabs: [tab('w1:t1', 'w1', 1), tab('w1:t2', 'w1', 2), tab('w2:t1', 'w2', 1), tab('w2:t2', 'w2', 2)],
+    tabs: [
+      tab('w1:t1', 'w1', 1),
+      tab('w1:t2', 'w1', 2),
+      tab('w2:t1', 'w2', 1),
+      tab('w2:t2', 'w2', 2),
+    ],
     panes: [
       {
         pane_id: 'w1:p1',
