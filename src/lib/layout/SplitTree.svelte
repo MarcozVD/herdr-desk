@@ -1,9 +1,13 @@
-<!-- T1.7 — Render del árbol de splits con flex y los ratios del árbol. Los
-     divisores son visuales en F1 (el arrastre llega en T3.1 con
-     layout.set_split_ratio). -->
+<!-- T3.2 — Render del árbol de splits con flex y los ratios del árbol. El divisor
+     se arrastra con punteros (T3.1/T3.2): ratio optimista local mientras se
+     arrastra y un ÚNICO `layout.set_split_ratio` al soltar. -->
 <script lang="ts">
   import PaneFrame from '../../features/panes/PaneFrame.svelte';
+  import { layoutApi } from '../herdr/actions';
+  import { parseApiError } from '../herdr/errors';
+  import { layout } from '../stores/layout.svelte';
   import { settings } from '../stores/settings.svelte';
+  import { ui } from '../stores/ui.svelte';
   import type { TreeNode } from './tree';
   import SplitTree from './SplitTree.svelte';
 
@@ -13,8 +17,97 @@
 
   let { node }: Props = $props();
 
-  const ratio = $derived(Math.min(0.95, Math.max(0.05, node.ratio ?? 0.5)));
+  /** Límites del ratio (los mismos que el backend y que `splitRect`). */
+  const MIN_RATIO = 0.05;
+  const MAX_RATIO = 0.95;
+
+  function clamp(value: number): number {
+    return Math.min(MAX_RATIO, Math.max(MIN_RATIO, value));
+  }
+
+  const serverRatio = $derived(clamp(node.ratio ?? 0.5));
+  /** Ratio optimista del arrastre: evita ir a trompicones con el servidor. */
+  let optimistic = $state<number | null>(null);
+  const ratio = $derived(optimistic ?? serverRatio);
   const pathKey = $derived(node.path.map((branch) => (branch ? '1' : '0')).join('.') || 'root');
+
+  let dragging = $state(false);
+  let startRatio = 0;
+  let startPointer = 0;
+  /** Tamaño en px del contenedor en el eje del split (0 = sin geometría). */
+  let extent = 0;
+
+  function onDividerDown(event: PointerEvent): void {
+    if (event.button !== 0) return;
+    const divider = event.currentTarget as HTMLElement;
+    const container = divider.parentElement;
+    if (!container) return;
+    // Divisores anidados: el del árbol más profundo es el que se arrastra; el
+    // evento no sube al split padre.
+    event.stopPropagation();
+    event.preventDefault();
+    const rect = container.getBoundingClientRect();
+    extent = node.direction === 'right' ? rect.width : rect.height;
+    if (extent <= 0) return; // sin geometría (tests en jsdom) no se arrastra
+    startRatio = ratio;
+    startPointer = node.direction === 'right' ? event.clientX : event.clientY;
+    dragging = true;
+    optimistic = startRatio;
+    if (typeof divider.setPointerCapture === 'function') {
+      try {
+        divider.setPointerCapture(event.pointerId);
+      } catch {
+        // El puntero ya no está: sin captura el arrastre sigue por el elemento.
+      }
+    }
+    document.body.style.cursor = node.direction === 'right' ? 'col-resize' : 'row-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  function onDividerMove(event: PointerEvent): void {
+    if (!dragging || extent <= 0) return;
+    const current = node.direction === 'right' ? event.clientX : event.clientY;
+    optimistic = clamp(startRatio + (current - startPointer) / extent);
+  }
+
+  function endDrag(divider: HTMLElement | null, pointerId?: number): void {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (divider && pointerId !== undefined && typeof divider.releasePointerCapture === 'function') {
+      try {
+        if (divider.hasPointerCapture(pointerId)) divider.releasePointerCapture(pointerId);
+      } catch {
+        // Sin captura: nada que soltar.
+      }
+    }
+  }
+
+  function onDividerUp(event: PointerEvent): void {
+    if (!dragging) return;
+    endDrag(event.currentTarget as HTMLElement, event.pointerId);
+    const value = optimistic;
+    if (value === null) return;
+    const tabId = layout.tabId;
+    if (!tabId) {
+      optimistic = null;
+      return;
+    }
+    // UN solo commit al servidor, al soltar. El optimista se queda hasta que
+    // llegue el árbol nuevo (si se soltara ya, el panel daría un salto atrás).
+    void layoutApi
+      .setSplitRatio(tabId, node.path, Number(clamp(value).toFixed(4)))
+      .catch((raw: unknown) => {
+        optimistic = null;
+        ui.notify(parseApiError(raw).message, 'warn');
+      });
+  }
+
+  // El árbol del servidor ya trae otro ratio: el optimista del arrastre sobra.
+  $effect(() => {
+    if (optimistic !== null && Math.abs(serverRatio - startRatio) > 0.0005) optimistic = null;
+  });
 </script>
 
 {#if node.kind === 'pane' && node.paneId}
@@ -34,6 +127,7 @@
     data-path={pathKey}
     data-testid="split"
     data-gaps={settings.values.pane_gaps}
+    data-dragging={dragging}
   >
     <div class="split__side" style="--ratio:{ratio}">
       <SplitTree node={node.first} />
@@ -43,7 +137,16 @@
       data-testid="split-divider"
       data-direction={node.direction}
       data-path={pathKey}
-      aria-hidden="true"
+      data-dragging={dragging}
+      role="separator"
+      aria-orientation={node.direction === 'right' ? 'vertical' : 'horizontal'}
+      aria-valuemin={Math.round(MIN_RATIO * 100)}
+      aria-valuemax={Math.round(MAX_RATIO * 100)}
+      aria-valuenow={Math.round(ratio * 100)}
+      onpointerdown={onDividerDown}
+      onpointermove={onDividerMove}
+      onpointerup={onDividerUp}
+      onpointercancel={onDividerUp}
     ></div>
     <div class="split__side" style="--ratio:{1 - ratio}">
       <SplitTree node={node.second} />
@@ -72,8 +175,17 @@
   }
 
   .split__divider {
+    position: relative;
     flex: 0 0 auto;
     background: var(--glass-border);
+  }
+
+  /* Zona de agarre más ancha que la línea (sigue siendo el mismo elemento: el
+     pointerdown lo recibe el divisor). */
+  .split__divider::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
   }
 
   .split[data-direction='right'] > .split__divider {
@@ -92,5 +204,10 @@
 
   .split[data-gaps='true'] > .split__divider {
     background: transparent;
+  }
+
+  .split[data-dragging='true'] > .split__divider,
+  .split__divider[data-dragging='true'] {
+    background: var(--accent);
   }
 </style>
