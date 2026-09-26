@@ -31,3 +31,4 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tokio.workspace = true
 herdr-core = { path = "../crates/herdr-core" }
+toml_edit.workspace = true

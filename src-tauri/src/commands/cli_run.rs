@@ -11,11 +11,14 @@ pub const AGENT_KINDS_TTL: Duration = Duration::from_secs(60);
 /// Lista blanca de comandos ejecutables desde la GUI (guardarrail del plan §7).
 /// Match EXACTO de argv completo: sin shell, sin composición, sin redirecciones.
 /// Para agregar una entrada basta sumarla aqui (y resolver su exe en `resolve_program`).
-pub const WHITELIST: [&[&str]; 8] = [
+/// `config reset-keys` delega en la CLI el backup y la limpieza de atajos
+/// (semantica propia de herdr); argv exacto sin flags ni argumentos.
+pub const WHITELIST: [&[&str]; 9] = [
     &["herdr", "agent", "start", "--help"],
     &["herdr", "status", "--json"],
     &["herdr", "--default-config"],
     &["herdr", "config", "check"],
+    &["herdr", "config", "reset-keys"],
     &["herdr", "integration", "status"],
     &["herdr", "plugin", "config-dir"],
     &["git", "branch", "--format=%(refname:short)"],
@@ -74,6 +77,17 @@ fn resolve_program(program: &str) -> Result<std::path::PathBuf, ApiError> {
 /// stdout/stderr capturados. Rechaza con ApiError explicito todo lo que no
 /// matchee exactamente una entrada de la lista blanca.
 pub async fn run_whitelisted(argv: &[String]) -> Result<CliRunOutput, ApiError> {
+    run_whitelisted_with_env(argv, &[]).await
+}
+
+/// Igual que `run_whitelisted`, pero permite inyectar variables de entorno
+/// concretas DESPUES de limpiar todas las HERDR_* heredadas. Uso interno:
+/// config check apunta HERDR_CONFIG_PATH a un archivo temporal propio.
+/// El argv debe seguir en la lista blanca; nunca acepta entorno del cliente.
+pub async fn run_whitelisted_with_env(
+    argv: &[String],
+    extra_env: &[(String, String)],
+) -> Result<CliRunOutput, ApiError> {
     if argv.is_empty() {
         return Err(ApiError {
             code: "invalid_params".to_string(),
@@ -109,6 +123,9 @@ pub async fn run_whitelisted(argv: &[String]) -> Result<CliRunOutput, ApiError> 
         if key.starts_with("HERDR_") {
             cmd.env_remove(key);
         }
+    }
+    for (key, value) in extra_env {
+        cmd.env(key, value);
     }
 
     let mut child = cmd.spawn().map_err(|e| ApiError {
@@ -242,9 +259,16 @@ mod tests {
             "branch",
             "--format=%(refname:short)"
         ])));
+        assert!(is_whitelisted(&argv(&["herdr", "config", "reset-keys"])));
         assert!(!is_whitelisted(&argv(&["herdr"])));
         assert!(!is_whitelisted(&argv(&["git"])));
         assert!(!is_whitelisted(&argv(&["herdr", "server", "stop"])));
+        assert!(!is_whitelisted(&argv(&[
+            "herdr",
+            "config",
+            "reset-keys",
+            "--extra"
+        ])));
     }
 
     #[test]
