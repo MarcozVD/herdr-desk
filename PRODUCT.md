@@ -23,7 +23,8 @@ información es una característica deseada, no un defecto a corregir.
 
 ## Product Purpose
 
-Dar al herdr una superficie de escritorio nativa, rápida y legible paraek glance el trabajo:
+Dar al herdr una superficie de escritorio nativa, rápida y legible para ver el trabajo de un
+vistazo:
 espacios, tabs, panes, terminales en vivo, el estado de cada agente y acciones sobre ellos.
 
 El éxito significa que la app se puede usar como cliente principal durante el día, sin volver al
@@ -66,9 +67,9 @@ Confirmado:
 
 Decisiones de producto sin cerrar:
 
-- Si la app se seguirá考慮izando como herramienta personal o se abrirá a terceros. Hoy el
-  listener declarado es intensively personal; no hay trabajo de onboarding ni de contenido de
-  bienvenida confirmado.
+- Si la app se seguirá considerando como herramienta personal o se abrirá a terceros. Hoy el uso
+  declarado es personal e intensivo; no hay trabajo de onboarding ni de contenido de bienvenida
+  confirmado.
 
 ## Brand Commitments
 
