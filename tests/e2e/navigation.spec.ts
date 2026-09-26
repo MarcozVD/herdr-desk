@@ -29,6 +29,10 @@ async function closeCalls(page: Page): Promise<unknown[]> {
   return recordedCalls(page, 'terminal_close');
 }
 
+async function releaseCalls(page: Page): Promise<unknown[]> {
+  return recordedCalls(page, 'terminal_release');
+}
+
 /** Texto que la terminal de ese panel tiene en su buffer (regresión: al volver
  *  a la pestaña el panel se quedaba en negro porque el buffer se perdía). */
 async function bufferText(page: Page, paneId: string): Promise<string> {
@@ -103,7 +107,9 @@ function fixtureWithSecondTab(): Record<string, unknown> {
 const treeThirdTab = { type: 'pane', pane_id: 'w1:p3', cwd: 'C:/tmp' };
 
 test.describe('navegación sin perder terminales', () => {
-  test('cambiar de pestaña no cierra los bridges y al volver sigue abierto', async ({ page }) => {
+  test('cambiar de pestaña suelta el bridge (release, no close) y al volver repinta el texto', async ({
+    page,
+  }) => {
     await bootApp(page, {
       snapshot: fixtureWithSecondTab(),
       layoutTrees: { 'w1:t1': splitTree, 'w1:t2': treeThirdTab, 'w2:t1': treeTwoTabs['w2:t1'] },
@@ -111,11 +117,11 @@ test.describe('navegación sin perder terminales', () => {
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toBeVisible();
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p2"]')).toBeVisible();
     expect(await hasOpenBridge(page, 'w1:p1')).toBe(true);
-    expect(await hasOpenBridge(page, 'w1:p2')).toBe(true);
 
-    // Contenido real en el panel: al volver tiene que SEGUIR ahí (si el buffer se
-    // pierde, el panel se ve en negro aunque el bridge siga abierto).
+    // Contenido real: al volver tiene que SEGUIR viéndose (si la vista nueva no
+    // recibe el viewport, el panel se queda en negro).
     await pushFrame(page, { paneId: 'w1:p1', full: true, text: 'marca-de-buffer' });
+    await pushFrame(page, { paneId: 'w1:p2', full: true, text: 'marca-dos' });
     await expect.poll(async () => bufferText(page, 'w1:p1')).toContain('marca-de-buffer');
 
     // Cambia de pestaña: se desmontan las vistas de la pestaña que se oculta.
@@ -123,39 +129,48 @@ test.describe('navegación sin perder terminales', () => {
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p3"]')).toBeVisible();
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toHaveCount(0);
 
-    // El bridge de los paneles ocultos NO se cerró (ocultar ≠ cerrar).
+    // Ocultar SUELTA el bridge (terminal_release) y NO lo cierra: cerrarlo mataría
+    // el panel (user_close), que es el bug que dejaba las terminales muertas.
+    await expect.poll(async () => (await releaseCalls(page)).length).toBeGreaterThanOrEqual(2);
     expect(await closeCalls(page)).toHaveLength(0);
-    expect(await hasOpenBridge(page, 'w1:p1')).toBe(true);
-    expect(await hasOpenBridge(page, 'w1:p2')).toBe(true);
+    expect(await hasOpenBridge(page, 'w1:p1')).toBe(false);
 
-    // Y al volver, los paneles siguen conectados (sin overlay de reconectando).
+    // Al volver: vista nueva + bridge nuevo, y el servidor manda el viewport.
     await page.locator('[data-testid="tab"][data-tab-id="w1:t1"]').click();
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toBeVisible();
     await expect(
       page.locator('[data-testid="terminal-host"][data-pane-id="w1:p1"]'),
     ).toHaveAttribute('data-bridge', 'open');
     await expect(page.locator('.terminal-overlay')).toHaveCount(0);
+    await expect.poll(async () => hasOpenBridge(page, 'w1:p1')).toBe(true);
+    await expect.poll(async () => bufferText(page, 'w1:p1')).toContain('marca-de-buffer');
     expect(await closeCalls(page)).toHaveLength(0);
-    // El buffer sobrevive al viaje de ida y vuelta: el panel no se queda en negro.
-    expect(await bufferText(page, 'w1:p1')).toContain('marca-de-buffer');
   });
 
-  test('pulsar un espacio de la barra cambia el espacio que se ve', async ({ page }) => {
+  test('cambiar de espacio suelta/reengancha sin perder el contenido', async ({ page }) => {
     await bootApp(page, { layoutTrees: treeTwoTabs });
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toBeVisible();
+    await pushFrame(page, { paneId: 'w1:p1', full: true, text: 'texto-del-espacio-uno' });
+    await expect.poll(async () => bufferText(page, 'w1:p1')).toContain('texto-del-espacio-uno');
 
     await page.locator('[data-testid="workspace-row"][data-workspace-id="w2"]').click();
 
     // La vista sigue al espacio pulsado: aparecen SUS paneles.
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w2:p1"]')).toBeVisible();
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toHaveCount(0);
-    // Y la fila queda marcada como el espacio enfocado.
     await expect(
       page.locator('[data-testid="workspace-row"][data-workspace-id="w2"]'),
     ).toHaveAttribute('aria-current', 'true');
+    expect(await closeCalls(page)).toHaveLength(0);
+
+    // Y al volver al espacio uno, su panel sigue con el contenido pintado.
+    await page.locator('[data-testid="workspace-row"][data-workspace-id="w1"]').click();
+    await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toBeVisible();
+    await expect.poll(async () => bufferText(page, 'w1:p1')).toContain('texto-del-espacio-uno');
     await expect(
-      page.locator('[data-testid="workspace-row"][data-workspace-id="w1"]'),
-    ).toHaveAttribute('aria-current', 'false');
+      page.locator('[data-testid="terminal-host"][data-pane-id="w1:p1"]'),
+    ).toHaveAttribute('data-bridge', 'open');
+    expect(await closeCalls(page)).toHaveLength(0);
   });
 
   test('los atajos con prefijo apuntan al panel visible y la GUI sale del prefix', async ({
@@ -192,13 +207,16 @@ test.describe('navegación sin perder terminales', () => {
     expect((await recordedMethodCalls(page, 'pane.zoom')).length).toBe(zoomsBefore);
   });
 
-  test('un panel cerrado sí suelta su bridge', async ({ page }) => {
-    // Aquí se usa `layoutTree` (árbol único) porque el test lo cambia en vivo con
-    // `setLayoutTree` para simular el cierre del panel.
+  test('cerrar un panel vecino no vacía los que siguen abiertos', async ({ page }) => {
+    // `layoutTree` (árbol único) porque el test lo cambia en vivo al cerrar.
     await bootApp(page, { layoutTree: splitTree });
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p2"]')).toBeVisible();
+    await pushFrame(page, { paneId: 'w1:p1', full: true, text: 'vecino-uno' });
+    await pushFrame(page, { paneId: 'w1:p2', full: true, text: 'vecino-dos' });
+    await expect.poll(async () => bufferText(page, 'w1:p1')).toContain('vecino-uno');
+    await expect.poll(async () => bufferText(page, 'w1:p2')).toContain('vecino-dos');
 
-    // El usuario cierra w1:p2: el snapshot deja de traerlo.
+    // El usuario cierra w1:p2: el snapshot y el árbol dejan de traerlo.
     const fixture = readSnapshotFixture() as {
       panes: Array<{ pane_id: string }>;
       layouts: Array<{ tab_id: string; panes: Array<{ pane_id: string }> }>;
@@ -213,16 +231,24 @@ test.describe('navegación sin perder terminales', () => {
       })),
       focused_pane_id: 'w1:p1',
     };
-    // El árbol que devuelve el servidor ya no trae el panel cerrado.
     await page.evaluate((tree) => window.__HD_TEST__?.setLayoutTree(tree), {
       type: 'pane',
       pane_id: 'w1:p1',
       cwd: 'C:/tmp',
     });
     await page.evaluate((value) => window.__HD_TEST__?.pushSnapshot(value), next);
+
+    // El panel cerrado suelta y cierra su bridge…
     await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p2"]')).toHaveCount(0);
-    await expect.poll(async () => (await closeCalls(page)).length).toBeGreaterThan(0);
+    await expect.poll(async () => (await closeCalls(page)).length).toBe(1);
     expect(await hasOpenBridge(page, 'w1:p2')).toBe(false);
+
+    // …y el vecino sigue montado, con su bridge y su contenido intactos.
+    await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toBeVisible();
     expect(await hasOpenBridge(page, 'w1:p1')).toBe(true);
+    expect(await bufferText(page, 'w1:p1')).toContain('vecino-uno');
+    await expect(
+      page.locator('[data-testid="terminal-host"][data-pane-id="w1:p1"]'),
+    ).toHaveAttribute('data-bridge', 'open');
   });
 });

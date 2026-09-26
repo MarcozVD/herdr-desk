@@ -59,6 +59,9 @@ type Internals = {
   callbacks: Map<number, (data: { index: number; message: unknown }) => void>;
 };
 
+/** Motivos de cierre que significan «se cayó el servidor» (igual que el pool). */
+const OUTAGE = /server is shut|shutting down|error de transporte|os error|connection refused/i;
+
 function buildFrame(options: {
   seq: number;
   width: number;
@@ -244,6 +247,19 @@ export function installHarness(): void {
   const storeChannels = new Map<string, Channel<unknown>>();
   /** bridgeId → { paneId, channel } de los bridges abiertos. */
   const bridges = new Map<number, { paneId: string; channel: Channel<unknown> }>();
+  /**
+   * Texto que el «servidor» tiene pintado en cada panel. Como el herdr real, se
+   * reenvía ENTERO (`full`) al enganchar un bridge nuevo o al hacer resize: es lo
+   * que repinta un panel cuya vista se acaba de montar.
+   */
+  const screens = new Map<string, string>();
+  /**
+   * Bridges cuyo canal está muerto (el servidor les manda frames pero a un canal
+   * que ya nadie lee): no reciben NI el viewport inicial NI las respuestas a un
+   * resize. Así se reproduce el bug real del canal viejo del backend.
+   */
+  const deadBridges = new Set<number>();
+  let frameSeq = 0;
   const channelIndex = new Map<number, number>();
   let bridgeSeq = 1000;
 
@@ -260,6 +276,26 @@ export function installHarness(): void {
 
   function storeChannel(): Channel<unknown> | undefined {
     return storeChannels.get('store');
+  }
+
+  /** Frame `full` con el texto que el server tiene pintado en ese panel. */
+  function serverFrame(paneId: string): ArrayBuffer {
+    frameSeq += 1;
+    return buildFrame({
+      seq: frameSeq,
+      width: 80,
+      height: 24,
+      full: true,
+      closed: false,
+      payload: new TextEncoder().encode(screens.get(paneId) ?? ''),
+    });
+  }
+
+  function paneOfChannel(channel: Channel<unknown>): string | undefined {
+    for (const bridge of bridges.values()) {
+      if (bridge.channel === channel) return bridge.paneId;
+    }
+    return undefined;
   }
 
   function channelForPane(paneId?: string): Channel<unknown> | undefined {
@@ -357,13 +393,11 @@ export function installHarness(): void {
         // Un panel cuya PRIMERA apertura no manda frames simula el canal muerto
         // que deja el backend al recargarse la webview (bug real medido).
         const stale = Boolean(config.staleBridgeFirstOpen) && previous === 0;
+        if (stale) deadBridges.add(id);
         if (!stale) {
-          const frame = new ArrayBuffer(16);
-          const view = new DataView(frame);
-          view.setBigUint64(0, 1n, true);
-          view.setUint16(8, 80, true);
-          view.setUint16(10, 24, true);
-          view.setUint8(12, 1); // full
+          // Al enganchar un bridge, el server manda el viewport completo: así un
+          // panel cuya vista acaba de montarse se repinta entero.
+          const frame = serverFrame(paneId);
           queueMicrotask(() => deliver(payload.onFrame as Channel<unknown>, frame));
         }
         if (config.terminalOpenDelayMs && config.terminalOpenDelayMs > 0) {
@@ -373,8 +407,29 @@ export function installHarness(): void {
         }
         return id;
       }
+      case 'terminal_resize': {
+        // El server rehace el viewport y manda un `full` (medido con la sonda
+        // contra herdr real: resize -> frame full). Si el canal del bridge está
+        // muerto, los frames se pierden, como en el bug real.
+        const bridgeId = Number(payload.bridgeId);
+        const bridge = bridges.get(bridgeId);
+        if (bridge && !deadBridges.has(bridgeId)) {
+          queueMicrotask(() => deliver(bridge.channel, serverFrame(bridge.paneId)));
+        }
+        return null;
+      }
+      case 'terminal_release': {
+        // Suelta el bridge SIN matar el panel: el siguiente terminal_open
+        // engancha uno nuevo (y recibe el viewport completo).
+        const released = Number(payload.bridgeId);
+        bridges.delete(released);
+        deadBridges.delete(released);
+        return null;
+      }
       case 'terminal_close': {
-        bridges.delete(Number(payload.bridgeId));
+        const closed = Number(payload.bridgeId);
+        bridges.delete(closed);
+        deadBridges.delete(closed);
         return null;
       }
       case 'ui_ready':
@@ -417,11 +472,25 @@ export function installHarness(): void {
     pushFrame(frame: ArrayBuffer, paneId?: string) {
       const channel = channelForPane(paneId);
       if (!channel) throw new Error(`sin bridge abierto${paneId ? ` para ${paneId}` : ''}`);
+      const bytes = new Uint8Array(frame);
+      // Un frame `full` deja el «viewport» del server con ese texto: al volver a
+      // enganchar el bridge (o al hacer resize) se reenvía entero.
+      if (bytes.length >= 16 && (bytes[12] & 1) === 1) {
+        const target = paneId ?? paneOfChannel(channel);
+        if (target) screens.set(target, new TextDecoder().decode(bytes.subarray(16)));
+      }
       deliver(channel, frame);
     },
     pushClosed(reason: string, paneId?: string, seq = 0) {
       const channel = channelForPane(paneId);
       if (!channel) throw new Error(`sin bridge abierto${paneId ? ` para ${paneId}` : ''}`);
+      // Caída del server: ese bridge ya no manda nada más (ni responde a un
+      // resize). El pool tendrá que pedir uno nuevo pasado el grace.
+      if (OUTAGE.test(reason)) {
+        for (const [id, bridge] of bridges) {
+          if (bridge.channel === channel) deadBridges.add(id);
+        }
+      }
       deliver(
         channel,
         buildFrame({

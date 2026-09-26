@@ -29,6 +29,7 @@ import {
   terminalInput,
   terminalInputBytes,
   terminalOpen,
+  terminalRelease,
   terminalResize,
   terminalScroll,
 } from '../herdr/client';
@@ -42,22 +43,36 @@ import { terminalOptions, type TerminalFont } from './font';
 export type BridgeState =
   'idle' | 'opening' | 'open' | 'closing' | 'reconnecting' | 'closed' | 'error';
 
-export interface TerminalEntry {
-  paneId: string;
+/**
+ * La VISTA xterm de un panel: vive a nivel de COMPONENTE. Se destruye al
+ * desmontarse (cambio de pestaña/espacio, o un remontaje al cambiar el árbol) y
+ * se recrea al volver. El bridge NO se toca: vive a nivel de PANEL.
+ */
+export interface TerminalViewState {
   terminal: Terminal;
   fit: FitAddon;
   writer: FrameWriter;
   /** callback de `herdr-desk:terminal` para copy/paste y atajo literal. */
-  host: HTMLDivElement | null;
+  host: HTMLDivElement;
+  webgl: boolean;
+  /** Addon WebGL cargado, para poder soltarlo. */
+  webglAddon: WebglAddon | null;
+  /** `terminal.open()` se llama UNA vez por instancia: xterm no lo soporta dos veces. */
+  opened: boolean;
+  disposers: Array<{ dispose(): void }>;
+}
+
+export interface TerminalEntry {
+  paneId: string;
+  /** Vista xterm actual, o `null` si su componente no está montado. */
+  view: TerminalViewState | null;
   bridgeId: number | null;
   state: BridgeState;
   closeReason: string;
   errorText: string;
-  webgl: boolean;
   /** Epoch de conexión con la que se abrió (para reabrir tras reconectar). */
   epoch: number;
   bufferedInput: string[];
-  coreDisposers: Array<{ dispose(): void }>;
   onFrame: (frame: ArrayBuffer) => void;
   /** Frames recibidos desde la última apertura del bridge. */
   framesSinceOpen: number;
@@ -68,10 +83,16 @@ export interface TerminalEntry {
   lastRows: number;
   /** Vigilante de la primera señal de vida del bridge. */
   watchdog: ReturnType<typeof setTimeout> | null;
-  /** El panel está a la vista (los ocultos conservan bridge y buffer). */
+  /** El panel está a la vista (los ocultos conservan su bridge). */
   visible: boolean;
-  /** Addon WebGL cargado, para poder soltarlo al ocultarse. */
-  webglAddon: WebglAddon | null;
+  /** Bridge soltado con `terminal_release`
+   *  (si el backend aún no lo soporta, vuelve a aparecer al reenganchar). */
+  releasedBridgeId: number | null;
+  /** Contadores al backend, para la sonda en vivo (`__HD_POOL_PROBE__`). */
+  sentOpen: number;
+  sentResize: number;
+  sentRelease: number;
+  sentClose: number;
 }
 
 export interface PoolEvents {
@@ -157,7 +178,7 @@ export class TerminalPool {
         this.#reopenTimers.delete(paneId);
         const entry = this.#entries.get(paneId);
         if (!entry || entry.state !== 'reconnecting') return;
-        void this.open(paneId, entry.terminal.cols, entry.terminal.rows, entry.epoch);
+        void this.open(paneId, entry.lastCols, entry.lastRows, entry.epoch);
       }, delay),
     );
   }
@@ -191,54 +212,20 @@ export class TerminalPool {
     return [...this.#entries.values()];
   }
 
-  /** Crea (o reutiliza) la instancia de xterm del pane. NO abre bridge. */
+  /** Crea (o reutiliza) la ENTRADA del panel: bridge + estado. NO crea la vista. */
   ensure(paneId: string): TerminalEntry {
     const existing = this.#entries.get(paneId);
     if (existing) return existing;
 
-    const terminal = new Terminal({
-      // herdr manda el viewport ya renderizado: el scrollback vive en el server.
-      scrollback: 0,
-      allowTransparency: false,
-      allowProposedApi: true,
-      // La familia la resuelve `lib/terminal/font.ts` (backend o fallback local):
-      // xterm NO resuelve `var(--font-mono)`, se quedaba en la mono del WebView2.
-      ...terminalOptions(),
-      cursorBlink: true,
-      cursorStyle: 'bar',
-      convertEol: false,
-      scrollOnUserInput: false,
-      theme: readTheme(),
-    });
-    const fit = new FitAddon();
-    terminal.loadAddon(fit);
-    // Unicode 11 (tabla de anchos) y links se cargan en cuanto están disponibles.
-    void import('@xterm/addon-unicode11').then(({ Unicode11Addon }) => {
-      terminal.loadAddon(new Unicode11Addon());
-      terminal.unicode.activeVersion = '11';
-    });
-    void import('@xterm/addon-web-links').then(({ WebLinksAddon }) => {
-      terminal.loadAddon(
-        new WebLinksAddon((_event, uri) => {
-          void openUrl(uri).catch(() => undefined);
-        }),
-      );
-    });
-
     const entry: TerminalEntry = {
       paneId,
-      terminal,
-      fit,
-      writer: new FrameWriter({ write: (bytes) => terminal.write(bytes) }),
-      host: null,
+      view: null,
       bridgeId: null,
       state: 'idle',
       closeReason: '',
       errorText: '',
-      webgl: false,
       epoch: -1,
       bufferedInput: [],
-      coreDisposers: [],
       onFrame: () => undefined,
       framesSinceOpen: 0,
       staleReopens: 0,
@@ -246,7 +233,11 @@ export class TerminalPool {
       lastRows: 24,
       watchdog: null,
       visible: true,
-      webglAddon: null,
+      releasedBridgeId: null,
+      sentOpen: 0,
+      sentResize: 0,
+      sentRelease: 0,
+      sentClose: 0,
     };
 
     entry.onFrame = (buffer: ArrayBuffer) => {
@@ -288,7 +279,9 @@ export class TerminalPool {
         entry.closeReason = '';
         this.#notifyState(entry);
       }
-      entry.writer.push(frame.bytes, frame.full);
+      // Sin vista montada no hay dónde pintar: el contenido volverá entero en el
+      // repintado que pide el siguiente montaje (lo manda el servidor).
+      entry.view?.writer.push(frame.bytes, frame.full);
       for (const listener of this.#listeners) listener.onFrame?.(entry);
     };
 
@@ -298,9 +291,112 @@ export class TerminalPool {
     return entry;
   }
 
+  /**
+   * Monta la VISTA de un panel: crea su instancia de xterm y la abre UNA vez.
+   *
+   * Es el único camino para crear una vista. Si el panel ya tenía bridge abierto
+   * (su vista se desmontó al cambiar de pestaña/espacio) marca `reusedBridge`
+   * para que, al mostrarse, se le pida al servidor el repintado completo.
+   */
+  mountView(paneId: string, host: HTMLDivElement): TerminalEntry {
+    const entry = this.ensure(paneId);
+    if (entry.view) {
+      // Guarda: JAMÁS dos `open()` sobre la misma instancia. xterm no lo soporta
+      // (deja el render y el buffer sin pintar: era el bug de los paneles negros).
+      // Si la vista ya existe se reengancha su DOM al host actual.
+      const element = entry.view.terminal.element;
+      entry.view.host = host;
+      if (element && element.parentElement !== host) host.append(element);
+      this.#touch(paneId);
+      return entry;
+    }
+    entry.view = this.#createView(host);
+    this.#touch(paneId);
+    return entry;
+  }
+
+  /** Destruye la vista (xterm + writer + addons). NO toca el bridge. */
+  #destroyView(entry: TerminalEntry): void {
+    const view = entry.view;
+    if (!view) return;
+    entry.view = null;
+    if (view.webgl) {
+      view.webgl = false;
+      this.#openWebgl = Math.max(0, this.#openWebgl - 1);
+    }
+    const addon = view.webglAddon;
+    view.webglAddon = null;
+    try {
+      addon?.dispose();
+    } catch {
+      // El contexto ya se había perdido: no hay nada que soltar.
+    }
+    for (const disposable of view.disposers) {
+      try {
+        disposable.dispose();
+      } catch {
+        // Un listener ya retirado: da igual.
+      }
+    }
+    view.disposers = [];
+    view.writer.dispose();
+    // xterm no soporta volver a abrir una instancia: esta vista muere aquí.
+    try {
+      view.terminal.dispose();
+    } catch {
+      // Ya estaba destruida.
+    }
+  }
+
+  /** Crea una vista nueva (instancia de xterm + fit + writer + addons). */
+  #createView(host: HTMLDivElement): TerminalViewState {
+    const terminal = new Terminal({
+      // herdr manda el viewport ya renderizado: el scrollback vive en el server.
+      scrollback: 0,
+      allowTransparency: false,
+      allowProposedApi: true,
+      // La familia la resuelve `lib/terminal/font.ts` (backend o fallback local):
+      // xterm NO resuelve `var(--font-mono)`, se quedaba en la mono del WebView2.
+      ...terminalOptions(),
+      cursorBlink: true,
+      cursorStyle: 'bar',
+      convertEol: false,
+      scrollOnUserInput: false,
+      theme: readTheme(),
+    });
+    const fit = new FitAddon();
+    terminal.loadAddon(fit);
+    // Unicode 11 (tabla de anchos) y links se cargan en cuanto están disponibles.
+    void import('@xterm/addon-unicode11').then(({ Unicode11Addon }) => {
+      terminal.loadAddon(new Unicode11Addon());
+      terminal.unicode.activeVersion = '11';
+    });
+    void import('@xterm/addon-web-links').then(({ WebLinksAddon }) => {
+      terminal.loadAddon(
+        new WebLinksAddon((_event, uri) => {
+          void openUrl(uri).catch(() => undefined);
+        }),
+      );
+    });
+
+    // `open()` se llama AQUÍ y una sola vez por instancia.
+    terminal.open(host);
+    return {
+      terminal,
+      fit,
+      writer: new FrameWriter({ write: (bytes) => terminal.write(bytes) }),
+      host,
+      webgl: false,
+      webglAddon: null,
+      opened: true,
+      disposers: [],
+    };
+  }
+
   /** WebGL solo para los primeros `webgl_max_panes` panes visibles. */
   async attachWebgl(entry: TerminalEntry): Promise<void> {
-    if (entry.webgl || !settings.values.webgl) return;
+    const view = entry.view;
+    if (!view || view.webgl || !settings.values.webgl) return;
     if (this.#openWebgl >= settings.values.webgl_max_panes) return;
     let Webgl: typeof WebglAddon;
     try {
@@ -308,18 +404,27 @@ export class TerminalPool {
     } catch {
       return;
     }
-    if (entry.webgl || this.#openWebgl >= settings.values.webgl_max_panes) return;
+    if (!entry.view || entry.view.webgl) return;
+    if (this.#openWebgl >= settings.values.webgl_max_panes) return;
     try {
       const webgl = new Webgl();
       webgl.onContextLoss(() => {
-        entry.webgl = false;
-        entry.webglAddon = null;
-        this.#openWebgl = Math.max(0, this.#openWebgl - 1);
+        const current = entry.view;
+        if (current?.webglAddon === webgl) {
+          current.webgl = false;
+          current.webglAddon = null;
+          this.#openWebgl = Math.max(0, this.#openWebgl - 1);
+        }
         webgl.dispose();
       });
-      entry.terminal.loadAddon(webgl);
-      entry.webgl = true;
-      entry.webglAddon = webgl;
+      const target = entry.view;
+      if (!target) {
+        webgl.dispose();
+        return;
+      }
+      target.terminal.loadAddon(webgl);
+      target.webgl = true;
+      target.webglAddon = webgl;
       this.#openWebgl += 1;
     } catch {
       // Sin WebGL, xterm usa el renderer DOM: la terminal sigue funcionando.
@@ -329,6 +434,7 @@ export class TerminalPool {
   /** Abre el bridge del pane (o lo reabre si estaba cerrándose). */
   async open(paneId: string, cols: number, rows: number, epoch: number): Promise<TerminalEntry> {
     const entry = this.ensure(paneId);
+    this.#sanitize(entry);
     if (entry.state === 'open' && entry.bridgeId !== null && entry.epoch === epoch) return entry;
 
     entry.state = 'opening';
@@ -341,6 +447,9 @@ export class TerminalPool {
         Math.max(5, rows),
         entry.onFrame,
       );
+      entry.sentOpen += 1;
+      const reused = entry.releasedBridgeId !== null && bridgeId === entry.releasedBridgeId;
+      entry.releasedBridgeId = null;
       entry.bridgeId = bridgeId;
       entry.epoch = epoch;
       entry.state = 'open';
@@ -352,6 +461,13 @@ export class TerminalPool {
       entry.bufferedInput = [];
       for (const data of pending) await terminalInput(bridgeId, data);
       this.#notifyState(entry);
+      if (reused) {
+        // El backend NO soltó el bridge (todavía sin `terminal_release`) y lo ha
+        // reutilizado: no habrá viewport nuevo, así que se le fuerza con el
+        // truco del resize (medido: resize -> frame `full`). Cuando el backend
+        // estrene el release, el reenganche será un bridge nuevo y esto no corre.
+        this.#forceRepaint(entry);
+      }
     } catch (raw) {
       entry.errorText = parseApiError(raw).message;
       entry.state = 'error';
@@ -361,54 +477,95 @@ export class TerminalPool {
   }
 
   /**
-   * El panel deja de estar a la vista (cambio de pestaña, de espacio…): NO se
-   * cierra su bridge — ocultar no es cerrar. Solo se suelta el contexto WebGL
-   * (son un recurso contado) y la instancia pasa al LRU con su buffer intacto.
+   * El panel deja de estar a la vista (cambio de pestaña/espacio, o un remontaje
+   * al cambiar el árbol). Dos vidas distintas:
+   *
+   *   - la VISTA xterm muere aquí (es del componente; xterm no soporta `open()`
+   *     dos veces sobre la misma instancia);
+   *   - el BRIDGE se SUELTA con `terminal_release` (attach/detach del CLI): el
+   *     server deja de mandar frames y al volver se engancha uno nuevo que trae
+   *     el viewport completo. NO se usa `terminal_close`: ése mata el pane
+   *     (`user_close`) y es lo que dejaba las terminales muertas al cambiar de
+   *     pestaña.
    */
   hide(paneId: string): void {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
     entry.visible = false;
-    this.#detachWebgl(entry);
+    this.#destroyView(entry);
+    this.detach(paneId);
     this.#touch(paneId);
     this.#evictIfNeeded();
   }
 
-  /** El panel vuelve a estar a la vista: reengancha WebGL si toca y refresca el LRU. */
+  /**
+   * Suelta el bridge sin matar el panel. Idempotente. Tras esto la entrada queda
+   * «idle» con `bridgeId = null`, así que el siguiente `open` reengancha de
+   * verdad (sin early return) y el server manda el viewport entero.
+   */
+  detach(paneId: string): void {
+    const entry = this.#entries.get(paneId);
+    if (!entry || entry.bridgeId === null) return;
+    const bridgeId = entry.bridgeId;
+    entry.bridgeId = null;
+    entry.releasedBridgeId = bridgeId;
+    entry.epoch = -1;
+    entry.framesSinceOpen = 0;
+    entry.bufferedInput = [];
+    this.#clearWatchdog(paneId);
+    this.#clearReopen(paneId);
+    entry.state = 'idle';
+    entry.closeReason = '';
+    entry.sentRelease += 1;
+    void terminalRelease(bridgeId).catch(() => undefined);
+    this.#notifyState(entry);
+  }
+
+  /**
+   * Sanea el estado para que el frontend no crea que tiene un bridge vivo que ya
+   * no existe (p. ej. tras un `hide` que soltó el bridge, o un release que el
+   * backend no soporta todavía).
+   */
+  #sanitize(entry: TerminalEntry): void {
+    if (entry.bridgeId === null && entry.state !== 'idle' && entry.state !== 'error') {
+      entry.state = 'idle';
+      entry.closeReason = '';
+      this.#notifyState(entry);
+    }
+  }
+
+  /**
+   * El panel vuelve a estar a la vista: reengancha WebGL si toca y refresca el
+   * LRU. El repintado NO se pide desde aquí: lo trae el reenganche del bridge
+   * (`open` → bridge nuevo → el server manda el viewport completo).
+   */
   show(paneId: string): void {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
     entry.visible = true;
     this.#touch(paneId);
-    this.#repaint(entry);
-    void this.attachWebgl(entry).then(() => this.#repaint(entry));
+    void this.attachWebgl(entry);
   }
 
   /**
-   * Repinta el viewport desde el buffer. Al volver a la vista hace falta: como el
-   * bridge sigue vivo, el servidor NO reenvía el viewport, y xterm no repinta
-   * solo porque su DOM se vuelva a colgar del documento (el panel se veía negro).
+   * Pide al servidor un frame `full` (el viewport entero) sin cerrar el bridge.
+   *
+   * Medido con la sonda `hd-bridge-probe.py` contra el servidor real:
+   *   attach 80x24            -> 1 frame full (47 KB = viewport completo)
+   *   resize a 77x24          -> 1 frame full
+   *   resize de vuelta 80x24  -> 1 frame full
+   * Un `terminal_open` sobre un bridge ya vivo NO reengancha el stream, así que el
+   * resize (a otro tamaño y de vuelta) es el modo de forzar el repintado: el
+   * primer full llega con el tamaño intermedio y el segundo, ya con el correcto.
    */
-  #repaint(entry: TerminalEntry): void {
-    try {
-      entry.terminal.refresh(0, Math.max(0, entry.terminal.rows - 1));
-    } catch {
-      // Todavía sin abrir en el documento: se repintará en el siguiente intento.
-    }
-  }
-
-  /** Suelta el addon WebGL (el contexto GPU es un recurso contado). */
-  #detachWebgl(entry: TerminalEntry): void {
-    if (!entry.webgl) return;
-    entry.webgl = false;
-    this.#openWebgl = Math.max(0, this.#openWebgl - 1);
-    const addon = entry.webglAddon;
-    entry.webglAddon = null;
-    try {
-      addon?.dispose();
-    } catch {
-      // El contexto ya se había perdido: no hay nada que soltar.
-    }
+  #forceRepaint(entry: TerminalEntry): void {
+    if (entry.bridgeId === null) return;
+    const bridgeId = entry.bridgeId;
+    const cols = Math.max(20, entry.lastCols);
+    const rows = Math.max(5, entry.lastRows);
+    const detour = cols > 21 ? cols - 2 : cols + 2;
+    void terminalResize(bridgeId, detour, rows).catch(() => undefined);
+    void terminalResize(bridgeId, cols, rows).catch(() => undefined);
   }
 
   /** El panel YA NO EXISTE en la sesión: cierra su bridge y destruye la instancia. */
@@ -434,25 +591,12 @@ export class TerminalPool {
     if (!entry) return;
     this.#clearReopen(paneId);
     if (entry.bridgeId !== null) {
+      entry.sentClose += 1;
       void terminalClose(entry.bridgeId).catch(() => undefined);
       entry.bridgeId = null;
     }
-    if (entry.webgl) {
-      entry.webgl = false;
-      this.#openWebgl = Math.max(0, this.#openWebgl - 1);
-    }
-    const addon = entry.webglAddon;
-    entry.webglAddon = null;
-    try {
-      addon?.dispose();
-    } catch {
-      // contexto ya perdido
-    }
     if (entry.watchdog) clearTimeout(entry.watchdog);
-    for (const disposable of entry.coreDisposers) disposable.dispose();
-    entry.coreDisposers = [];
-    entry.writer.dispose();
-    entry.terminal.dispose();
+    this.#destroyView(entry);
     this.#entries.delete(paneId);
     this.#lru = this.#lru.filter((id) => id !== paneId);
   }
@@ -482,6 +626,7 @@ export class TerminalPool {
     if (!entry || entry.bridgeId === null) return;
     entry.lastCols = Math.max(20, cols);
     entry.lastRows = Math.max(5, rows);
+    entry.sentResize += 1;
     void terminalResize(entry.bridgeId, cols, rows).catch(() => undefined);
   }
 
@@ -546,16 +691,18 @@ export class TerminalPool {
   applyFont(font: TerminalFont): void {
     const options = terminalOptions(font);
     for (const entry of this.#entries.values()) {
+      const view = entry.view;
+      if (!view) continue;
       if (
-        entry.terminal.options.fontFamily === options.fontFamily &&
-        entry.terminal.options.fontSize === options.fontSize &&
-        entry.terminal.options.lineHeight === options.lineHeight
+        view.terminal.options.fontFamily === options.fontFamily &&
+        view.terminal.options.fontSize === options.fontSize &&
+        view.terminal.options.lineHeight === options.lineHeight
       ) {
         continue;
       }
-      entry.terminal.options.fontFamily = options.fontFamily;
-      entry.terminal.options.fontSize = options.fontSize;
-      entry.terminal.options.lineHeight = options.lineHeight;
+      view.terminal.options.fontFamily = options.fontFamily;
+      view.terminal.options.fontSize = options.fontSize;
+      view.terminal.options.lineHeight = options.lineHeight;
       this.#refit(entry);
     }
   }
@@ -570,17 +717,19 @@ export class TerminalPool {
   }
 
   #refit(entry: TerminalEntry): void {
-    const previous = { cols: entry.terminal.cols, rows: entry.terminal.rows };
+    const view = entry.view;
+    if (!view) return;
+    const previous = { cols: view.terminal.cols, rows: view.terminal.rows };
     try {
-      entry.fit.fit();
+      view.fit.fit();
     } catch {
       // El contenedor todavía no tiene tamaño (o el pane está oculto): el
       // ResizeObserver del pane volverá a intentarlo.
       return;
     }
     if (entry.bridgeId === null) return;
-    if (entry.terminal.cols === previous.cols && entry.terminal.rows === previous.rows) return;
-    void terminalResize(entry.bridgeId, entry.terminal.cols, entry.terminal.rows).catch(
+    if (view.terminal.cols === previous.cols && view.terminal.rows === previous.rows) return;
+    void terminalResize(entry.bridgeId, view.terminal.cols, view.terminal.rows).catch(
       () => undefined,
     );
   }
@@ -610,3 +759,42 @@ export class TerminalPool {
 }
 
 export const pool = new TerminalPool();
+
+/**
+ * Sonda de diagnóstico en vivo (solo DEV): responde a un `probe` con el estado
+ * del pool y los contadores de llamadas al backend por panel. Se puede pedir por
+ * BroadcastChannel `hd-probe` (postMessage('probe')), por el evento `hd-probe` de
+ * window, o leyendo `window.__HD_POOL_PROBE__()`.
+ *
+ * Sirve para medir en la app real cuántos `terminal_open`/`terminal_resize`/
+ * `terminal_release` se mandan por panel al cambiar de pestaña o espacio.
+ */
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  const snapshot = () => ({
+    pool: pool.entries().map((item) => ({
+      pane: item.paneId,
+      state: item.state,
+      bridge: item.bridgeId,
+      view: item.view !== null,
+      visible: item.visible,
+      sentOpen: item.sentOpen,
+      sentResize: item.sentResize,
+      sentRelease: item.sentRelease,
+      sentClose: item.sentClose,
+      frames: item.framesSinceOpen,
+    })),
+  });
+  (window as unknown as { __HD_POOL_PROBE__?: () => unknown }).__HD_POOL_PROBE__ = snapshot;
+  try {
+    const channel = new BroadcastChannel('hd-probe');
+    channel.onmessage = (event: MessageEvent) => {
+      if (event.data === 'probe') channel.postMessage(snapshot());
+    };
+  } catch {
+    // Sin BroadcastChannel queda el evento de window.
+  }
+  window.addEventListener('hd-probe', (event) => {
+    const detail = (event as CustomEvent<{ reply?: (data: unknown) => void }>).detail;
+    detail?.reply?.(snapshot());
+  });
+}

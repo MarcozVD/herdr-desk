@@ -16,7 +16,7 @@
   import { settings } from '../stores/settings.svelte';
   import { ui } from '../stores/ui.svelte';
   import { pool } from './pool';
-  import type { BridgeState, TerminalEntry } from './pool';
+  import type { BridgeState, TerminalEntry, TerminalViewState } from './pool';
   import TerminalScrollbar from './TerminalScrollbar.svelte';
 
   interface Props {
@@ -35,8 +35,9 @@
 
   const scroll = $derived(session.panes.find((pane) => pane.pane_id === paneId)?.scroll ?? null);
 
-  // Fuera de la reactividad: instancia, handles y contador de frames.
+  // Fuera de la reactividad: entrada del pool, vista actual y handles.
   let entry: TerminalEntry | null = null;
+  let view: TerminalViewState | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
   let lastSize = { cols: 0, rows: 0 };
@@ -48,7 +49,7 @@
     errorText = source.errorText;
   }
 
-  function registerTestTerminal(id: string, term: TerminalEntry['terminal']): void {
+  function registerTestTerminal(id: string, term: TerminalViewState['terminal']): void {
     if (!import.meta.env.DEV) return;
     const registry = window as unknown as { __HD_TERMS__?: Record<string, unknown> };
     registry.__HD_TERMS__ ??= {};
@@ -62,7 +63,7 @@
   }
 
   async function copySelection(): Promise<void> {
-    const text = entry?.terminal.getSelection() ?? '';
+    const text = view?.terminal.getSelection() ?? '';
     if (text.length === 0) return;
     try {
       await writeText(text);
@@ -82,13 +83,13 @@
   }
 
   function applyFit(): void {
-    if (!entry) return;
+    if (!view) return;
     // Con el contenedor sin tamaño (pestaña oculta, primer render) el `fit`
     // calcularía 0 columnas y xterm REDIMENSIONA su buffer a ese tamaño: al
     // volver el panel se quedaba en negro. Se espera al próximo evento.
     if (!host || host.clientWidth === 0 || host.clientHeight === 0) return;
     try {
-      entry.fit.fit();
+      view.fit.fit();
     } catch {
       // El contenedor todavía no tiene tamaño: se reintenta en el próximo evento.
     }
@@ -98,14 +99,14 @@
     if (resizeTimer !== null) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       resizeTimer = null;
-      if (!entry) return;
-      const previous = { cols: entry.terminal.cols, rows: entry.terminal.rows };
+      if (!entry || !view) return;
+      const previous = { cols: view.terminal.cols, rows: view.terminal.rows };
       applyFit();
       if (entry.bridgeId === null) return;
-      if (entry.terminal.cols === previous.cols && entry.terminal.rows === previous.rows) return;
-      if (entry.terminal.cols === lastSize.cols && entry.terminal.rows === lastSize.rows) return;
-      lastSize = { cols: entry.terminal.cols, rows: entry.terminal.rows };
-      pool.resize(paneId, entry.terminal.cols, entry.terminal.rows);
+      if (view.terminal.cols === previous.cols && view.terminal.rows === previous.rows) return;
+      if (view.terminal.cols === lastSize.cols && view.terminal.rows === lastSize.rows) return;
+      lastSize = { cols: view.terminal.cols, rows: view.terminal.rows };
+      pool.resize(paneId, view.terminal.cols, view.terminal.rows);
     }, 60);
   }
 
@@ -123,7 +124,7 @@
     }
     const current = pool.entry(paneId);
     if (!current || current.state !== 'open') return;
-    current.terminal.focus();
+    current.view?.terminal.focus();
   });
 
   function onTerminalEvent(event: Event): void {
@@ -148,19 +149,21 @@
 
   onMount(() => {
     if (!host) return;
-    const created = pool.ensure(paneId);
+    // El pool monta la VISTA (instancia nueva + `open()` una sola vez) y
+    // conserva/reengancha el bridge por su cuenta.
+    const created = pool.mountView(paneId, host);
     entry = created;
-    created.host = host;
-    created.terminal.open(host);
+    view = created.view;
+    if (!view) return;
     pool.attachWebgl(created);
-    registerTestTerminal(paneId, created.terminal);
+    registerTestTerminal(paneId, view.terminal);
     syncFromEntry(created);
 
     const unsubscribe = pool.subscribe({
       onStateChange: (changed) => {
         if (changed.paneId !== paneId) return;
         syncFromEntry(changed);
-        if (changed.state === 'open') changed.terminal.focus();
+        if (changed.state === 'open') changed.view?.terminal.focus();
       },
       onFrame: (changed) => {
         if (changed.paneId !== paneId) return;
@@ -171,16 +174,16 @@
 
     // R3: el input va tal cual lo produce xterm (flechas de PSReadLine, Ctrl+C,
     // pegado multilínea, secuencias de vim). No se filtra ni se reescribe nada.
-    created.coreDisposers.push(created.terminal.onData((data) => pool.send(paneId, data)));
-    created.coreDisposers.push(created.terminal.onBinary((data) => pool.sendBinary(paneId, data)));
-    created.coreDisposers.push(
-      created.terminal.onSelectionChange(() => {
+    view.disposers.push(view.terminal.onData((data) => pool.send(paneId, data)));
+    view.disposers.push(view.terminal.onBinary((data) => pool.sendBinary(paneId, data)));
+    view.disposers.push(
+      view.terminal.onSelectionChange(() => {
         if (settings.values.copy_on_select) void copySelection();
       }),
     );
 
     // La rueda no hace scroll local (scrollback: 0): se pide a herdr.
-    created.terminal.attachCustomWheelEventHandler((event) => {
+    view.terminal.attachCustomWheelEventHandler((event) => {
       const lines = Math.max(1, Math.round(settings.values.mouse_scroll_lines));
       pool.scroll(paneId, event.deltaY < 0 ? 'up' : 'down', lines);
       return false;
@@ -196,23 +199,23 @@
       unsubscribe();
       if (resizeTimer !== null) clearTimeout(resizeTimer);
       resizeObserver?.disconnect();
-      for (const disposable of created.coreDisposers) disposable.dispose();
-      created.coreDisposers = [];
-      created.host = null;
       unregisterTestTerminal(paneId);
-      // Ocultar NO es cerrar: el bridge y el buffer se quedan (cambiar de
-      // pestaña desmonta esta vista). Si el panel desaparece de la sesión, el
-      // `sync` del pool cierra su bridge.
+      // El pool destruye la VISTA (instancia de xterm, writer y addons: xterm no
+      // soporta reabrirla) y SUELTA el bridge con `terminal_release` (no lo
+      // cierra: cerrarlo mataría el panel). Al volver a montarse, la vista es
+      // nueva y el bridge se reengancha con `pool.open`, que recibe el viewport
+      // completo del servidor.
       pool.hide(paneId);
+      view = null;
+      entry = null;
     };
   });
 
-  // Un pane visible mantiene su bridge (ocultar no es cerrar): al ocultarse solo
-  // pasa al LRU y suelta WebGL; al volver se reengancha sin parpadeo de overlay.
-  // Se sigue el epoch de conexión y el estado de conexión: al reconectar (o al
-  // volver el server) hay que reabrir.
+  // Mientras el panel está a la vista, la vista está montada y el bridge se
+  // reengancha con `open` (el servidor manda el viewport completo). Al ocultarse,
+  // `hide` destruye la vista y suelta el bridge.
   $effect(() => {
-    if (!ready || !entry) return;
+    if (!ready || !entry || !view) return;
     const epoch = session.connectionEpoch;
     const connected = session.connection !== 'offline';
     if (!active) {
@@ -225,7 +228,7 @@
     if (!connected && entry.state !== 'idle') return;
     if (entry.state === 'reconnecting') return;
     applyFit();
-    void pool.open(paneId, entry.terminal.cols, entry.terminal.rows, epoch);
+    void pool.open(paneId, view.terminal.cols, view.terminal.rows, epoch);
   });
 </script>
 
@@ -244,7 +247,7 @@
     const surface = event.currentTarget.querySelector('.terminal-surface');
     if (surface?.contains(event.target as Node)) return;
     event.preventDefault();
-    entry?.terminal.focus();
+    view?.terminal.focus();
   }}
 >
   <div bind:this={host} class="terminal-surface"></div>

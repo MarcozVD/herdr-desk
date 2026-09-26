@@ -1,64 +1,137 @@
 // @vitest-environment jsdom
-// BUG A — Cambiar de pestaña (ocultar un panel) NO puede cerrar su bridge.
+// El bug real medido en la app: al cambiar de pestaña o de espacio los paneles se
+// vaciaban (la terminal seguía «activa» pero no pintaba nada).
 //
-// Medido en la app real: al volver a una pestaña los paneles aparecían
-// «desconectados» y solo se recuperaban pulsando a un agente en la barra,
-// porque `release()` cerraba el bridge al desmontar la vista del tab oculto.
+// Dos vidas separadas:
+//   - el BRIDGE es del PANEL: al ocultarlo se SUELTA con `terminal_release` (el
+//     server deja de mandar frames) y al volver se engancha uno NUEVO, que recibe
+//     el viewport completo;
+//   - la VISTA xterm es del COMPONENTE: al desmontarse se DESTRUYE (xterm no
+//     soporta `open()` dos veces sobre la misma instancia: dejaba el render y el
+//     buffer sin pintar).
+// `terminal_close` (que mata el panel con `user_close`) solo se usa cuando el
+// panel desaparece de la sesión.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Terminal } from '@xterm/xterm';
 
-const openCalls: Array<{ paneId: string; bridgeId: number; frame: (buffer: ArrayBuffer) => void }> =
-  [];
+interface OpenCall {
+  paneId: string;
+  bridgeId: number;
+  frame: (buffer: ArrayBuffer) => void;
+}
+
+const openCalls: OpenCall[] = [];
 const closeCalls: number[] = [];
+const releaseCalls: number[] = [];
+const resizeCalls: Array<{ bridgeId: number; cols: number; rows: number }> = [];
+/** Bridges vivos por panel (el backend real reutiliza el que sigue vivo). */
+const liveByPane = new Map<string, number>();
+const paneByBridge = new Map<number, string>();
+const screenByPane = new Map<string, string>();
 let nextBridge = 500;
+/** `false` = backend sin `terminal_release` (aún no ha aterrizado). */
+let releaseSupported = true;
+let seq = 0;
+
+/** Frame con el layout real del protocolo (seq u64, w/h u16, flags, payload). */
+function frameWith(text: string, full = true): ArrayBuffer {
+  seq += 1;
+  const payload = new TextEncoder().encode(text);
+  const buffer = new Uint8Array(16 + payload.length);
+  const view = new DataView(buffer.buffer);
+  view.setBigUint64(0, BigInt(seq), true);
+  view.setUint16(8, 80, true);
+  view.setUint16(10, 24, true);
+  buffer[12] = full ? 1 : 0;
+  buffer.set(payload, 16);
+  return buffer.buffer;
+}
 
 vi.mock('../herdr/client', () => ({
   terminalOpen: vi.fn(
-    async (
-      paneId: string,
-      _cols: number,
-      _rows: number,
-      onFrame: (buffer: ArrayBuffer) => void,
-    ) => {
+    async (paneId: string, _cols: number, _rows: number, onFrame: (b: ArrayBuffer) => void) => {
+      const existing = liveByPane.get(paneId);
+      if (existing !== undefined) {
+        // El backend reutiliza el bridge que sigue vivo (solo cambia el canal).
+        openCalls.push({ paneId, bridgeId: existing, frame: onFrame });
+        return existing;
+      }
       const bridgeId = (nextBridge += 1);
+      liveByPane.set(paneId, bridgeId);
+      paneByBridge.set(bridgeId, paneId);
       openCalls.push({ paneId, bridgeId, frame: onFrame });
       return bridgeId;
     },
   ),
   terminalClose: vi.fn(async (bridgeId: number) => {
     closeCalls.push(bridgeId);
+    const paneId = paneByBridge.get(bridgeId);
+    if (paneId) liveByPane.delete(paneId);
+  }),
+  terminalRelease: vi.fn(async (bridgeId: number) => {
+    releaseCalls.push(bridgeId);
+    if (releaseSupported) {
+      const paneId = paneByBridge.get(bridgeId);
+      if (paneId) liveByPane.delete(paneId);
+    }
+    return releaseSupported;
   }),
   terminalInput: vi.fn(async () => undefined),
   terminalInputBytes: vi.fn(async () => undefined),
-  terminalResize: vi.fn(async () => undefined),
+  terminalResize: vi.fn(async (bridgeId: number, cols: number, rows: number) => {
+    resizeCalls.push({ bridgeId, cols, rows });
+    // El server rehace el viewport y manda un `full` (medido contra herdr real).
+    const paneId = paneByBridge.get(bridgeId);
+    const call = openCalls.filter((item) => item.bridgeId === bridgeId).at(-1);
+    if (paneId && call) call.frame(frameWith(screenByPane.get(paneId) ?? ''));
+  }),
   terminalScroll: vi.fn(async () => undefined),
 }));
 
 const { pool } = await import('./pool');
 
-/** Frame completo válido (cabecera de 16 bytes + payload). */
-function fullFrame(text: string): ArrayBuffer {
-  const payload = new TextEncoder().encode(text);
-  const buffer = new Uint8Array(16 + payload.length);
-  buffer[0] = 1; // FLAG_FULL
-  new DataView(buffer.buffer).setUint32(8, 7, true); // seq
-  new DataView(buffer.buffer).setUint32(12, payload.length, true);
-  buffer.set(payload, 16);
-  return buffer.buffer;
+function host(): HTMLDivElement {
+  const element = document.createElement('div');
+  document.body.append(element);
+  return element;
+}
+
+function mount(paneId: string): NonNullable<ReturnType<typeof pool.mountView>['view']> {
+  const entry = pool.mountView(paneId, host());
+  if (!entry.view) throw new Error('el montaje no creó la vista');
+  return entry.view;
+}
+
+function bufferText(terminal: Terminal): string {
+  const lines: string[] = [];
+  for (let index = 0; index < terminal.buffer.active.length; index += 1) {
+    lines.push(terminal.buffer.active.getLine(index)?.translateToString() ?? '');
+  }
+  return lines.join('\n');
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
   openCalls.length = 0;
   closeCalls.length = 0;
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn(() => ({
-      matches: false,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-    })),
-  );
+  releaseCalls.length = 0;
+  resizeCalls.length = 0;
+  liveByPane.clear();
+  paneByBridge.clear();
+  screenByPane.clear();
+  releaseSupported = true;
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    // xterm sigue usando la API antigua en jsdom.
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }));
 });
 
 afterEach(() => {
@@ -67,85 +140,100 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('ocultar un panel (cambio de pestaña)', () => {
-  it('no cierra el bridge y el panel sigue «open»', async () => {
-    const entry = await pool.open('w1:p1', 80, 24, 1);
-    const bridge = entry.bridgeId;
+describe('ocultar un panel = soltar su bridge y destruir su vista', () => {
+  it('desmontar destruye el xterm y SUELTA el bridge, sin cerrarlo', async () => {
+    const view = mount('w1:p1');
+    const disposeSpy = vi.spyOn(view.terminal, 'dispose');
+    await pool.open('w1:p1', 80, 24, 1);
+    const entry = pool.entry('w1:p1');
+    const bridge = entry?.bridgeId ?? null;
     expect(bridge).not.toBeNull();
-    closeCalls.length = 0;
 
-    // Cambio de pestaña: la vista se oculta (y se desmonta).
     pool.hide('w1:p1');
-    await vi.advanceTimersByTimeAsync(50);
 
-    expect(closeCalls).toEqual([]); // el bridge NO se cerró
-    expect(entry.bridgeId).toBe(bridge);
-    expect(entry.state).toBe('open');
-    expect(entry.visible).toBe(false);
+    expect(disposeSpy).toHaveBeenCalled(); // la vista muere
+    expect(entry?.view).toBeNull();
+    expect(releaseCalls).toEqual([bridge]); // el bridge se suelta
+    expect(closeCalls).toEqual([]); // y NO se cierra (cerrarlo mataría el panel)
+    expect(entry?.bridgeId).toBeNull();
+    expect(entry?.state).toBe('idle'); // saneado: no finge un bridge que no tiene
   });
 
-  it('al volver reutiliza el MISMO bridge (sin reconectar ni parpadear)', async () => {
+  it('al volver, la vista es NUEVA y el bridge se reengancha (viewport completo)', async () => {
+    const first = mount('w1:p1');
+    const firstTerminal = first.terminal;
     await pool.open('w1:p1', 80, 24, 1);
+    expect(openCalls).toHaveLength(1);
+
     pool.hide('w1:p1');
-    pool.show('w1:p1');
+    const second = mount('w1:p1');
+    expect(second.terminal).not.toBe(firstTerminal); // instancia nueva
     await pool.open('w1:p1', 80, 24, 1);
 
-    expect(openCalls).toHaveLength(1); // no hubo una segunda apertura
-    expect(closeCalls).toEqual([]);
+    expect(openCalls).toHaveLength(2); // reenganche real (sin early return)
+    expect(openCalls[1]?.bridgeId).not.toBe(openCalls[0]?.bridgeId);
     expect(pool.entry('w1:p1')?.state).toBe('open');
-    expect(pool.entry('w1:p1')?.visible).toBe(true);
-  });
-
-  it('el panel oculto sigue recibiendo frames (su canal no se pierde)', async () => {
-    const entry = await pool.open('w1:p1', 80, 24, 1);
-    pool.hide('w1:p1');
-    const before = entry.framesSinceOpen;
-
-    openCalls[0]?.frame(fullFrame('hola'));
-    await vi.advanceTimersByTimeAsync(20);
-
-    expect(entry.framesSinceOpen).toBe(before + 1);
-  });
-
-  it('conserva la instancia (buffer) y suelta WebGL al ocultar, y lo reengancha al volver', async () => {
-    const entry = await pool.open('w1:p1', 80, 24, 1);
-    const terminal = entry.terminal;
-    // WebGL simulado: el addon solo tiene que soltarse/volver a pedirse.
-    let disposed = 0;
-    entry.webgl = true;
-    entry.webglAddon = { dispose: () => void (disposed += 1) } as never;
-
-    pool.hide('w1:p1');
-    expect(disposed).toBe(1); // el contexto GPU se suelta
-    expect(entry.webglAddon).toBeNull();
-    expect(entry.terminal).toBe(terminal); // la instancia sigue viva (buffer intacto)
-    expect(pool.openWebgl).toBe(0);
-
-    pool.show('w1:p1');
-    await vi.advanceTimersByTimeAsync(30);
-    expect(pool.entry('w1:p1')?.terminal).toBe(terminal);
-  });
-
-  it('al volver repinta el viewport desde su buffer (sin bridge nuevo)', async () => {
-    const entry = await pool.open('w1:p1', 80, 24, 1);
-    const refresh = vi.spyOn(entry.terminal, 'refresh');
-    pool.hide('w1:p1');
-    pool.show('w1:p1');
-    await vi.advanceTimersByTimeAsync(30);
-
-    // El servidor no reenvía el viewport (el bridge sigue vivo): repinta xterm.
-    expect(refresh).toHaveBeenCalled();
-    expect(refresh.mock.calls.at(-1)?.[0]).toBe(0);
     expect(closeCalls).toEqual([]);
   });
 
-  it('sync cierra SOLO los paneles que ya no existen', async () => {
+  it('nunca llama open() dos veces sobre la misma instancia de xterm', () => {
+    const openSpy = vi.spyOn(Terminal.prototype, 'open');
+    const first = mount('w1:p1');
+    expect(openSpy).toHaveBeenCalledTimes(1);
+
+    const again = mount('w1:p1'); // remontaje sin desmontar (mismo panel)
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(again.terminal).toBe(first.terminal);
+    openSpy.mockRestore();
+  });
+
+  it('CONTENIDO: el texto sigue viéndose tras cambiar de pestaña y volver', async () => {
+    const first = mount('w1:p1');
+    await pool.open('w1:p1', 80, 24, 1);
+    screenByPane.set('w1:p1', 'marca-de-buffer');
+    openCalls[0]?.frame(frameWith('marca-de-buffer'));
+    await vi.advanceTimersByTimeAsync(30);
+    expect(bufferText(first.terminal)).toContain('marca-de-buffer');
+
+    // Cambio de pestaña: se desmonta la vista y se suelta el bridge.
+    pool.hide('w1:p1');
+    // Vuelta: vista nueva + reenganche con bridge nuevo y viewport completo.
+    const second = mount('w1:p1');
+    await pool.open('w1:p1', 80, 24, 1);
+    openCalls[1]?.frame(frameWith(screenByPane.get('w1:p1') ?? ''));
+    await vi.advanceTimersByTimeAsync(30);
+
+    expect(bufferText(second.terminal)).toContain('marca-de-buffer');
+    expect(closeCalls).toEqual([]);
+  });
+
+  it('si el backend aún reutiliza el bridge, el panel se repinta igual', async () => {
+    releaseSupported = false; // el backend no sabe soltar el bridge todavía
+    mount('w1:p1');
+    await pool.open('w1:p1', 80, 24, 1);
+    screenByPane.set('w1:p1', 'texto-vivo');
+    openCalls[0]?.frame(frameWith('texto-vivo'));
+    await vi.advanceTimersByTimeAsync(30);
+
+    pool.hide('w1:p1');
+    const second = mount('w1:p1');
+    await pool.open('w1:p1', 80, 24, 1);
+    await vi.advanceTimersByTimeAsync(30);
+
+    // El reenganche reutilizó el bridge: se le fuerza el repintado con un resize.
+    expect(resizeCalls.length).toBeGreaterThanOrEqual(2);
+    expect(resizeCalls[0]?.cols).not.toBe(resizeCalls.at(-1)?.cols);
+    expect(bufferText(second.terminal)).toContain('texto-vivo');
+    expect(closeCalls).toEqual([]);
+  });
+
+  it('cerrar un panel de verdad (ya no está en la sesión) SÍ cierra su bridge', async () => {
+    mount('w1:p1');
+    mount('w1:p2');
     await pool.open('w1:p1', 80, 24, 1);
     await pool.open('w1:p2', 80, 24, 1);
-    closeCalls.length = 0;
 
     pool.sync(['w1:p1']); // el usuario cerró w1:p2
-    await vi.advanceTimersByTimeAsync(20);
 
     expect(closeCalls).toEqual([openCalls[1]?.bridgeId]);
     expect(pool.entry('w1:p2')).toBeUndefined();

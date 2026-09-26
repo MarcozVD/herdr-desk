@@ -306,6 +306,26 @@ export async function terminalClose(bridgeId: number): Promise<void> {
   await invoke('terminal_close', { bridgeId });
 }
 
+/**
+ * `terminal_release`: suelta el bridge SIN matar el panel (envía
+ * `terminal.release` al server y deja el pane vivo). Es lo contrario de
+ * `terminal_close`, que además cierra la sesión del panel y su proceso termina
+ * con razón `user_close`.
+ *
+ * Devuelve `false` mientras el command no exista en el backend (está en camino):
+ * así el pool puede degradar sin romper nada.
+ */
+export async function terminalRelease(bridgeId: number): Promise<boolean> {
+  try {
+    await invoke('terminal_release', { bridgeId });
+    return true;
+  } catch (raw) {
+    const { kind } = classifyCommandError(raw);
+    if (kind === 'missing') return false;
+    throw raw;
+  }
+}
+
 /** `ui_ready`: el frontend avisa del primer render y el backend hace window.show(). */
 export async function uiReady(): Promise<void> {
   await invoke('ui_ready');
