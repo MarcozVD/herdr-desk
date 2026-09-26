@@ -41,11 +41,11 @@ powershell -File scripts\sandbox.ps1 stop         # al terminar
 
 ### Scripts
 
-| Script | Qué hace |
-|---|---|
-| `scripts/sandbox.ps1` | start/stop/status de la sesión sandbox `herdr-desk-dev` |
-| `scripts/smoke.ps1` | lanza el exe, espera `[herdr-desk] ready`, lo mata |
-| `scripts/perf.ps1` | arranque, RAM del árbol (exe + WebView2), CPU en reposo → JSON |
+| Script                | Qué hace                                                       |
+| --------------------- | -------------------------------------------------------------- |
+| `scripts/sandbox.ps1` | start/stop/status de la sesión sandbox `herdr-desk-dev`        |
+| `scripts/smoke.ps1`   | lanza el exe, espera `[herdr-desk] ready`, lo mata             |
+| `scripts/perf.ps1`    | arranque, RAM del árbol (exe + WebView2), CPU en reposo → JSON |
 
 ### Tests backend
 
