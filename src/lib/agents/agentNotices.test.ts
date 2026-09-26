@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentInfo } from '../herdr/types';
 import {
+  captureAgentStates,
   diffAgentNotices,
   groupNotices,
   NoticeBuffer,
@@ -26,6 +27,11 @@ function agent(paneId: string, status: AgentInfo['agent_status'], extra: Partial
   } as unknown as AgentInfo;
 }
 
+/** El diff compara estados copiados por valor (como en la app). */
+function states(previous: readonly AgentInfo[], next: readonly AgentInfo[]) {
+  return diffAgentNotices(captureAgentStates(previous), captureAgentStates(next));
+}
+
 describe('diferencia entre snapshots (T2.5)', () => {
   it('avisa de bloqueado, terminado y de empezar a producir salida', () => {
     const previous = [
@@ -40,7 +46,7 @@ describe('diferencia entre snapshots (T2.5)', () => {
       agent('w1:p3', 'working', { agent: 'opencode' }),
       agent('w1:p4', 'idle'),
     ];
-    expect(diffAgentNotices(previous, next)).toEqual([
+    expect(states(previous, next)).toEqual([
       { kind: 'blocked', paneId: 'w1:p1', name: 'Claude' },
       { kind: 'done', paneId: 'w1:p2', name: 'hd-bot' },
       { kind: 'output', paneId: 'w1:p3', name: 'opencode' },
@@ -50,17 +56,17 @@ describe('diferencia entre snapshots (T2.5)', () => {
   it('un agente nuevo no avisa: lo acaba de pedir el usuario', () => {
     const previous = [agent('w1:p1', 'idle')];
     const next = [agent('w1:p1', 'idle'), agent('w1:p2', 'blocked'), agent('w1:p3', 'done')];
-    expect(diffAgentNotices(previous, next)).toEqual([]);
+    expect(states(previous, next)).toEqual([]);
   });
 
   it('sin cambios no hay avisos; volver de bloqueado a trabajar sí lo es', () => {
     const previous = [agent('w1:p1', 'blocked'), agent('w1:p2', 'working')];
-    expect(diffAgentNotices(previous, previous)).toEqual([]);
+    expect(states(previous, previous)).toEqual([]);
     // El usuario respondió al agente y volvió a producir: es llegada de salida.
     // Pasar a inactivo, en cambio, no avisa de nada.
-    expect(diffAgentNotices(previous, [agent('w1:p1', 'working'), agent('w1:p2', 'idle')])).toEqual(
-      [{ kind: 'output', paneId: 'w1:p1', name: 'w1:p1' }],
-    );
+    expect(states(previous, [agent('w1:p1', 'working'), agent('w1:p2', 'idle')])).toEqual([
+      { kind: 'output', paneId: 'w1:p1', name: 'w1:p1' },
+    ]);
   });
 });
 

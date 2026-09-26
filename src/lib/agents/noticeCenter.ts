@@ -7,16 +7,18 @@ import type { AgentInfo } from '../herdr/types';
 import { settings } from '../stores/settings.svelte';
 import { ui } from '../stores/ui.svelte';
 import {
+  captureAgentStates,
   diffAgentNotices,
   NoticeBuffer,
   noticeText,
   shouldNotify,
   type AgentNotice,
+  type AgentState,
   type NoticeContext,
 } from './agentNotices';
 
 class NoticeCenter {
-  #previous: AgentInfo[] = [];
+  #previous: AgentState[] = [];
   #lastRevision = 0;
   #buffer = new NoticeBuffer((groups) => {
     for (const group of groups) {
@@ -32,11 +34,14 @@ class NoticeCenter {
   observe(agents: readonly AgentInfo[], context: NoticeContext, revision = 0): void {
     if (revision > 0 && revision === this.#lastRevision) return;
     this.#lastRevision = revision;
+    // Por VALOR: el store reescribe los objetos de agente en su sitio, así que
+    // guardar la lista por referencia dejaría «lo anterior» ya cambiado.
     const previous = this.#previous;
-    this.#previous = [...agents];
+    const next = captureAgentStates(agents);
+    this.#previous = next;
     if (settings.values.toast_delivery !== 'herdr') return;
     if (previous.length === 0) return;
-    const notices = diffAgentNotices(previous, agents).filter((notice) =>
+    const notices = diffAgentNotices(previous, next).filter((notice) =>
       shouldNotify(notice, context),
     );
     this.#buffer.push(notices, settings.values.toast_group_ms);

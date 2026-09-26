@@ -19,9 +19,29 @@ export interface AgentNotice {
   name: string;
 }
 
+/** Estado de un agente copiado por valor (para comparar snapshots). */
+export interface AgentState {
+  paneId: string;
+  status: AgentInfo['agent_status'];
+  name: string;
+}
+
 export interface NoticeContext {
   focusedPaneId: string | null;
   windowFocused: boolean;
+}
+
+/**
+ * Copia por valor el estado de los agentes. Hay que hacerlo así: el store
+ * reescribe los objetos de agente en su sitio, así que guardar la lista
+ * anterior por referencia daría «lo anterior» ya cambiado y no habría avisos.
+ */
+export function captureAgentStates(agents: readonly AgentInfo[]): AgentState[] {
+  return agents.map((agent) => ({
+    paneId: agent.pane_id,
+    status: agent.agent_status,
+    name: agent.display_agent ?? agent.name ?? agent.agent ?? agent.pane_id,
+  }));
 }
 
 /**
@@ -30,21 +50,20 @@ export interface NoticeContext {
  * Un agente nuevo (reportado o arrancado) no avisa: lo acaba de pedir el usuario.
  */
 export function diffAgentNotices(
-  previous: readonly AgentInfo[],
-  next: readonly AgentInfo[],
+  previous: readonly AgentState[],
+  next: readonly AgentState[],
 ): AgentNotice[] {
-  const before = new Map(previous.map((agent) => [agent.pane_id, agent.agent_status]));
+  const before = new Map(previous.map((state) => [state.paneId, state.status]));
   const notices: AgentNotice[] = [];
-  for (const agent of next) {
-    const was = before.get(agent.pane_id);
-    if (was === undefined || was === agent.agent_status) continue;
-    const name = agent.display_agent ?? agent.name ?? agent.agent ?? agent.pane_id;
-    if (agent.agent_status === 'blocked') {
-      notices.push({ kind: 'blocked', paneId: agent.pane_id, name });
-    } else if (agent.agent_status === 'done') {
-      notices.push({ kind: 'done', paneId: agent.pane_id, name });
-    } else if (agent.agent_status === 'working' && was !== 'working') {
-      notices.push({ kind: 'output', paneId: agent.pane_id, name });
+  for (const state of next) {
+    const was = before.get(state.paneId);
+    if (was === undefined || was === state.status) continue;
+    if (state.status === 'blocked') {
+      notices.push({ kind: 'blocked', paneId: state.paneId, name: state.name });
+    } else if (state.status === 'done') {
+      notices.push({ kind: 'done', paneId: state.paneId, name: state.name });
+    } else if (state.status === 'working' && was !== 'working') {
+      notices.push({ kind: 'output', paneId: state.paneId, name: state.name });
     }
   }
   return notices;
