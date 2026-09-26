@@ -9,7 +9,7 @@ use herdr_core::error::ApiError;
 use super::cli_run::run_whitelisted_with_env;
 
 /// Path del config de herdr (respeta HERDR_CONFIG_PATH si el usuario lo define).
-fn config_path() -> PathBuf {
+pub(crate) fn config_path() -> PathBuf {
     if let Ok(p) = std::env::var("HERDR_CONFIG_PATH")
         && !p.is_empty()
     {

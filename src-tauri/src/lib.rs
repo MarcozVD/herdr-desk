@@ -15,6 +15,8 @@ mod sandbox_guard;
 mod session_switch_tests;
 #[cfg(all(test, feature = "sandbox"))]
 mod terminal_cycle_tests;
+#[cfg(all(test, feature = "sandbox"))]
+mod worktree_sandbox_tests;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -128,6 +130,10 @@ pub fn run() {
             commands::config::config_read,
             commands::config::config_write,
             commands::config::config_reset_keys,
+            commands::worktrees::worktree_list,
+            commands::worktrees::worktree_create,
+            commands::worktrees::worktree_open,
+            commands::worktrees::worktree_remove,
             tray::tray_update,
             overlay::taskbar_overlay,
             toast_identity::toast_identity,
