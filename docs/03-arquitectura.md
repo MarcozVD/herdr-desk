@@ -107,6 +107,25 @@ configuración de la ventana. No reintentarlo por el lado de Tauri/ventana.
 - Tests: `session_switch_tests.rs` (solo la última suscripción entrega y el snapshot es de
   la sesión nueva; registro vacío y store viejo cerrado tras el switch).
 
+### Kick por evento (fix del congelamiento de la UI)
+
+- `events::subscribe_once` hace `kick.notify_one()` **por cada evento** reenviado, no solo
+  al final de la conexión. Sin eso el store solo refrescaba en el bootstrap y al
+  resuscribir: mientras la conexión L vivía, la UI se quedaba congelada (el agente
+  escribía, el panel no cambiaba) aunque los eventos llegaran.
+- El bucle `run_with` sigue pateando también después de cada intento de conexión y tras
+  cada resuscripción.
+- Coste medido: la coalescencia del store (30 ms + `drain`) absorbe la ráfaga, así que
+  50 eventos seguidos producen **2 refrescos**, no 50.
+- El `kick` que se pasa a `run` es el mismo `Notify` que consume el refresher
+  (`Store::kick_handle()`): si se pasan distintos, el store nunca se refresca.
+- Tests de regresión en `events.rs`: `cada_evento_refresca_el_snapshot` (3 eventos →
+  el snapshot refleja el último, con refrescos más allá del bootstrap) y
+  `rafaga_de_50_eventos_coalesce_en_pocos_refrescos` (50 eventos → ≤ 5 refrescos y
+  snapshot final alcanzado), ambos con transporte falso y store real.
+- Consecuencia en el frontend: el parche de latido que pedía `session.snapshot` para
+  forzar refrescos se elimina; el store vuelve a ser la única fuente de verdad.
+
 ## Conexión y bootstrap (fix bug en vivo, F1)
 
 - **Refresh inicial del store**: el refresher hace un fetch inmediato al arrancar, ANTES de
