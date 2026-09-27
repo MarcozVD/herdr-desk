@@ -49,11 +49,19 @@
     margin-inline-start: 4px;
     padding: 1px 8px;
     border-radius: 999px;
-    border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
-    background: color-mix(in oklab, var(--accent) 20%, transparent);
+    border: 1px solid var(--control-active-border);
+    background: var(--accent-bg-soft);
     color: var(--text);
     font: inherit;
     font-size: 11px;
     cursor: pointer;
+    transition:
+      background var(--t-fast) var(--ease),
+      border-color var(--t-fast) var(--ease);
+  }
+
+  .pill__action:hover {
+    background: var(--control-active-bg);
+    border-color: var(--control-hover-border);
   }
 </style>

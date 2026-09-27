@@ -62,8 +62,8 @@
   .prefix-chip {
     padding: 2px 8px;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--yellow) 30%, transparent);
-    border: 1px solid color-mix(in oklab, var(--yellow) 55%, transparent);
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border-strong);
     color: var(--text);
     font-size: 11px;
     letter-spacing: 0.08em;

@@ -91,7 +91,7 @@
   .reconnect__session {
     padding: 1px 8px;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--surface-dim) 45%, transparent);
+    background: var(--control-bg-inset);
     color: var(--text);
     font-size: 11px;
     white-space: nowrap;
@@ -113,10 +113,18 @@
     padding: 2px 10px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--glass-border);
-    background: color-mix(in oklab, var(--accent) 20%, transparent);
+    background: var(--accent-bg-soft);
     color: var(--text);
     font: inherit;
     font-size: 11px;
     cursor: pointer;
+    transition:
+      background var(--t-fast) var(--ease),
+      border-color var(--t-fast) var(--ease);
+  }
+
+  .reconnect__action:hover {
+    background: var(--control-active-bg);
+    border-color: var(--control-hover-border);
   }
 </style>
