@@ -1,16 +1,121 @@
-/* Tokens de diseño (§3 del plan): glass, radios, espaciado, motion y la paleta
-   base del tema. En F3 la paleta se rellena desde `[theme]` de config.toml
-   (lib/theme/themes.ts); esto son los valores por defecto del spike. */
+/* Tokens de diseño (§3 del plan): el sistema de cristal por CAPAS, radios,
+   espaciado, motion y la paleta base del tema. En F3 la paleta se rellena desde
+   `[theme]` de config.toml (lib/theme/themes.ts); esto son los valores por
+   defecto del spike.
+
+   El cristal vive SOLO aquí: cada capa (base → surface → overlay → elevated)
+   compone su alpha, blur, borde y sombra en un token `--layer-*`/`--glass-*`, y
+   los componentes eligen capa con `.layer-surface` / `.layer-overlay` /
+   `.layer-elevated` (los alias históricos `.glass` y `.glass-overlay` resuelven
+   a la misma capa). Ningún componente escribe `backdrop-filter`. */
 
 :root {
-  /* Glass */
-  --glass-alpha: 0.55;
-  --glass-alpha-overlay: 0.72;
-  --glass-blur: 20px;
-  --glass-blur-overlay: 28px;
+  /* --- Capas de cristal --- */
+
+  /* base: Mica detrás; la app no pinta fondo propio, solo mesh + noise. */
+  --layer-base-bg: transparent;
+  --layer-base-mesh-a: color-mix(in oklab, var(--accent) 12%, transparent);
+  --layer-base-mesh-b: color-mix(in oklab, var(--teal) 12%, transparent);
+  --layer-base-noise-opacity: 0.03;
+  --layer-base-fallback-bg: linear-gradient(160deg, #14151c 0%, #1b1d27 55%, #101218 100%);
+
+  /* Material común de las capas de cristal. */
   --glass-saturate: 140%;
   --glass-border: rgb(255 255 255 / 0.12);
+  --glass-border-strong: rgb(255 255 255 / 0.18);
   --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.1);
+  --glass-highlight-strong: inset 0 1px 0 rgb(255 255 255 / 0.16);
+
+  /* surface: chrome del shell (titlebar, sidebar, tabs, statusbar, banner). */
+  --glass-alpha: 0.55; /* compat */
+  --glass-blur: 20px; /* compat */
+  --glass-alpha-surface: 0.55;
+  --glass-blur-surface: 20px;
+  --layer-surface-bg: color-mix(
+    in oklab,
+    var(--panel-bg) calc(var(--glass-alpha-surface) * 100%),
+    transparent
+  );
+  --layer-surface-filter: blur(var(--glass-blur-surface)) saturate(var(--glass-saturate));
+  --layer-surface-border: 1px solid var(--glass-border);
+  --layer-surface-shadow: var(--glass-highlight), var(--shadow-lg);
+  --layer-surface-radius: var(--radius);
+
+  /* overlay: superficies que interrumpen (diálogos, paleta, cheatsheet, visor). */
+  --glass-alpha-overlay: 0.72;
+  --glass-blur-overlay: 28px;
+  --layer-overlay-bg: color-mix(
+    in oklab,
+    var(--panel-bg) calc(var(--glass-alpha-overlay) * 100%),
+    transparent
+  );
+  --layer-overlay-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate));
+  --layer-overlay-border: 1px solid var(--glass-border);
+  --layer-overlay-shadow: var(--glass-highlight), var(--shadow-lg);
+  --layer-overlay-radius: var(--radius-lg);
+
+  /* elevated: flotantes por encima de cualquier overlay (menús, toasts). */
+  --glass-alpha-elevated: 0.86;
+  --glass-blur-elevated: 36px;
+  --layer-elevated-bg: color-mix(
+    in oklab,
+    var(--panel-bg) calc(var(--glass-alpha-elevated) * 100%),
+    transparent
+  );
+  --layer-elevated-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
+  --layer-elevated-border: 1px solid var(--glass-border-strong);
+  --layer-elevated-shadow: var(--glass-highlight-strong), 0 24px 64px -16px rgb(0 0 0 / 0.65);
+  --layer-elevated-radius: var(--radius-sm);
+
+  /* scrim de los overlays modales. */
+  --overlay-scrim-bg: rgb(0 0 0 / 0.25);
+
+  /* --- Controles, filas y estados --- */
+
+  /* Superficies de control (botones, campos, chips). */
+  --control-bg: color-mix(in oklab, var(--panel-bg) 65%, transparent);
+  --control-bg-strong: color-mix(in oklab, var(--panel-bg) 80%, transparent);
+  --control-bg-raised: color-mix(in oklab, var(--panel-bg) 96%, transparent);
+  --control-bg-inset: color-mix(in oklab, var(--surface-dim) 45%, transparent);
+  --control-hover-bg: color-mix(in oklab, var(--text) 10%, transparent);
+  --control-pressed-bg: color-mix(in oklab, var(--text) 16%, transparent);
+  --control-hover-border: color-mix(in oklab, var(--accent) 45%, transparent);
+  --control-active-bg: color-mix(in oklab, var(--accent) 22%, transparent);
+  --control-active-border: color-mix(in oklab, var(--accent) 45%, transparent);
+  --control-disabled-opacity: 0.5;
+
+  /* Filas de lista (workspaces, tabs, agentes, resultados). */
+  --row-hover-bg: color-mix(in oklab, var(--active-row-bg) 55%, transparent);
+  --row-current-bg: color-mix(in oklab, var(--active-row-bg) 85%, transparent);
+  --row-current-border: color-mix(in oklab, var(--accent) 35%, transparent);
+  --row-selected-bg: color-mix(in oklab, var(--accent) 22%, transparent);
+  --row-selected-bg-strong: color-mix(in oklab, var(--accent) 26%, transparent);
+  --row-subtle-bg: color-mix(in oklab, var(--panel-bg) 40%, transparent);
+  --row-zebra-bg: color-mix(in oklab, var(--panel-bg) 40%, transparent);
+
+  /* Acentos semánticos de acción. */
+  --accent-bg: color-mix(in oklab, var(--accent) 30%, transparent);
+  --accent-bg-soft: color-mix(in oklab, var(--accent) 20%, transparent);
+  --accent-border: color-mix(in oklab, var(--accent) 55%, transparent);
+  --danger-bg: color-mix(in oklab, var(--red) 70%, transparent);
+  --danger-border: color-mix(in oklab, var(--red) 70%, transparent);
+  --danger-border-soft: color-mix(in oklab, var(--red) 55%, transparent);
+  --danger-contrast: #14151c;
+  --warn-bg: color-mix(in oklab, var(--yellow) 30%, transparent);
+  --warn-bg-strong: color-mix(in oklab, var(--yellow) 45%, transparent);
+  --warn-border: color-mix(in oklab, var(--yellow) 45%, transparent);
+  --warn-border-strong: color-mix(in oklab, var(--yellow) 55%, transparent);
+
+  /* Foco y scrollbars. */
+  --focus-ring-width: 2px;
+  --focus-ring-color: var(--accent);
+  --focus-ring-offset: 2px;
+  --scrollbar-size: 10px;
+  --scrollbar-track: color-mix(in oklab, var(--surface-dim) 35%, transparent);
+  --scrollbar-thumb: color-mix(in oklab, var(--text-dim) 40%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklab, var(--text-dim) 70%, transparent);
+
+  /* Geometría común. */
   --radius-sm: 8px;
   --radius: 14px;
   --radius-lg: 20px;
@@ -54,6 +159,7 @@
   /* Superficies de la terminal: casi opacas, sin backdrop-filter (§3 capa 3). */
   --panel-bg-solid: #21222c;
   --pane-header-bg: #1b1c24;
+  --terminal-overlay-bg: color-mix(in oklab, var(--panel-bg-solid) 88%, transparent);
 
   color-scheme: dark;
 }
@@ -68,39 +174,57 @@ html[data-theme='light'] {
   --text-dim: #55556a;
   --panel-bg-solid: #fbfbfe;
   --pane-header-bg: #eeeef5;
+  /* El cristal en claro necesita borde y brillo invertidos para leerse. */
+  --glass-border: rgb(0 0 0 / 0.12);
+  --glass-border-strong: rgb(0 0 0 / 0.16);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.7);
+  --glass-highlight-strong: inset 0 1px 0 rgb(255 255 255 / 0.85);
+  --overlay-scrim-bg: rgb(20 20 30 / 0.18);
+  --layer-base-fallback-bg: linear-gradient(160deg, #e7e7ef 0%, #f2f2f7 55%, #dcdce6 100%);
+  --scrollbar-thumb: color-mix(in oklab, var(--text-dim) 35%, transparent);
+  --scrollbar-thumb-hover: color-mix(in oklab, var(--text-dim) 60%, transparent);
   color-scheme: light;
 }
 
-.glass {
-  background: color-mix(in oklab, var(--panel-bg) calc(var(--glass-alpha) * 100%), transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight), var(--shadow-lg);
-  border-radius: var(--radius);
+/* Material de cada capa. `.glass` y `.glass-overlay` son la API histórica del
+   §3 y resuelven a la misma capa que sus nombres nuevos. */
+.glass,
+.layer-surface {
+  background: var(--layer-surface-bg);
+  backdrop-filter: var(--layer-surface-filter);
+  border: var(--layer-surface-border);
+  box-shadow: var(--layer-surface-shadow);
+  border-radius: var(--layer-surface-radius);
 }
 
-.glass-overlay {
-  background: color-mix(
-    in oklab,
-    var(--panel-bg) calc(var(--glass-alpha-overlay) * 100%),
-    transparent
-  );
-  backdrop-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate));
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight), var(--shadow-lg);
-  border-radius: var(--radius-lg);
+.glass-overlay,
+.layer-overlay {
+  background: var(--layer-overlay-bg);
+  backdrop-filter: var(--layer-overlay-filter);
+  border: var(--layer-overlay-border);
+  box-shadow: var(--layer-overlay-shadow);
+  border-radius: var(--layer-overlay-radius);
 }
 
-/* Reducción de transparencia (§3): glass sólido, sin blur. */
-:root[data-glass='off'] .glass,
-:root[data-glass='off'] .glass-overlay {
+.glass-elevated,
+.layer-elevated {
+  background: var(--layer-elevated-bg);
+  backdrop-filter: var(--layer-elevated-filter);
+  border: var(--layer-elevated-border);
+  box-shadow: var(--layer-elevated-shadow);
+  border-radius: var(--layer-elevated-radius);
+}
+
+/* Reducción de transparencia (§3): cristal sólido, sin blur. */
+:root[data-glass='off'] :is(.glass, .layer-surface, .glass-overlay, .layer-overlay),
+:root[data-glass='off'] :is(.glass-elevated, .layer-elevated) {
   background: var(--panel-bg);
   backdrop-filter: none;
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  :root:not([data-glass='force']) .glass,
-  :root:not([data-glass='force']) .glass-overlay {
+  :root:not([data-glass='force']) :is(.glass, .layer-surface, .glass-overlay, .layer-overlay),
+  :root:not([data-glass='force']) :is(.glass-elevated, .layer-elevated) {
     background: var(--panel-bg);
     backdrop-filter: none;
   }
