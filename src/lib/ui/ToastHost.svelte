@@ -5,7 +5,7 @@
 
 <div class="toast-host" data-testid="toast-host">
   {#each ui.toasts as toast (toast.id)}
-    <div class="toast glass-overlay" data-testid="toast" data-kind={toast.kind} role="status">
+    <div class="toast layer-elevated" data-testid="toast" data-kind={toast.kind} role="status">
       <span>{toast.text}</span>
       <button
         type="button"
@@ -43,11 +43,11 @@
   }
 
   .toast[data-kind='warn'] {
-    border-color: color-mix(in oklab, var(--yellow) 45%, transparent);
+    border-color: var(--warn-border);
   }
 
   .toast[data-kind='error'] {
-    border-color: color-mix(in oklab, var(--red) 55%, transparent);
+    border-color: var(--danger-border-soft);
   }
 
   .toast__close {

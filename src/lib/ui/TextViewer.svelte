@@ -87,7 +87,7 @@
     padding: 4px var(--space-2);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
-    background: color-mix(in oklab, var(--surface-dim) 45%, transparent);
+    background: var(--control-bg-inset);
     color: var(--text);
     font: inherit;
     font-size: 13px;
@@ -116,8 +116,8 @@
   }
 
   .viewer__hit {
-    background: color-mix(in oklab, var(--yellow) 45%, transparent);
-    color: #14151c;
+    background: var(--warn-bg-strong);
+    color: var(--danger-contrast);
     border-radius: 2px;
   }
 </style>

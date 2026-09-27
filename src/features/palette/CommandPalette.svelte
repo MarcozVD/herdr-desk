@@ -137,7 +137,7 @@
     ></button>
 
     <div
-      class="palette glass-overlay"
+      class="palette layer-overlay"
       role="dialog"
       aria-modal="true"
       aria-label={es.palette.title}
@@ -275,7 +275,7 @@
   }
 
   .palette__item[data-active='true'] {
-    background: color-mix(in oklab, var(--accent) 26%, transparent);
+    background: var(--row-selected-bg-strong);
   }
 
   .palette__label {

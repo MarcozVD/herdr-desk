@@ -51,7 +51,7 @@
 
 {#if menu}
   <div
-    class="context glass-overlay"
+    class="context layer-elevated"
     role="menu"
     tabindex="-1"
     data-testid="context-menu"
@@ -105,16 +105,20 @@
   }
 
   .context__item:hover:not([disabled]) {
-    background: color-mix(in oklab, var(--accent) 20%, transparent);
+    background: var(--row-selected-bg);
+  }
+
+  .context__item:active:not([disabled]) {
+    background: var(--control-pressed-bg);
   }
 
   .context__item[data-danger='true']:hover:not([disabled]) {
-    background: color-mix(in oklab, var(--red) 70%, transparent);
-    color: #14151c;
+    background: var(--danger-bg);
+    color: var(--danger-contrast);
   }
 
   .context__item[disabled] {
-    opacity: 0.45;
+    opacity: var(--control-disabled-opacity);
     cursor: default;
   }
 

@@ -51,7 +51,7 @@
     onclick={onclose}
   ></button>
   <div
-    class="dialog glass-overlay"
+    class="dialog layer-overlay"
     role="dialog"
     aria-modal="true"
     aria-label={title}
@@ -115,7 +115,7 @@
   }
 
   .dialog__close:hover {
-    background: color-mix(in oklab, var(--text) 12%, transparent);
+    background: var(--control-hover-bg);
     color: var(--text);
   }
 

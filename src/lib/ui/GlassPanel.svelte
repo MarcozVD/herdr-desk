@@ -12,6 +12,6 @@
   let { overlay = false, class: className = '', testId, children }: Props = $props();
 </script>
 
-<section class="{overlay ? 'glass-overlay' : 'glass'} {className}" data-testid={testId}>
+<section class="{overlay ? 'layer-overlay' : 'layer-surface'} {className}" data-testid={testId}>
   {@render children()}
 </section>

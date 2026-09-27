@@ -36,7 +36,7 @@
     onclick={() => ui.toggleHelp()}
   ></button>
   <div
-    class="cheatsheet glass-overlay"
+    class="cheatsheet layer-overlay"
     role="dialog"
     aria-modal="true"
     aria-label={es.keys.help}
@@ -159,6 +159,6 @@
   }
 
   .cheatsheet__col li:nth-child(odd) {
-    background: color-mix(in oklab, var(--panel-bg) 40%, transparent);
+    background: var(--row-zebra-bg);
   }
 </style>
