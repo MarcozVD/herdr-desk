@@ -192,7 +192,7 @@
     padding: 3px var(--space-2);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
-    background: color-mix(in oklab, var(--surface-dim) 45%, transparent);
+    background: var(--control-bg-inset);
     color: var(--text);
     font: inherit;
     font-size: 12px;
@@ -200,7 +200,7 @@
 
   .agent-panel__filter:focus {
     outline: none;
-    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    border-color: var(--control-hover-border);
   }
 
   .agent-panel__sort {
@@ -216,8 +216,9 @@
   }
 
   .agent-panel__sort:hover {
+    background: var(--control-hover-bg);
     color: var(--text);
-    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    border-color: var(--control-hover-border);
   }
 
   .agent-panel__blocked {
@@ -254,11 +255,15 @@
   }
 
   .agent-row:hover {
-    background: color-mix(in oklab, var(--active-row-bg) 55%, transparent);
+    background: var(--row-hover-bg);
+  }
+
+  .agent-row:active {
+    background: var(--control-pressed-bg);
   }
 
   .agent-row[aria-current='true'] {
-    background: color-mix(in oklab, var(--active-row-bg) 85%, transparent);
+    background: var(--row-current-bg);
   }
 
   .agent-row__line {

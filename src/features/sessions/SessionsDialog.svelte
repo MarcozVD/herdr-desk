@@ -240,8 +240,12 @@
     gap: var(--space-2);
     padding: 5px var(--space-2);
     border-radius: var(--radius-sm);
-    background: color-mix(in oklab, var(--panel-bg) 35%, transparent);
+    background: var(--row-subtle-bg);
     font-size: 13px;
+  }
+
+  .sessions__row:hover {
+    background: var(--row-hover-bg);
   }
 
   .sessions__dot {

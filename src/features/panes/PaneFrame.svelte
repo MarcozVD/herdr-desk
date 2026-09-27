@@ -202,7 +202,7 @@
   }
 
   .pane-frame.active {
-    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    border-color: var(--control-hover-border);
   }
 
   .pane-frame__body {
@@ -264,7 +264,11 @@
   }
 
   .pane-header__action:hover {
-    background: color-mix(in oklab, var(--text) 12%, transparent);
+    background: var(--control-hover-bg);
     color: var(--text);
+  }
+
+  .pane-header__action:active {
+    background: var(--control-pressed-bg);
   }
 </style>

@@ -138,7 +138,7 @@
     padding: var(--space-2);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
-    background: color-mix(in oklab, var(--surface-dim) 45%, transparent);
+    background: var(--control-bg-inset);
     color: var(--text);
     font: inherit;
     font-size: 13px;
@@ -162,7 +162,7 @@
     padding: 3px var(--space-1);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
-    background: transparent;
+    background: var(--control-bg-inset);
     color: var(--text);
     font: inherit;
     font-size: 12px;

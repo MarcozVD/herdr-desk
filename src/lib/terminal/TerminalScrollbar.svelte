@@ -80,7 +80,7 @@
     inline-size: 6px;
     margin-inline: auto;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--surface-dim) 35%, transparent);
+    background: var(--scrollbar-track);
   }
 
   .scrollbar__thumb {
@@ -89,9 +89,15 @@
     left: 0;
     border: none;
     border-radius: 999px;
-    background: color-mix(in oklab, var(--text-dim) 70%, transparent);
+    background: var(--scrollbar-thumb);
     padding: 0;
     cursor: pointer;
+    transition: background var(--t-fast) var(--ease);
+  }
+
+  .scrollbar__thumb:hover,
+  .scrollbar:hover .scrollbar__thumb {
+    background: var(--scrollbar-thumb-hover);
   }
 
   .scrollbar__step {
@@ -102,5 +108,9 @@
     line-height: 1;
     padding: 1px 0;
     cursor: pointer;
+  }
+
+  .scrollbar__step:hover {
+    color: var(--text);
   }
 </style>

@@ -60,23 +60,27 @@
   }
 
   .icon-button:hover:not([disabled]) {
-    background: color-mix(in oklab, var(--text) 10%, transparent);
+    background: var(--control-hover-bg);
     color: var(--text);
   }
 
+  .icon-button:active:not([disabled]) {
+    background: var(--control-pressed-bg);
+  }
+
   .icon-button[data-active='true'] {
-    background: color-mix(in oklab, var(--accent) 22%, transparent);
-    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    background: var(--control-active-bg);
+    border-color: var(--control-active-border);
     color: var(--text);
   }
 
   .icon-button[data-danger='true']:hover:not([disabled]) {
-    background: color-mix(in oklab, var(--red) 75%, transparent);
-    color: #14151c;
+    background: var(--danger-bg);
+    color: var(--danger-contrast);
   }
 
   .icon-button[disabled] {
-    opacity: 0.45;
+    opacity: var(--control-disabled-opacity);
     cursor: default;
   }
 </style>

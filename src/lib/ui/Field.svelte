@@ -79,13 +79,13 @@
     padding: 8px 10px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--glass-border);
-    background: color-mix(in oklab, var(--panel-bg) 70%, transparent);
+    background: var(--control-bg-strong);
     color: var(--text);
     font: inherit;
   }
 
   .field__input:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
     outline-offset: 1px;
   }
 

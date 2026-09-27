@@ -126,7 +126,7 @@
     overflow: hidden;
     border: 1px solid var(--glass-border);
     border-inline-width: 1px;
-    background: color-mix(in oklab, var(--panel-bg-solid) 86%, transparent);
+    background: var(--control-bg-strong);
     /* Las esquinas y el margen los manda `itemChrome` por estilo inline. */
     transition:
       border-radius var(--t-med) var(--ease),
@@ -137,7 +137,7 @@
   }
 
   .csa__card[data-open='true'] {
-    background: color-mix(in oklab, var(--panel-bg-solid) 96%, transparent);
+    background: var(--control-bg-raised);
     border-color: color-mix(in oklab, var(--accent) 40%, var(--glass-border));
     box-shadow: var(--shadow-lg);
   }
@@ -160,11 +160,15 @@
   }
 
   .csa__trigger:hover {
-    background: color-mix(in oklab, var(--surface-dim) 16%, transparent);
+    background: var(--control-hover-bg);
+  }
+
+  .csa__trigger:active {
+    background: var(--control-pressed-bg);
   }
 
   .csa__trigger:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
     outline-offset: -2px;
   }
 

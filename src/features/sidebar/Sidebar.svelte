@@ -89,7 +89,8 @@
   }
 
   .sidebar__action:hover {
+    background: var(--control-hover-bg);
     color: var(--text);
-    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    border-color: var(--control-hover-border);
   }
 </style>

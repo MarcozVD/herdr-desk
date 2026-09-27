@@ -93,13 +93,17 @@
   }
 
   .tab:hover {
-    background: color-mix(in oklab, var(--active-row-bg) 55%, transparent);
+    background: var(--row-hover-bg);
     color: var(--text);
   }
 
+  .tab:active {
+    background: var(--control-pressed-bg);
+  }
+
   .tab[aria-current='true'] {
-    background: color-mix(in oklab, var(--active-row-bg) 85%, transparent);
-    border-color: color-mix(in oklab, var(--accent) 35%, transparent);
+    background: var(--row-current-bg);
+    border-color: var(--row-current-border);
     color: var(--text);
   }
 
@@ -120,8 +124,8 @@
   }
 
   .tab__close:hover {
-    background: color-mix(in oklab, var(--red) 70%, transparent);
-    color: #14151c;
+    background: var(--danger-bg);
+    color: var(--danger-contrast);
   }
 
   .tabbar__add {
@@ -137,7 +141,8 @@
   }
 
   .tabbar__add:hover {
+    background: var(--control-hover-bg);
     color: var(--text);
-    border-color: color-mix(in oklab, var(--accent) 45%, transparent);
+    border-color: var(--control-hover-border);
   }
 </style>

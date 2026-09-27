@@ -206,6 +206,10 @@
     background: transparent;
   }
 
+  .split__divider:hover {
+    background: var(--control-hover-border);
+  }
+
   .split[data-dragging='true'] > .split__divider,
   .split__divider[data-dragging='true'] {
     background: var(--accent);
