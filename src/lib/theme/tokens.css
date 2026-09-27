@@ -10,27 +10,36 @@
    a la misma capa). Ningún componente escribe `backdrop-filter`. */
 
 :root {
-  /* --- Capas de cristal --- */
+  /* --- Capas de cristal: vidrio ahumado sobre ambiente profundo ---
+     El fondo es vivo (blobs difusos que se ven A TRAVÉS del vidrio), las
+     superficies son semitransparentes y esmeriladas, el contenido queda nítido.
+     Las tres capas de cristal NO comparten valores: cada una tiene su alpha,
+     blur, borde, brillo y radio. */
 
-  /* base: Mica detrás; la app no pinta fondo propio, solo mesh + noise. */
+  /* base: Mica detrás; la app no pinta fondo propio, solo ambiente + noise.
+     Los blobs son estáticos a propósito: animarlos obligaría a repintar el
+     backdrop de todo el cristal en cada frame. */
   --layer-base-bg: transparent;
-  --layer-base-mesh-a: color-mix(in oklab, var(--accent) 12%, transparent);
-  --layer-base-mesh-b: color-mix(in oklab, var(--teal) 12%, transparent);
-  --layer-base-noise-opacity: 0.03;
-  --layer-base-fallback-bg: linear-gradient(160deg, #14151c 0%, #1b1d27 55%, #101218 100%);
+  --layer-base-mesh-a: color-mix(in oklab, var(--accent) 26%, transparent);
+  --layer-base-mesh-b: color-mix(in oklab, var(--blue) 20%, transparent);
+  --layer-base-mesh-c: color-mix(in oklab, var(--mauve) 24%, transparent);
+  --layer-base-mesh-d: color-mix(in oklab, var(--indigo) 22%, transparent);
+  --layer-base-noise-opacity: 0.04;
+  --layer-base-fallback-bg: linear-gradient(160deg, #050609 0%, #0b1020 55%, #080b12 100%);
 
   /* Material común de las capas de cristal. */
-  --glass-saturate: 140%;
-  --glass-border: rgb(255 255 255 / 0.12);
-  --glass-border-strong: rgb(255 255 255 / 0.18);
-  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.1);
-  --glass-highlight-strong: inset 0 1px 0 rgb(255 255 255 / 0.16);
+  --glass-saturate: 150%;
+  --glass-border: rgb(255 255 255 / 0.14);
+  --glass-border-strong: rgb(255 255 255 / 0.2);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  --glass-highlight-strong: inset 0 1px 0 rgb(255 255 255 / 0.18);
 
-  /* surface: chrome del shell (titlebar, sidebar, tabs, statusbar, banner). */
+  /* surface: chrome del shell (titlebar, sidebar, tabs, statusbar, banner).
+     Vidrio ahumado: deja pasar el ambiente, pero mantiene el texto legible. */
   --glass-alpha: 0.55; /* compat */
   --glass-blur: 20px; /* compat */
-  --glass-alpha-surface: 0.55;
-  --glass-blur-surface: 20px;
+  --glass-alpha-surface: 0.42;
+  --glass-blur-surface: 30px;
   --layer-surface-bg: color-mix(
     in oklab,
     var(--panel-bg) calc(var(--glass-alpha-surface) * 100%),
@@ -38,12 +47,13 @@
   );
   --layer-surface-filter: blur(var(--glass-blur-surface)) saturate(var(--glass-saturate));
   --layer-surface-border: 1px solid var(--glass-border);
-  --layer-surface-shadow: var(--glass-highlight), var(--shadow-lg);
-  --layer-surface-radius: var(--radius);
+  --layer-surface-shadow: var(--glass-highlight), 0 16px 44px -18px rgb(0 0 0 / 0.5);
+  --layer-surface-radius: 16px;
 
-  /* overlay: superficies que interrumpen (diálogos, paleta, cheatsheet, visor). */
-  --glass-alpha-overlay: 0.72;
-  --glass-blur-overlay: 28px;
+  /* overlay: superficies que interrumpen (diálogos, paleta, cheatsheet, visor).
+     Más opacas y con más blur para que el texto denso no compita con el fondo. */
+  --glass-alpha-overlay: 0.58;
+  --glass-blur-overlay: 40px;
   --layer-overlay-bg: color-mix(
     in oklab,
     var(--panel-bg) calc(var(--glass-alpha-overlay) * 100%),
@@ -51,12 +61,12 @@
   );
   --layer-overlay-filter: blur(var(--glass-blur-overlay)) saturate(var(--glass-saturate));
   --layer-overlay-border: 1px solid var(--glass-border);
-  --layer-overlay-shadow: var(--glass-highlight), var(--shadow-lg);
-  --layer-overlay-radius: var(--radius-lg);
+  --layer-overlay-shadow: var(--glass-highlight), 0 24px 70px -22px rgb(0 0 0 / 0.6);
+  --layer-overlay-radius: 24px;
 
   /* elevated: flotantes por encima de cualquier overlay (menús, toasts). */
-  --glass-alpha-elevated: 0.86;
-  --glass-blur-elevated: 36px;
+  --glass-alpha-elevated: 0.8;
+  --glass-blur-elevated: 48px;
   --layer-elevated-bg: color-mix(
     in oklab,
     var(--panel-bg) calc(var(--glass-alpha-elevated) * 100%),
@@ -65,7 +75,7 @@
   --layer-elevated-filter: blur(var(--glass-blur-elevated)) saturate(var(--glass-saturate));
   --layer-elevated-border: 1px solid var(--glass-border-strong);
   --layer-elevated-shadow: var(--glass-highlight-strong), 0 24px 64px -16px rgb(0 0 0 / 0.65);
-  --layer-elevated-radius: var(--radius-sm);
+  --layer-elevated-radius: 12px;
 
   /* scrim de los overlays modales. */
   --overlay-scrim-bg: rgb(0 0 0 / 0.25);
@@ -76,7 +86,7 @@
   --control-bg: color-mix(in oklab, var(--panel-bg) 65%, transparent);
   --control-bg-strong: color-mix(in oklab, var(--panel-bg) 80%, transparent);
   --control-bg-raised: color-mix(in oklab, var(--panel-bg) 96%, transparent);
-  --control-bg-inset: color-mix(in oklab, var(--surface-dim) 45%, transparent);
+  --control-bg-inset: color-mix(in oklab, var(--surface-dim) 52%, transparent);
   --control-hover-bg: color-mix(in oklab, var(--text) 10%, transparent);
   --control-pressed-bg: color-mix(in oklab, var(--text) 16%, transparent);
   --control-hover-border: color-mix(in oklab, var(--accent) 45%, transparent);
@@ -154,6 +164,7 @@
   --red: #ff5555;
   --blue: #8be9fd;
   --teal: #8be9fd;
+  --indigo: #6272a4;
   --peach: #ffb86c;
 
   /* Superficies de la terminal: casi opacas, sin backdrop-filter (§3 capa 3). */
@@ -174,12 +185,17 @@ html[data-theme='light'] {
   --text-dim: #55556a;
   --panel-bg-solid: #fbfbfe;
   --pane-header-bg: #eeeef5;
-  /* El cristal en claro necesita borde y brillo invertidos para leerse. */
+  /* El cristal en claro necesita borde y brillo invertidos para leerse, y el
+     ambiente va más suave para no teñir el chrome. */
   --glass-border: rgb(0 0 0 / 0.12);
   --glass-border-strong: rgb(0 0 0 / 0.16);
   --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.7);
   --glass-highlight-strong: inset 0 1px 0 rgb(255 255 255 / 0.85);
   --overlay-scrim-bg: rgb(20 20 30 / 0.18);
+  --layer-base-mesh-a: color-mix(in oklab, var(--accent) 16%, transparent);
+  --layer-base-mesh-b: color-mix(in oklab, var(--blue) 12%, transparent);
+  --layer-base-mesh-c: color-mix(in oklab, var(--mauve) 14%, transparent);
+  --layer-base-mesh-d: color-mix(in oklab, var(--indigo) 12%, transparent);
   --layer-base-fallback-bg: linear-gradient(160deg, #e7e7ef 0%, #f2f2f7 55%, #dcdce6 100%);
   --scrollbar-thumb: color-mix(in oklab, var(--text-dim) 35%, transparent);
   --scrollbar-thumb-hover: color-mix(in oklab, var(--text-dim) 60%, transparent);

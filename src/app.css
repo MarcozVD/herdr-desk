@@ -43,10 +43,14 @@ body {
   pointer-events: none;
 }
 
+/* Ambiente profundo: blobs difusos que el cristal refracta al desenfocar.
+   Cuatro focos (violeta, azul eléctrico, malva, índigo) sobre base oscura. */
 .bg-mesh {
   background:
-    radial-gradient(60rem 40rem at 12% -10%, var(--layer-base-mesh-a), transparent 60%),
-    radial-gradient(50rem 34rem at 100% 110%, var(--layer-base-mesh-b), transparent 62%);
+    radial-gradient(48rem 34rem at 8% -6%, var(--layer-base-mesh-a), transparent 62%),
+    radial-gradient(42rem 30rem at 96% 2%, var(--layer-base-mesh-b), transparent 64%),
+    radial-gradient(54rem 40rem at 90% 106%, var(--layer-base-mesh-c), transparent 66%),
+    radial-gradient(40rem 30rem at 2% 98%, var(--layer-base-mesh-d), transparent 62%);
 }
 
 .bg-noise {
