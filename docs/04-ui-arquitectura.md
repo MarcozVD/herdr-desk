@@ -318,7 +318,9 @@ pestañas («Configuración» y «Atajos»), abierto con `prefix+s` (acción `se
   listan aparte y son editables (así no se pierde nada que el usuario tenga a mano).
 - **Sección GUI** (`settings-gui`), la última: cristal (`auto`/`full`/`off`), sincronizar foco
   con la TUI, WebGL, máximo de panes con WebGL, LRU de terminales, tiempos de gracia de
-  cierre/reapertura del bridge y duración del toast. Son las 9 claves de `GUI_KEYS` de `lib/settings/map.ts`:
+  cierre/reapertura del bridge, duración del toast, recientes de la paleta, presets de layout y
+  líneas de scrollback que se leen de una vez. Son las 11 claves de `GUI_KEYS` de
+  `lib/settings/map.ts`:
   **no** van a `config.toml` (el server las avisaría como `unknown_section`) sino a
   `%APPDATA%\herdr-desk\settings.json` mediante `gui_settings_write` (ver `docs/03`).
 - **Preferencias al arrancar**: `main.ts` llama a `settings.init()` (no bloquea el montaje) y
@@ -329,8 +331,10 @@ pestañas («Configuración» y «Atajos»), abierto con `prefix+s` (acción `se
 - **Origen**: `KeymapEditor.svelte` lee `config_read()` y traduce las claves `keys.*` de
   `config.toml` a `KeymapOverrides` con `keymapOverridesFromEntries()`
   (`lib/keys/config.ts`): `keys.prefix`, `keys.<acción>` y `keys.indexed.{tabs,workspaces,agents}`.
-  Las tablas `[[keys.command]]` se ignoran (no son atajos) y un valor no-string se descarta.
-  Los **defaults son los de herdr** (`DEFAULT_KEYBINDINGS`): `[keys]` sobrescribe, no reemplaza.
+  Las tablas `[[keys.command]]` no entran como atajos: sus subrutas `keys.command.*` se
+  saltan y el texto de la tabla se parsea aparte (T3.8, §6septies e). Un valor que no sea un
+  string TOML se descarta. Los **defaults son los de herdr** (`DEFAULT_KEYBINDINGS`): `[keys]`
+  sobrescribe, no reemplaza.
 - **Captura**: `bindingFromEvent()` (nuevo en `parse.ts`, con `serializeChord()` y el mapa
   `KEY_TO_NAME` → sintaxis de herdr: `minus`, `pageup`, `up`…) convierte el `KeyboardEvent` en
   `ctrl+shift+n`. Si el primer chord pulsado es la tecla de prefix, se **arma** y espera la
@@ -347,6 +351,10 @@ pestañas («Configuración» y «Atajos»), abierto con `prefix+s` (acción `se
 - **Arranque**: `main.ts` pasa `keymapOverridesFromEntries(settings.configEntries)` a
   `keymap.load()`, de modo que `[keys]` de `config.toml` manda sobre los defaults del motor
   desde el primer arranque.
+- **Tests**: 7 casos nuevos, 4 en `lib/keys/config.test.ts` (extracción de `prefix`/acciones/
+  `indexed`, descarte de valores no string, aplicación real de los overrides con conflicto
+  incluido y vaciado de un atajo) y 3 en `lib/keys/parse.test.ts` (serialización de chords,
+  `bindingFromEvent` respetando el prefix consumido e ida y vuelta de lo capturado).
 
 ## 6sexies. Temas en vivo (F3 / T3.7)
 
