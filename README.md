@@ -104,8 +104,9 @@ pnpm verify          # formato + lint + check + tests + rust lint/test
 pnpm tauri dev       # desarrollo
 ```
 
-El backend exige elegir sesión explícita con `HERDR_DESK_SESSION` (nunca usa `default` ni
-hereda `HERDR_*`). Para desarrollo, levanta primero la sesión sandbox:
+En desarrollo conviene fijar la sesión con `HERDR_DESK_SESSION` para no tocar la `default`
+(sin la variable la app usa la `default`, y nunca hereda `HERDR_*`). Levanta primero la sesión
+sandbox:
 
 ```powershell
 powershell -File scripts\sandbox.ps1 start        # sesión herdr-desk-dev
@@ -116,8 +117,10 @@ powershell -File scripts\sandbox.ps1 stop         # al terminar
 
 ### Lanzarlo desde herdr
 
-Un comando personalizado en `[keys]` de `config.toml` abre la GUI sobre la sesión que ya
-tenías en la TUI, porque herdr exporta `HERDR_DESK_SESSION` a los comandos `shell`:
+Un comando personalizado en `[keys]` de `config.toml` abre la GUI desde la TUI. herdr NO exporta
+`HERDR_DESK_SESSION` (solo sus `HERDR_*`, que la GUI no hereda a propósito), así que la GUI se
+abre sobre la sesión `default`; para otra sesión, pon `set HERDR_DESK_SESSION=<nombre>&& ` delante
+del comando:
 
 ```toml
 [[keys.command]]
@@ -242,4 +245,6 @@ Remove-Item Env:\RECORD_FIXTURES                           # re-graba schema/fix
 
 ## Licencia
 
-Apache 2.0. Ver [LICENSE](LICENSE).
+Apache 2.0. Ver [LICENSE](LICENSE). Las paletas de los temas y el logo vienen de
+[herdr](https://github.com/herdrdev/herdr) (Apache 2.0); la atribución completa está en
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). herdr-desk no es un producto oficial de herdrdev.

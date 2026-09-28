@@ -679,12 +679,15 @@ el menú o desde un `[[keys.command]]` de herdr, donde no hay esa variable. Ahor
 3. Solo si el CLI no responde, o no hay ninguna sesión, se aborta con un error claro por stderr.
 
 Sigue sin heredarse nada de `HERDR_*` (D10): el pipe se resuelve por nombre explícito a partir de
-ahí. Lo que sí se hereda del lanzador es `HERDR_DESK_SESSION`, que es justo el caso de uso del
-snippet de T5.4.
+ahí. herdr no exporta `HERDR_DESK_SESSION` a los `[[keys.command]]`; si se quiere otra sesión que
+la `default`, el snippet de T5.4 tiene que fijarla él.
 
-**Pendiente de prueba del usuario**: contra la sesión `default` real no se probó (guardarraíl del
-plan), solo la ruta de desarrollo y la resolución por CLI. Ver los pasos de instalación y
-desinstalación en el `README.md`.
+**Arreglo tras la prueba real (el exe release no abría nada)**: `paths::session_socket("default")`
+devolvía `%APPDATA%\herdr\sessions\default\herdr.sock`, que no existe; la sesión `default`
+vive en la raíz (`%APPDATA%\herdr\herdr.sock`, el mismo `socket_path` que da
+`herdr session list --json`). La app arrancaba sin conectar (`os error 2` en bucle). Ahora
+`session_socket` devuelve `default_socket()` para `DEFAULT_SESSION`; lo usan el arranque y
+`session_connect`. Test: `paths::tests::la_sesion_default_usa_el_socket_raiz`.
 
 ### (e) `scripts/perf.ps1`
 
