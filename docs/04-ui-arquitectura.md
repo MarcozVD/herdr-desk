@@ -478,11 +478,27 @@ fallar. Cada fila muestra etiqueta, rama, ruta y banderas (`bare`, `detached`, `
   `lib/keys/customCommands.ts` la parsea al contrato del motor (`key`, `type`
   `shell`/`pane`/`popup`, `command`, `width`, `height`) respetando comillas y comentarios.
 - `keymap.load()` convierte cada comando atado a una tecla en la acción `command:<índice>`, con
-  su ámbito según lleve o no `prefix`. Aparece en el cheatsheet y en el editor de atajos.
-- Ejecución (`flows.runCustomCommand`): `shell` → command `run_shell_command` **detached y sin
-  consola** (excepción documentada del §7: es configuración del propio usuario, no una
-  superlista de la app); `pane`/`popup` → `pane.split` del panel enfocado. Si el command no
-  existe, aviso «no disponible» en vez de error.
+  su ámbito según lleve o no `prefix` (`keymap.ts`: `command:${index}` y
+  `p|command:<índice>` / `d|command:<índice>` en la tabla de búsqueda). Aparece en el cheatsheet
+  y en el editor de atajos.
+- Ejecución (`flows.runCustomCommand`), con `kind = type || 'shell'`:
+  - `shell` → `run_shell_command(command, session.focusedPane?.cwd ?? null)`. En Windows el
+    backend lanza `cmd.exe /d /c <command>` con `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` y
+    las tres tuberías a `null`: sin ventana de consola y sin que el proceso muera con la app
+    (en no-Windows, `sh -c`). Es la **excepción documentada del §7**: sale de la superlista a
+    propósito, porque es configuración del propio usuario, no un command de la app.
+  - `pane`/`popup` → `paneApi.split({ direction: 'right', focus: true })` sobre el panel
+    enfocado y `paneApi.sendInput(nuevo, command, ['enter'])` para escribirlo; si es `popup`,
+    además `paneApi.zoom(nuevo, 'on')`. Al final, `layout.refreshNow()`.
+  - Si el command no existe: aviso «no disponible» (`warn`) en vez de error.
+- **Tests**: `lib/keys/customCommands.test.ts`, 4 casos (entrada completa con comentarios,
+  varias entradas con defaults, entradas sin `key` o sin `command` descartadas, y tabla
+  ausente → lista vacía).
+- **Hueco conocido — sin cierre automático**: el panel que abre un comando `pane`/`popup` **no
+  se cierra solo** cuando el comando termina. No hay canal de eventos en la UI: `pane_exited`
+  no aparece por ninguna parte del frontend, el store solo se empuja con los snapshots que
+  refresca el backend y el latido (`HEARTBEAT_MS`) únicamente hace `ping`. Hay que cerrarlo a
+  mano, y el zoom se queda puesto. Cerrarlo en cuanto exista el evento.
 
 ### (f) Salida del panel: buscar, editar, esperar (T3.9)
 
@@ -858,8 +874,10 @@ Mediciones de la corrida de F1:
 - **Presets, worktrees, comandos personalizados, scrollback y git** (F3/T3.3, T3.4, T3.8-T3.10):
   implementados en cliente (§6septies c-g) y con commands de backend ya registrados. Pendiente
   la verificación **en vivo** de cada uno contra un herdr real (aquí todo se ha medido con el
-  arnés y los 388 tests), el e2e del borrado de worktree con su doble aviso, y decidir si
-  `run_shell_command` —que sale de la superlista a propósito— se queda así.
+  arnés y los 388 tests), el e2e del borrado de worktree con su doble aviso, el **cierre
+  automático del panel de un comando `pane`/`popup`** (hoy no hay canal de eventos en la UI que
+  avise de `pane_exited`, §6septies e), y decidir si `run_shell_command` —que sale de la
+  superlista a propósito— se queda así.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
 - **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del
