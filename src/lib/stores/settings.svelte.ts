@@ -1,13 +1,22 @@
-// Ajustes de la GUI (T1.6). Los valores por defecto salen de `herdr
-// --default-config` (fixture en tests/fixtures/default-config.toml); en F3 se
-// leerán de config.toml + %APPDATA%\herdr-desk\settings.json y aquí solo quedarán
-// los que son exclusivos de la GUI (glass, LRU de terminales, etc.).
+// Ajustes de la GUI (T1.6, F3/T3.5). Los valores que herdr conoce (sidebar, UI,
+// sonidos, toasts) se leen de `config.toml` con `config_read` y se persisten con
+// `config_write`; los exclusivos de la GUI viven en
+// %APPDATA%\herdr-desk\settings.json (commands `gui_settings_read/write`).
+// Ya no se usa localStorage: la config de herdr es la única fuente de verdad y
+// el settings.json solo guarda lo que el server no sabe (glass, WebGL, LRU…).
 
+import { configRead, configWrite, guiSettingsRead, guiSettingsWrite } from '../herdr/client';
 import {
-  DEFAULT_AGENT_ROWS,
-  DEFAULT_AGENT_ROW_GAP,
-  type AgentTokenSpec,
-} from '../agents/agentPanel';
+  applyGuiValues,
+  applyHerdrEntries,
+  configChangeFor,
+  GUI_KEYS,
+  guiValuesFromSettings,
+} from '../settings/map';
+import type { AgentTokenSpec } from '../agents/agentPanel';
+import { DEFAULT_AGENT_ROWS, DEFAULT_AGENT_ROW_GAP } from '../agents/agentPanel';
+import type { ConfigEntry } from '../settings/spec';
+import { applyThemeToDocument } from '../theme/apply';
 
 export type GlassMode = 'auto' | 'full' | 'off';
 export type SidebarCollapsedMode = 'compact' | 'hidden';
@@ -21,6 +30,17 @@ export type ToastDelivery = 'off' | 'herdr' | 'terminal' | 'system';
 export type AgentRowsConfig = AgentTokenSpec[][];
 
 export interface UiSettings {
+  // [theme] de herdr (T3.7)
+  theme_name: string;
+  theme_auto_switch: boolean;
+  theme_dark_name: string;
+  theme_light_name: string;
+  /** `[theme.custom]`: token → color (hex, nombre o rgb()). */
+  theme_custom: Record<string, string>;
+  /** Presets de layout guardados (T3.3): nombre → LayoutNode. */
+  layout_presets: Record<string, unknown>;
+  /** Líneas que se leen en «Buscar en salida» / «Esperar salida» (T3.9). */
+  search_lines: number;
   // [ui] de herdr
   sidebar_width: number;
   sidebar_min_width: number;
@@ -45,7 +65,7 @@ export interface UiSettings {
   agent_row_gap: number;
   accent: string;
   copy_on_select: boolean;
-  // Solo de la GUI (F3 las moverá a settings.json)
+  // Solo de la GUI (settings.json)
   glass: GlassMode;
   sync_focus_with_tui: boolean;
   webgl: boolean;
@@ -58,7 +78,7 @@ export interface UiSettings {
   /** `[ui.toast] delivery` de herdr: off | herdr | terminal | system.
    *  La GUI solo puede pintar los toasts in-app (`herdr`). */
   toast_delivery: ToastDelivery;
-  /** `[ui.toast] delay_seconds`: lo que se espera para agrupar una ráfaga. */
+  /** `[ui.toast] delay_seconds`: lo que se espera para agrupar una ráfaga (ms). */
   toast_group_ms: number;
   /** `[ui.sound] enabled` de herdr: ÚNICO interruptor de los sonidos de aviso. */
   sound_enabled: boolean;
@@ -68,6 +88,13 @@ export interface UiSettings {
 
 /** Valores por defecto, tomados del `--default-config` de herdr 0.8.0-preview. */
 export const UI_SETTINGS_DEFAULTS: UiSettings = {
+  theme_name: 'catppuccin',
+  theme_auto_switch: false,
+  theme_dark_name: 'catppuccin',
+  theme_light_name: 'catppuccin-latte',
+  theme_custom: {},
+  layout_presets: {},
+  search_lines: 500,
   sidebar_width: 26,
   sidebar_min_width: 18,
   sidebar_max_width: 36,
@@ -102,8 +129,6 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   palette_recent: [],
 };
 
-const STORAGE_KEY = 'herdr-desk.settings';
-
 /** Ancho de la sidebar en píxeles (herdr cuenta columnas de terminal). */
 export function sidebarWidthPx(values: UiSettings): number {
   const columns = Math.min(
@@ -113,46 +138,51 @@ export function sidebarWidthPx(values: UiSettings): number {
   return Math.round(columns * 9.2);
 }
 
+const GUI_KEY_SET: readonly (keyof UiSettings)[] = GUI_KEYS;
+
 class SettingsStore {
   values = $state<UiSettings>({ ...UI_SETTINGS_DEFAULTS });
+  /** Últimas entradas de config.toml leídas (las usa el keymap al arrancar). */
+  configEntries = $state<ConfigEntry[]>([]);
   /** false cuando el backend avisa que Mica no está disponible (Windows 10). */
   micaAvailable = $state(true);
+  /** Aviso de un fallo al persistir (lo conecta main.ts con los toasts). */
+  onPersistError: ((message: string) => void) | null = null;
 
-  load(): void {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Partial<UiSettings>;
-      const next = { ...UI_SETTINGS_DEFAULTS };
-      for (const key of Object.keys(UI_SETTINGS_DEFAULTS) as (keyof UiSettings)[]) {
-        const value = parsed[key];
-        if (value !== undefined && typeof value === typeof UI_SETTINGS_DEFAULTS[key]) {
-          // @ts-expect-error índice dinámico sobre un objeto homogéneo por clave
-          next[key] = value;
-        }
-      }
-      this.values = next;
-    } catch {
-      // Preferencias corruptas: se sigue con los valores por defecto.
+  #persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Carga la config real: primero los ajustes de la GUI (settings.json) y los
+   * valores efectivos de config.toml. Si un command falta o falla se siguen
+   * usando los defaults: la app nunca se queda sin preferencias.
+   */
+  async init(): Promise<void> {
+    const [gui, config] = await Promise.all([guiSettingsRead(), configRead()]);
+    let next = { ...this.values };
+    if (gui.ok && gui.value) next = applyGuiValues(next, gui.value);
+    if (config.ok && config.value) {
+      next = applyHerdrEntries(next, config.value.entries);
+      this.configEntries = config.value.entries;
     }
+    this.values = next;
+    this.applyTheme();
   }
 
-  persist(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.values));
-    } catch {
-      // Sin localStorage la GUI funciona igual; solo no recuerda preferencias.
-    }
+  /** Reaplica la config de herdr (tras guardar en el formulario de ajustes). */
+  applyConfigEntries(entries: readonly ConfigEntry[]): void {
+    this.configEntries = [...entries];
+    this.values = applyHerdrEntries({ ...this.values }, entries);
   }
 
   set<K extends keyof UiSettings>(key: K, value: UiSettings[K]): void {
     this.values[key] = value;
-    this.persist();
+    if (GUI_KEY_SET.includes(key)) this.#schedulePersistGui();
+    else this.#persistHerdr(key, value);
   }
 
   reset(): void {
     this.values = { ...UI_SETTINGS_DEFAULTS };
-    this.persist();
+    this.#schedulePersistGui();
   }
 
   get sidebarCollapsedMode(): SidebarCollapsedMode {
@@ -163,7 +193,10 @@ class SettingsStore {
     return sidebarWidthPx(this.values);
   }
 
-  /** Escribe los atributos que consumen tokens.css y app.css. */
+  /**
+   * Escribe los atributos que consumen tokens.css y app.css y aplica la paleta
+   * del tema (T3.7). El nombre del tema resuelto queda en `documentElement`.
+   */
   applyTheme(mica = this.micaAvailable): void {
     this.micaAvailable = mica;
     const root = document.documentElement;
@@ -171,10 +204,52 @@ class SettingsStore {
     root.dataset.glass = mode === 'off' ? 'off' : mode === 'full' ? 'force' : 'on';
     root.dataset.mica = mica ? 'on' : 'off';
     root.lang = 'es';
-    root.style.setProperty(
-      '--accent',
-      this.values.accent === 'cyan' ? 'var(--teal)' : this.values.accent,
-    );
+    applyThemeToDocument(this.values);
+  }
+
+  get resolvedTheme(): string {
+    return document.documentElement.dataset.themeName ?? 'catppuccin';
+  }
+
+  #schedulePersistGui(): void {
+    if (this.#persistTimer !== null) clearTimeout(this.#persistTimer);
+    this.#persistTimer = setTimeout(() => {
+      this.#persistTimer = null;
+      this.#persistGuiNow();
+    }, 400);
+  }
+
+  #persistGuiNow(): void {
+    void guiSettingsWrite(guiValuesFromSettings(this.values)).then((outcome) => {
+      if (!outcome.ok && outcome.kind === 'error') this.#report(outcome.error.message);
+    });
+  }
+
+  /** Persiste una clave de herdr con config_write (validación + reload). */
+  #persistHerdr<K extends keyof UiSettings>(key: K, value: UiSettings[K]): void {
+    const change = configChangeFor(key, value);
+    if (!change) return;
+    void configWrite([change]).then((outcome) => {
+      if (!outcome.ok) {
+        // Backend sin config_write: el valor queda solo en memoria.
+        if (outcome.kind === 'error') this.#report(outcome.error.message);
+        return;
+      }
+      const result = outcome.value;
+      if (!result) return;
+      if (result.rejected || result.rolled_back) {
+        const detail = result.diagnostics.map((item) => item.message).join('\n');
+        this.#report(detail || 'herdr rechazó el cambio de configuración.');
+        return;
+      }
+      if (result.reload?.status === 'failed') {
+        this.#report(result.reload.diagnostics.join('\n') || 'la recarga de configuración falló.');
+      }
+    });
+  }
+
+  #report(message: string): void {
+    if (this.onPersistError) this.onPersistError(message);
   }
 }
 

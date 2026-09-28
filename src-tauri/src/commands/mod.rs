@@ -2,6 +2,7 @@ pub mod api;
 pub mod api_catalog;
 pub mod cli_run;
 pub mod config;
+pub mod gui_settings;
 pub mod integrations;
 pub mod notifications;
 pub mod plugins;

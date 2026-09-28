@@ -15,6 +15,32 @@
   // las pestañas del espacio anterior.
   const tabs = $derived(visible.tabs);
   const hidden = $derived(settings.values.hide_tab_bar_when_single_tab && tabs.length <= 1);
+
+  /* T3.2 — Reordenar pestañas arrastrando una sobre otra. */
+  let dragId = $state<string | null>(null);
+  let dropId = $state<string | null>(null);
+
+  function onTabDragStart(event: DragEvent, tabId: string): void {
+    dragId = tabId;
+    event.dataTransfer?.setData('application/x-herdr-tab', tabId);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onTabDragOver(event: DragEvent, tabId: string): void {
+    if (!event.dataTransfer || dragId === null || dragId === tabId) return;
+    event.preventDefault();
+    dropId = tabId;
+  }
+
+  function onTabDrop(event: DragEvent, tabId: string): void {
+    event.preventDefault();
+    const source = event.dataTransfer?.getData('application/x-herdr-tab') ?? dragId;
+    dropId = null;
+    dragId = null;
+    if (!source || source === tabId) return;
+    const target = tabs.findIndex((item) => item.tab_id === tabId);
+    if (target !== -1) void flows.moveTabTo(source, target);
+  }
 </script>
 
 {#if !hidden}
@@ -28,12 +54,19 @@
       <button
         type="button"
         class="tab"
+        class:drop-active={dropId === tab.tab_id}
         data-testid="tab"
         data-tab-id={tab.tab_id}
         data-status={tab.agent_status}
+        draggable="true"
+        title={es.workspace.reorderHint}
         aria-current={tab.tab_id === visible.tabId}
         onclick={() => void flows.focusTab(tab.tab_id)}
         ondblclick={() => void flows.renameTab(tab.tab_id)}
+        ondragstart={(event) => onTabDragStart(event, tab.tab_id)}
+        ondragover={(event) => onTabDragOver(event, tab.tab_id)}
+        ondragleave={() => (dropId = null)}
+        ondrop={(event) => onTabDrop(event, tab.tab_id)}
         oncontextmenu={(event) => flows.openTabMenu(event, tab.tab_id)}
       >
         <AgentRollup agents={agentsOfTab(session.agents, tab.tab_id)} status={tab.agent_status} />
@@ -90,6 +123,11 @@
     font-size: 12px;
     cursor: pointer;
     white-space: nowrap;
+  }
+
+  .tab.drop-active {
+    outline: 1px dashed var(--accent);
+    outline-offset: -1px;
   }
 
   .tab:hover {

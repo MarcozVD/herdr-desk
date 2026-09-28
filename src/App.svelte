@@ -11,15 +11,20 @@
   import StartAgentDialog from './features/agents/StartAgentDialog.svelte';
   import CommandPalette from './features/palette/CommandPalette.svelte';
   import SessionsDialog from './features/sessions/SessionsDialog.svelte';
+  import SettingsDialog from './features/settings/SettingsDialog.svelte';
   import Sidebar from './features/sidebar/Sidebar.svelte';
+  import WorktreesDialog from './features/worktrees/WorktreesDialog.svelte';
   import StatusBar from './features/statusbar/StatusBar.svelte';
   import TabBar from './features/tabs/TabBar.svelte';
   import ReconnectBanner from './features/titlebar/ReconnectBanner.svelte';
   import Titlebar from './features/titlebar/Titlebar.svelte';
   import { blockedCount } from './lib/agents/agentPanel';
   import { syncBlockedOverlay } from './lib/agents/taskbarOverlay';
+  import { gitStatuses } from './lib/git/status.svelte';
+  import { setMica } from './lib/herdr/client';
   import { es } from './lib/i18n/es';
   import { runAction } from './lib/keys/actions';
+  import { flows } from './lib/actions/flows';
   import Cheatsheet from './lib/keys/Cheatsheet.svelte';
   import { keymap } from './lib/keys/keymap';
   import SplitTree from './lib/layout/SplitTree.svelte';
@@ -90,6 +95,24 @@
     document.documentElement.style.setProperty('--sidebar-width', `${settings.widthPx}px`);
   });
 
+  // T3.7 — Tema en vivo: aplica la paleta (CSS + xterm) y cambia Mica entre
+  // oscuro y claro. `auto_switch` se reevalúa con prefers-color-scheme (abajo).
+  $effect(() => {
+    const fingerprint = [
+      settings.values.theme_name,
+      settings.values.theme_auto_switch,
+      settings.values.theme_dark_name,
+      settings.values.theme_light_name,
+      settings.values.accent,
+      JSON.stringify(settings.values.theme_custom),
+    ].join('|');
+    void fingerprint;
+    settings.applyTheme();
+    pool.applyXtermTheme();
+    const light = document.documentElement.dataset.theme === 'light';
+    void setMica(!light).catch(() => undefined);
+  });
+
   // T2.5 — El audio de los avisos se arma en el primer gesto del usuario (los
   // navegadores no dejan sonar sin interacción). Es una sola vez y no bloquea.
   $effect(() => {
@@ -119,6 +142,21 @@
     );
   });
 
+  // T3.10 — Estado git de los espacios visibles (rama + cambios) para la
+  // sidebar. Se refresca con cada revisión del snapshot, con límite interno.
+  $effect(() => {
+    const revision = session.revision;
+    void revision;
+    const list = session.workspaces.map((workspace) => {
+      const pane = session.panes.find((item) => item.workspace_id === workspace.workspace_id);
+      return {
+        workspaceId: workspace.workspace_id,
+        cwd: pane?.cwd ?? workspace.worktree?.checkout_path ?? null,
+      };
+    });
+    void gitStatuses.refresh(list);
+  });
+
   // T2.4 — El conteo de agentes bloqueados va al overlay del icono de la barra
   // de tareas (el backend lo pinta). Solo se llama cuando el número cambia.
   $effect(() => {
@@ -134,6 +172,13 @@
   }
 
   const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta', 'CapsLock', 'AltGraph']);
+
+  const RESIZE_ARROWS: Record<string, 'left' | 'right' | 'up' | 'down'> = {
+    ArrowLeft: 'left',
+    ArrowRight: 'right',
+    ArrowUp: 'up',
+    ArrowDown: 'down',
+  };
 
   function onKeydown(event: KeyboardEvent): void {
     // Las teclas modificadoras solas no son un atajo: si se procesaran, el
@@ -155,6 +200,25 @@
     // Mientras se escribe en un campo, solo Escape sale del modo.
     if (isTypingTarget(event.target)) return;
 
+    // T3.1 — Modo redimensionar: las flechas mueven el divisor; Esc (o cualquier
+    // otra tecla) sale. Va antes que el resto para que las flechas no lleguen a
+    // la terminal mientras el modo está activo.
+    if (ui.resizeMode) {
+      const direction = RESIZE_ARROWS[event.key];
+      if (direction) {
+        event.preventDefault();
+        event.stopPropagation();
+        void flows.resizePane(direction);
+        return;
+      }
+      if (event.key !== 'Shift' && event.key !== 'Control' && event.key !== 'Alt') {
+        event.preventDefault();
+        event.stopPropagation();
+        ui.resizeMode = false;
+      }
+      return;
+    }
+
     // 2. Escape cierra lo que esté abierto.
     if (event.key === 'Escape') {
       const somethingOpen =
@@ -162,6 +226,8 @@
         ui.helpOpen ||
         ui.contextMenu !== null ||
         ui.sessionsOpen ||
+        ui.settingsOpen ||
+        ui.worktreesOpen ||
         ui.prefixActive;
       if (somethingOpen) {
         event.preventDefault();
@@ -169,6 +235,8 @@
         if (ui.prefixActive) ui.prefixActive = false;
         else if (ui.helpOpen) ui.helpOpen = false;
         else if (ui.sessionsOpen) ui.closeSessions();
+        else if (ui.settingsOpen) ui.closeSettings();
+        else if (ui.worktreesOpen) ui.closeWorktrees();
         else if (ui.contextMenu) ui.closeContextMenu();
         else ui.closePalette();
       }
@@ -227,8 +295,16 @@
     // El menú de contexto nativo del WebView2 no se quiere en ninguna zona: los
     // menús propios (terminal, paneles, pestañas, espacios) siguen abriéndose.
     const unsuppress = suppressNativeContextMenu(window);
+    // `auto_switch`: al cambiar la apariencia del sistema se reevalúa el tema.
+    const scheme = window.matchMedia('(prefers-color-scheme: dark)');
+    const onScheme = (): void => {
+      settings.applyTheme();
+      pool.applyXtermTheme();
+    };
+    scheme.addEventListener('change', onScheme);
     return () => {
       window.removeEventListener('keydown', onKeydown, true);
+      scheme.removeEventListener('change', onScheme);
       unsuppress();
     };
   });
@@ -284,5 +360,7 @@
   <WorkspaceDialog />
 {/key}
 <SessionsDialog />
+<SettingsDialog />
+<WorktreesDialog />
 <ContextMenu />
 <ToastHost />

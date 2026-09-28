@@ -23,21 +23,31 @@ Dato de la §4 medido ya en F0: **snapshot → atributo en el DOM = 1,4 ms** (me
 
 ```
 src/
-  main.ts               arranque: ajustes + temas + keymap + montaje + ui_ready
+  main.ts               arranque: ajustes por defecto + config real asíncrona (T3.5) + temas +
+                        keymap (con [keys] de config.toml, T3.6) + montaje + ui_ready
   App.svelte            composición del shell, efecto del árbol y manejador de teclado
   app.css               glass, layout del shell, botones, overlays
   lib/
     herdr/              contrato con el backend: client, errors, actions, types(.gen), methods.gen
     stores/             session (runas + reconciliación), layout (árbol), ui (efímero), settings
     terminal/           frames.ts (decoder/FrameWriter), pool.ts, TerminalView, TerminalScrollbar
-    layout/             tree.ts (geometría y vecinos) + SplitTree.svelte
-    keys/               parse.ts, keymap.ts, actions.ts, Cheatsheet.svelte
+    layout/             tree.ts (geometría y vecinos) + SplitTree.svelte + presets.ts (T3.3)
+    keys/               parse.ts (sintaxis de herdr + captura), keymap.ts, config.ts ([keys] de
+                        config.toml → overrides), customCommands.ts ([[keys.command]]), actions.ts,
+                        Cheatsheet.svelte
+    git/status.svelte.ts  rama y cambios sucios por espacio (T3.10)
     actions/flows.ts    flujos de UI (diálogos + comandos) usados por menús y atajos
     ui/                 primitivas glass: Dialog, Confirm, Prompt, Field, IconButton, Kbd, Toast, ContextMenu
     i18n/es.ts          todos los strings (decisión D3)
+    settings/           settings.gen.ts (config por defecto, GENERADO por scripts/gen-settings.mjs),
+                        spec.ts (contrato de payload + TOML), map.ts (config.toml ↔ ajustes)
     theme/tokens.css    tokens del §3 (glass, radios, tipografías, acentos)
-  features/             titlebar, sidebar, tabs, panes, statusbar, sessions
-tests/e2e/              Playwright + mockIPC (arnés en src/lib/testing/harness.ts)
+    theme/              themes.ts (18 paletas transcritas de herdr), ansi.ts (ANSI-16 derivada),
+                        apply.ts (tema efectivo + variables CSS), F3/T3.7
+  features/             titlebar, sidebar, tabs, panes, statusbar, sessions, settings
+                        (SettingsDialog.svelte + KeymapEditor.svelte, F3/T3.5-T3.6), worktrees
+                        (WorktreesDialog.svelte, T3.4)
+tests/e2e/              Playwright + mockIPC (arnés en src/lib/testing/harness.ts) — 21 specs
 tests/fixtures/         default-config.toml (`herdr --default-config`)
 ```
 
@@ -51,8 +61,9 @@ con `full`, los frames anteriores en cola se descartan.
 |---|---|---|
 | `session.svelte.ts` | snapshot crudo (`$state.raw`), colecciones reconciliadas, foco, conexión, versión/protocolo, latencia p50, `revision`, `connectionEpoch` | el snapshot se reemplaza entero en cada evento; las colecciones se reconcilian **en sitio** (`reconcileById`) para que nada se remonte |
 | `layout.svelte.ts` | árbol del tab visible (`layout.export`), `zoomed`, `revision` | `schedule()` no lee runas: se llama desde un `$effect` y Svelte corta con `effect_update_depth_exceeded` si un efecto lee y escribe el mismo estado |
-| `ui.svelte.ts` | qué está abierto (paleta, cheatsheet, contexto, sesiones), foco local, toasts y promesas de confirmación/prompt | un solo `ConfirmDialog`/`PromptDialog` montado; `{#key}` lo recrea con cada petición |
-| `settings.svelte.ts` | preferencias (ancho de sidebar, `collapsed_mode`, posición de la tab bar, `pane_borders/gaps`, `mouse_scroll_lines`, `webgl_max_panes`, LRU, `copy_on_select`, sincronizar foco…) | por defecto salen de `herdr --default-config`; se persisten en `localStorage` y en F3 se leerán de `config.toml` + `settings.json` |
+| `ui.svelte.ts` | qué está abierto (paleta, cheatsheet, contexto, sesiones, **ajustes**, **worktrees**), el **modo redimensionar** (`resizeMode`, T3.1), foco local, toasts y promesas de confirmación/prompt | un solo `ConfirmDialog`/`PromptDialog` montado; `{#key}` lo recrea en cada petición. `resizeMode` cuenta como «algo abierto» para el manejador global: mientras está, las flechas redimensionan y no llegan a la terminal |
+| `settings.svelte.ts` | preferencias (ancho de sidebar, `collapsed_mode`, posición de la tab bar, `pane_borders/gaps`, `mouse_scroll_lines`, `webgl_max_panes`, LRU, `copy_on_select`, sincronizar foco, **`layout_presets`** y **`search_lines`**, T3.3/T3.9) **y `configEntries`** (las entradas de `config.toml`, que alimentan el keymap en T3.6) | **ya no usa `localStorage`** (F3/T3.5): al arrancar, `init()` pide `config_read` + `gui_settings_read` y aplica los valores efectivos de `config.toml` más las claves exclusivas de la GUI; si un command falta, se sigue con los defaults. `set()` decide el destino: clave de herdr → `config_write` (una clave por escritura), clave GUI → `settings.json` con debounce de 400 ms. `applyConfigEntries()` reaplica la config tras guardar en el formulario; los fallos de persistencia salen por `onPersistError` (toast), no por excepción |
+| `git/status.svelte.ts` | rama y nº de cambios sucios por espacio (T3.10) | no es un store del snapshot: se refresca **atado a la revisión** con un tope de 3 s por espacio y sin peticiones solapadas; si el command `git_status` no está, `infoOf()` devuelve `null` y la sidebar no pinta tokens |
 
 `reconcileById(current, next, key, assign)` conserva la identidad de los objetos que siguen
 existiendo (mutando sus campos), añade los nuevos y descarta los que ya no están; devuelve
@@ -102,6 +113,11 @@ sube en cada reconexión y es la señal para que el pool reabra los bridges visi
   teclas modificadoras solas no son atajo: el `Control` de `Ctrl+B` no consume el modo prefix.
 - La acción `help` abre el cheatsheet con todos los atajos activos, los del modo navegar
   (marcados como F3) y los conflictos si los hubiera.
+- **F3/T3.6**: `keymap.load(overrides?)` acepta `KeymapOverrides` (`prefix`, `bindings`,
+  `indexed`), que es lo que traduce `lib/keys/config.ts` desde `[keys]` de `config.toml`, y
+  `parse.ts` añade el camino inverso: `serializeChord()` (chord → sintaxis de herdr) y
+  `bindingFromEvent()` (evento → binding, con `prefix+` delante si el llamador ya consumió la
+  tecla de prefix). Ver §6quinquies(b).
 
 ## 6. Shell, acciones y sesiones
 
@@ -273,6 +289,261 @@ El plan asume el enfoque roto en dos sitios: **línea 143** (`--font-mono: "JetB
 "Cascadia Mono", monospace;` como fuente de la terminal) y **línea 588**
 (`new Terminal({ …, fontFamily: 'var(--font-mono)', … })`). Además la tabla del §5 no incluye
 `gui_defaults` (ya documentado por el backend en `docs/03`). Lo anota el usuario.
+
+## 6quinquies. Configuración real: formulario y editor de atajos (F3 / T3.5, T3.6)
+
+Dos tareas, una sola superficie: el diálogo `features/settings/SettingsDialog.svelte` con dos
+pestañas («Configuración» y «Atajos»), abierto con `prefix+s` (acción `settings` →
+`ui.openSettings()`, cerrado con `Esc` desde `App.svelte`).
+
+### (a) Formulario de configuración (T3.5)
+
+- **Secciones y claves**: no hay lista escrita a mano. Al abrir, `config_default()` trae las
+  secciones de `herdr --default-config` (22 secciones, 120 claves) y `payloadToSections()` las
+  tipa; si el command no está, se cae a la copia estática `SETTINGS_SECTIONS` de
+  `lib/settings/settings.gen.ts` (generada por `pnpm gen`), así que el formulario funciona
+  aunque el backend no exista.
+- **Valores efectivos**: `config_read()` da `entries` (`path`, `value` TOML, `origin`);
+  `entriesByPath()` los indexa y cada campo se pinta con `displayValue()` según el tipo
+  declarado. Nada de lo que se ve es un valor inventado por la GUI.
+- **Edición y guardado**: los cambios van a un borrador `path → value` (borrar = `null`); al
+  guardar se manda **un único `config_write` con todos los cambios**, que por debajo hace
+  check con un temporal, backup, escritura con `toml_edit` y `reload_config` (ver `docs/03`).
+  Tras guardar, un `config_read` refresca los valores y `settings.applyConfigEntries()` +
+  `applyTheme()` los aplican en caliente. `rejected` y `rolled_back` se muestran como aviso,
+  igual que `reload.skipped`/`failed`.
+- **Filtro y read-only**: la búsqueda case-insensitive matchea path y descripción; la sección
+  `[remote]` se pinta pero no se edita (`isReadOnlySection`).
+- **Claves desconocidas**: las entradas de `config_read` cuyo path no está en los defaults se
+  listan aparte y son editables (así no se pierde nada que el usuario tenga a mano).
+- **Sección GUI** (`settings-gui`), la última: cristal (`auto`/`full`/`off`), sincronizar foco
+  con la TUI, WebGL, máximo de panes con WebGL, LRU de terminales, tiempos de gracia de
+  cierre/reapertura del bridge, duración del toast, recientes de la paleta, presets de layout y
+  líneas de scrollback que se leen de una vez. Son las 11 claves de `GUI_KEYS` de
+  `lib/settings/map.ts`:
+  **no** van a `config.toml` (el server las avisaría como `unknown_section`) sino a
+  `%APPDATA%\herdr-desk\settings.json` mediante `gui_settings_write` (ver `docs/03`).
+- **Preferencias al arrancar**: `main.ts` llama a `settings.init()` (no bloquea el montaje) y
+  cuando resuelve reaplica tema, sidebar y —ya con los atajos— el keymap.
+
+### (b) Editor de atajos (T3.6)
+
+- **Origen**: `KeymapEditor.svelte` lee `config_read()` y traduce las claves `keys.*` de
+  `config.toml` a `KeymapOverrides` con `keymapOverridesFromEntries()`
+  (`lib/keys/config.ts`): `keys.prefix`, `keys.<acción>` y `keys.indexed.{tabs,workspaces,agents}`.
+  Las tablas `[[keys.command]]` no entran como atajos: sus subrutas `keys.command.*` se
+  saltan y el texto de la tabla se parsea aparte (T3.8, §6septies e). Un valor que no sea un
+  string TOML se descarta. Los **defaults son los de herdr** (`DEFAULT_KEYBINDINGS`): `[keys]`
+  sobrescribe, no reemplaza.
+- **Captura**: `bindingFromEvent()` (nuevo en `parse.ts`, con `serializeChord()` y el mapa
+  `KEY_TO_NAME` → sintaxis de herdr: `minus`, `pageup`, `up`…) convierte el `KeyboardEvent` en
+  `ctrl+shift+n`. Si el primer chord pulsado es la tecla de prefix, se **arma** y espera la
+  acción: el resultado es `prefix+…`. `Esc` cancela. El listener va en fase de captura
+  (`window.addEventListener('keydown', onKey, true)`) para ganarle al manejador global de atajos.
+- **Ámbitos y conflictos**: cada fila muestra su ámbito real (`prefix` / `direct` / `navigate`,
+  calculado con una instancia de `Keymap` sobre el borrador) y una etiqueta «Conflicto» si
+  `map.conflicts()` la marca. `dirtyCount` cuenta qué cambia y habilita «Guardar».
+- **Guardado**: un `config_write` con las claves `keys.*` modificadas, y después
+  `keymap.load(currentOverrides())` — los atajos nuevos rigen **sin reiniciar**.
+- **Restablecer**: pide confirmación y llama a `config_reset_keys()` (envuelve
+  `herdr config reset-keys`, que ya hace backup); si el exit code no es 0 muestra su salida, y
+  si va bien recarga con `keymap.load()` sin overrides.
+- **Arranque**: `main.ts` pasa `keymapOverridesFromEntries(settings.configEntries)` a
+  `keymap.load()`, de modo que `[keys]` de `config.toml` manda sobre los defaults del motor
+  desde el primer arranque.
+- **Tests**: 7 casos nuevos, 4 en `lib/keys/config.test.ts` (extracción de `prefix`/acciones/
+  `indexed`, descarte de valores no string, aplicación real de los overrides con conflicto
+  incluido y vaciado de un atajo) y 3 en `lib/keys/parse.test.ts` (serialización de chords,
+  `bindingFromEvent` respetando el prefix consumido e ida y vuelta de lo capturado).
+
+## 6sexies. Temas en vivo (F3 / T3.7)
+
+El tema dejó de ser una constante de CSS: ahora sale de `[theme]` de `config.toml`, se aplica
+como variables CSS **y** como paleta ANSI de xterm, y Mica acompaña al modo claro/oscuro.
+
+- **Paletas transcritas, no inventadas** (`lib/theme/themes.ts`): los **18** temas de herdr
+  (`catppuccin`, `catppuccin-latte`, `terminal`, `tokyo-night`, `tokyo-night-day`, `dracula`,
+  `nord`, `gruvbox`, `gruvbox-light`, `one-dark`, `one-light`, `solarized`, `solarized-light`,
+  `kanagawa`, `kanagawa-lotus`, `rose-pine`, `rose-pine-dawn`, `vesper`) con sus 16 tokens,
+  **transcritos de `herdr@d78e3d3b5126` `src/app/state.rs`** (Apache-2.0, atribución en
+  `THIRD-PARTY-NOTICES.md`, T5.6). `LIGHT_THEMES` marca los 7 claros.
+  - **Desviación anotada**: el plan hablaba de 17 temas; hay **18** porque herdr incluye
+    `one-light` además de los del plan.
+  - El tema `terminal` de herdr usa colores ANSI con nombre de ratatui; aquí se resuelve a los
+    fallbacks de `RESET_FALLBACK` (la GUI no tiene terminal host que heredar).
+- **ANSI derivado** (`lib/theme/ansi.ts`): herdr **no** define una paleta ANSI por tema —su
+  terminal hereda la del terminal exterior por OSC 10/11/4—, así que aquí se **deriva** de los
+  tokens del tema activo y los `bright` se aclaran hacia su color de texto. Es la única parte
+  del tema que no viene de herdr, y está anotado como tal en el propio archivo.
+- **Aplicación** (`lib/theme/apply.ts`): `applyThemeToDocument()` resuelve el tema efectivo
+  (`resolveThemeName`: con `auto_switch` gana `theme_dark_name`/`theme_light_name` según
+  `prefers-color-scheme`; si no, `theme_name`; nombre desconocido → `catppuccin`), superpone
+  `[theme.custom]` (`parseCssColor` acepta `#rgb`/`#rrggbb`, `rgb()` y los nombres de herdr;
+  `reset`/`default` = quitar), deja que `ui.accent` legacy mande si no hay acento propio, y
+  escribe ~18 variables CSS + las 16 ANSI. Deja `data-theme` y `data-theme-name` en `<html>`.
+- **Terminal**: `pool.applyXtermTheme()` relee esas variables y las pone en
+  `terminal.options.theme` de cada xterm vivo, así que el cambio de tema se ve sin reiniciar.
+- **Mica**: `App.svelte` llama a `setMica(dark)` (command `set_mica`, ver `docs/03`) cuando
+  cambia el tema, y tolera el fallo. `auto_switch` se reevalúa con el evento `change` de
+  `prefers-color-scheme` registrado en `onMount`.
+- **Selector**: la primera sección del formulario es el tema —`select` con los 18 nombres
+  (`THEME_NAMES`), interruptor de `auto_switch` y, cuando está activo, los select de
+  `theme_dark_name` y `theme_light_name`. `settings.applyTheme()` es el punto único: pone
+  `data-glass`/`data-mica`/`lang` y delega la paleta en `applyThemeToDocument()`; `resolvedTheme`
+  expone el nombre aplicado.
+- Tests: 9 en `lib/theme/theme.test.ts` (los 18 temas con tokens hex, manual vs `auto_switch`,
+  nombre desconocido, overrides de `[theme.custom]`, parseo de colores, derivación de las 16
+  claves con `bright` aclarados, escritura de la paleta y `data-theme`, y precedencia de
+  `ui.accent` legacy).
+
+## 6septies. El resto de F3 en la UI (T3.1-T3.4, T3.8-T3.10)
+
+Todo lo que falta para cerrar F3 del lado del cliente. Los commands de backend que usan ya
+estaban (ver `docs/03`); aquí está cómo los llama la UI y qué se degrada cuando faltan.
+
+### (a) Redimensionar, intercambiar y mover paneles (T3.1)
+
+- **Modo redimensionar** (`ui.resizeMode`): se activa desde el menú del panel; mientras está
+  activo, las cuatro flechas mueven el divisor del panel enfocado (`pane.resize` con
+  `amount: 0.05` y `direction` `left`/`right`/`up`/`down`), y `Esc` lo desactiva. El modo se ve
+  en la titlebar con un chip (`data-testid="resize-chip"`, el mismo estilo que el chip `PREFIX`),
+  y el teclado global lo trata como diálogo abierto: no se lo come la terminal.
+- **Intercambio por arrastre**: el header de `PaneFrame.svelte` es `draggable` y usa el tipo
+  MIME propio `application/x-herdr-pane`; el `drop` sobre otro panel llama a `pane.swap`
+  (`source_pane_id`/`target_pane_id`). El divisor redimensionable ya existía (`split-drag`), así
+  que esta tarea no lo reimplementa.
+- **Mover un panel** (`pane.move`) a tres destinos: una pestaña existente, una pestaña nueva o
+  un espacio nuevo (`flows.movePane()` pide el destino con un diálogo).
+
+### (b) Reordenar pestañas y espacios por arrastre (T3.2)
+
+El arrastre es HTML5 puro: la fila/tab es `draggable`, guarda su id en `dataTransfer` con tipo
+MIME propio (`application/x-herdr-tab`, `application/x-herdr-workspace`) y en un `$state` local
+(`dragId`/`dropId`, que además pintan el destino). En el `drop` se cancela el evento y se manda
+`moveTabTo`/`moveWorkspaceTo` con el **índice absoluto del elemento sobre el que se ha soltado**
+(`tab.move` y el equivalente de workspace), resolvido con `findIndex` sobre la colección viva: no
+se calcula la posición del puntero ni se intercambian objetos, el store sigue siendo la
+autoridad. Si no hay origen o el origen es el propio destino, no se hace nada.
+**Hueco de verificación**: el reordenado no tiene e2e propio. `f3.spec.ts` cubre el swap y el
+move de paneles, no el arrastre de pestañas o espacios; el reorder está probado solo por
+inspección del código.
+
+### (c) Presets de layout (T3.3)
+
+- Se guardan en los ajustes de la GUI (`layout_presets`, clave de `settings.json`), no en
+  `config.toml`: son un árbol `LayoutNode`, no un valor TOML.
+- **Desviación de alcance: no hay editor JSON standalone.** Se guarda el `LayoutNode` **crudo**
+  que devuelve `layout.export` porque el árbol de la UI no es el contrato de `layout.apply`; al
+  aplicar se valida con `isLayoutNode()`. Editar el JSON a mano no se ofrece.
+- `lib/layout/presets.ts` valida antes de aplicar: `isLayoutNode()` acepta hoja `pane` y
+  `split` con `direction` `right`/`down` y `ratio` en `[0,1]`, recursivo; la hoja `pane` solo se
+  comprueba por su `type`, así que los ids los sigue validando el server.
+  `sanitizePresetName()` hace `trim` y **rechaza** (no recorta) lo que no case con
+  `^[\w][\w .-]*$` o pase de 40 caracteres. Aplicar un preset corrupto avisa en vez de mandarlo
+  al server.
+- `flows.saveLayoutPreset()` exporta el árbol de la pestaña visible (`layout.export`; si no hay
+  árbol, aviso), pide nombre con `validate: sanitizePresetName` y lo guarda con
+  `settings.set('layout_presets', …)`. `applyLayoutPreset()` valida y llama a
+  `layoutApi.apply(preset, { workspace_id, focus: true })`, luego `layout.refreshNow()`;
+  `deleteLayoutPreset()` quita la entrada con `withoutPreset()`.
+- Entradas: una en el **menú de la pestaña** («guardar layout», entre renombrar y cerrar) y en la
+  paleta `layout.save` fija más `layout.apply:<nombre>` y `layout.remove:<nombre>` generados con
+  `presetNames()` por cada preset guardado.
+- Tests: `src/lib/layout/presets.test.ts`, 5 casos (hojas y splits anidados, formas inválidas,
+  nombres válidos, nombres rechazados, orden y borrado sin mutar el original).
+
+### (d) Worktrees (T3.4, UI)
+
+`features/worktrees/WorktreesDialog.svelte` sobre los commands que ya expone el backend
+(`worktree_list`/`worktree_create`/`worktree_open`/`worktree_remove`). Se abre desde la paleta
+(«worktrees del espacio») o el menú del espacio, y el `$effect` lista al abrirse con
+`worktreeList(visible.workspaceId)`; si el command no existe, avisa con su nombre en vez de
+fallar. Cada fila muestra etiqueta, rama, ruta y banderas (`bare`, `detached`, `prunable`,
+`linked`) más la insignia de «ya abierto».
+- **Crear**: rama obligatoria (si no, `invalidBranch`), y `base`/`path`/`label` opcionales: lo
+  vacío viaja como `null`. Al crear, limpia el formulario y recarga la lista.
+- **Abrir**: si el worktree ya está abierto en un espacio, aviso y no hace nada; si no,
+  `worktree_open` con `focus: true` y cierra el diálogo.
+- **Quitar**: solo se ofrece —y solo se puede— si el worktree está abierto en un espacio, porque
+  `worktree_remove` se direcciona por **`workspace_id`** (`item.open_workspace_id`), no por ruta.
+  El doble aviso es de la UI: primero un `ui.confirm` de peligro, y si la llamada sin forzar
+  falla, un **segundo** `ui.confirm` para reintentar con `force: true`. El `confirm: true` que
+  exige el contrato lo pone siempre el cliente (`client.ts`), no el usuario.
+- e2e: `f3.spec.ts` cubre la apertura desde la paleta, las 2 filas del arnés y la creación con
+  rama. El borrado con doble aviso **no** tiene e2e.
+
+### (e) Comandos personalizados de `[[keys.command]]` (T3.8)
+
+- `config_read` entrega esa tabla como texto TOML bajo `keys.command`;
+  `lib/keys/customCommands.ts` la parsea al contrato del motor (`key`, `type`
+  `shell`/`pane`/`popup`, `command`, `width`, `height`) respetando comillas y comentarios.
+- `keymap.load()` convierte cada comando atado a una tecla en la acción `command:<índice>`, con
+  su ámbito según lleve o no `prefix` (`keymap.ts`: `command:${index}` y
+  `p|command:<índice>` / `d|command:<índice>` en la tabla de búsqueda). Aparece en el cheatsheet
+  y en el editor de atajos.
+- Ejecución (`flows.runCustomCommand`), con `kind = type || 'shell'`:
+  - `shell` → `run_shell_command(command, session.focusedPane?.cwd ?? null)`. En Windows el
+    backend lanza `cmd.exe /d /c <command>` con `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` y
+    las tres tuberías a `null`: sin ventana de consola y sin que el proceso muera con la app
+    (en no-Windows, `sh -c`). Es la **excepción documentada del §7**: sale de la superlista a
+    propósito, porque es configuración del propio usuario, no un command de la app.
+  - `pane`/`popup` → `paneApi.split({ direction: 'right', focus: true })` sobre el panel
+    enfocado y `paneApi.sendInput(nuevo, command, ['enter'])` para escribirlo; si es `popup`,
+    además `paneApi.zoom(nuevo, 'on')`. Al final, `layout.refreshNow()`.
+  - Si el command no existe: aviso «no disponible» (`warn`) en vez de error.
+- **Tests**: `lib/keys/customCommands.test.ts`, 4 casos (entrada completa con comentarios,
+  varias entradas con defaults, entradas sin `key` o sin `command` descartadas, y tabla
+  ausente → lista vacía).
+- **Hueco conocido — sin cierre automático**: el panel que abre un comando `pane`/`popup` **no
+  se cierra solo** cuando el comando termina. No hay canal de eventos en la UI: `pane_exited`
+  no aparece por ninguna parte del frontend, el store solo se empuja con los snapshots que
+  refresca el backend y el latido (`HEARTBEAT_MS`) únicamente hace `ping`. Hay que cerrarlo a
+  mano, y el zoom se queda puesto. Cerrarlo en cuanto exista el evento.
+
+### (f) Salida del panel: buscar, editar, esperar (T3.9)
+
+- Las tres acciones viven en el **menú del panel** (`search-output`, `edit-scrollback`,
+  `wait-output`) y comparten el ajuste `search_lines` de `settings.json` (`GUI_KEYS`).
+  `paneApi.read` pide `source: 'recent_unwrapped'`, `format: 'text'` y `strip_ansi: true`.
+- `searchPaneOutput()` → `pane.read` de las últimas `search_lines` y visor de texto
+  (`ui.openViewer`).
+- `editScrollback()` → `pane.read` de `max(500, search_lines)` líneas → `write_scratch_file` con
+  el nombre `scrollback-<paneId>` saneado en el propio cliente y otra vez en el backend (solo
+  alfanumérico, `-` y `_`, 60 caracteres; el archivo es
+  `herdr-desk-<nombre>-<timestamp ms>.txt` en el temporal, o `scratch` si el nombre queda vacío) →
+  `openPath` (plugin `opener`) lo abre con el editor externo. Devuelve la ruta absoluta.
+- `waitPaneOutput()` → pide el patrón: si empieza por `re:` es `regex` con el resto del texto, y
+  si no `substring`. Avisa «esperando…», y va a `pane.wait_for_output` con `timeout_ms` de
+  **60 000** fijo, `source: 'recent_unwrapped'`, `strip_ansi: true` y `lines: search_lines`. Si
+  expira, el error se muestra con el mensaje del backend.
+- **Hueco de pruebas**: no hay test dedicado de estos tres flujos; la única cobertura es
+  indirecta, el recuento de 13 ítems del menú de panel en `actions.spec.ts` (5 de panel + 2 de
+  agente + 3 de scrollback), que fija que las entradas existen, no que funcionen.
+
+### (g) Estado git por espacio (T3.10)
+
+- Backend: `git_status(cwd)` parsea `git status --porcelain=v2 --branch` por lista blanca (con
+  `run_whitelisted_in`, variante nueva con directorio de trabajo) y devuelve
+  `{ branch, dirty, ahead, behind }`; `cwd` vacío es `invalid_params` y una salida con exit ≠ 0 es
+  `cli_failed`. `parse_git_status()` es función pura: cuenta las líneas no comentario como cambios
+  sucios y saca rama, `ahead` y `behind` de las cabeceras `# branch.head` (ignorando
+  `(detached)`) y `# branch.ab`.
+- Frontend: `lib/git/status.svelte.ts` lo refresca **atado a las revisiones del snapshot**, con
+  tope de una vez cada 3 s por espacio y sin peticiones solapadas. `App.svelte` arma la lista con
+  el `cwd` del pane del espacio y, si no hay pane, con `workspace.worktree.checkout_path`, y
+  cambia el `cwd` registrado fuerza el refresco aunque no se hayan pasado los 3 s. La sidebar
+  pinta la rama (`workspace-branch`) y el contador de cambios sucios (`workspace-dirty`); no
+  muestra `ahead`/`behind`, que llegan en el command pero no se pintan. Si el command falta, los
+  tokens no aparecen.
+- **Desviación del plan — sin watcher de `.git`**: el plan pedía un watcher sobre `.git/HEAD` y
+  `.git/index` (notify); aquí no hay ninguno. La señal es el refresco del snapshot, que es lo
+  único que llega a la UI sin canal de eventos, y el tope de 3 s evita castigar al servidor con
+  un `git status` por evento. Coste: un `git status` fuera de la app (un `git commit` en otra
+  terminal) no se ve hasta que llega la siguiente revisión del snapshot. Con watcher, esto se
+  sustituye; mientras tanto es el comportamiento conocido.
+- Tests: los 2 del parser en Rust (`parsea_git_status_v2`,
+  `git_detached_sin_rama_y_sin_cambios`). Del lado de cliente no hay test: el store se ejercita
+  solo en vivo.
 
 ## 7. Huecos del contrato §5 encontrados
 
@@ -501,6 +772,9 @@ latido. Con el canal del store funcionando, el catch-up no hace peticiones
 tests de regresión incluidos). El latido de catch-up del frontend deja de ser
 necesario y se retira en la tanda siguiente; el store queda como única fuente de
 verdad y el ping de salud se mantiene solo para detectar la caída del server.
+Ya se retiró: commit `a27facb` (el catch-up y su test `session-refresh.test.ts`
+desaparecieron; ahora es `session-heartbeat.test.ts` quien comprueba que el latido
+hace **cero** llamadas a `session.snapshot`).
 
 ## 6quater. Panel de agentes y estados (F2a / T2.1, T2.4)
 
@@ -567,6 +841,20 @@ pnpm build              dist/assets/index-*.js 498,32 kB min (136,76 kB gzip) + 
                         → dentro del presupuesto (§4: ≤ 600 KB con xterm)
 ```
 
+Ese bloque es la foto del cierre de F1 y así se queda. Los números **de hoy**, medidos en esta
+máquina con `pnpm test` y contando `tests/e2e/`: **388 tests unit en 45 archivos** y **21 specs
+e2e**. Lo que se ha sumado desde el cierre de F1, tarea a tarea: los 5 de
+`lib/settings/settings.test.ts` (codegen de T3.5), los 13 de `lib/settings/map.test.ts` (puente
+`config.toml` ↔ ajustes), los 7 de T3.6 en `lib/keys/{config,parse}.test.ts`, los 9 de
+`lib/theme/theme.test.ts` (T3.7), los de `lib/layout/presets.test.ts` y
+`lib/keys/customCommands.test.ts` (T3.3/T3.8) y los de `PaneFrame.test.ts` (T3.1).
+Los specs nuevos son `f3.spec.ts` (preset de layout, modo redimensionar, mover panel y
+worktrees) y `settings.spec.ts` (guardar en `config.toml` y la pestaña de atajos con su reset);
+el arnés acepta ya `guiSettings` y `configEntries` iniciales. La lista es: `shell`, `shell-f1`,
+`terminal`, `terminal-stale`, `focus`, `layout`, `split-drag`, `actions`, `keys`, `palette`,
+`sessions`, `session-switch`, `reconnect`, `font-menu`, `navigation`, `agents`, `agent-state`,
+`agent-actions`, `agent-notices`, `f3`, `settings`.
+
 Bundle tras añadir el acordeón y los presets (no cableados al shell, así que no entran en el
 grafo inicial): `pnpm build` sigue en 493 kB min. `pnpm-lock.yaml` sin cambios: **cero
 dependencias nuevas**.
@@ -584,19 +872,47 @@ Mediciones de la corrida de F1:
 
 ## 9. Pendiente / deuda para F2–F3
 
-- **Paleta de acciones** (F2) y **consola** (F3): hoy la paleta es un stub declarado.
-- **Modo navegar** (F3): el keymap ya clasifica sus atajos; falta el modo y el `Hint`.
-- **Arrastrar divisores** (T3.1) y **drag & drop de pestañas/paneles** (T3.2).
-- **Config real** (F3): `settings.svelte.ts` usa `localStorage`; falta leer `config.toml`
-  (`config_read`) y el codegen de settings (`scripts/gen-settings.mjs`).
+- **Consola API** (F3/T4.5): solo existe el catálogo por RPC (`api_catalog`, ver `docs/03`); falta
+  la UI. La **paleta de acciones** (F2) ya no es un stub declarado: `features/palette/CommandPalette.svelte`
+  con `lib/palette/{commands,fuzzy}.ts` (commit `e4bfaa1`) hace fuzzy sin acentos, agrupa por tipo
+  y navega con ↑↓/Enter.
+- **Modo navegar** (F3): el keymap ya clasifica sus atajos (`navigate`) y el editor de T3.6
+  muestra el ámbito de cada fila; falta el modo y el `Hint`.
+- **Paneles y pestañas** (T3.1, T3.2): cerrados (§6septies a/b) — modo redimensionar con flechas
+  y chip, intercambio por arrastre, mover panel a 3 destinos y reordenar pestañas/espacios.
+  El divisor por arrastre venía de `48eab4d` (`split-drag.spec.ts`). Pendiente: e2e del
+  reordenado de pestañas y espacios, que hoy solo se cubre por inspección.
+- **Config real** (F3): cerrada la primera mitad. Backend (`config_default`/`config_read`/
+  `config_write`/`config_reset_keys` y `gui_settings_read`/`gui_settings_write`, en `docs/03`),
+  codegen (`pnpm gen` → `src/lib/settings/settings.gen.ts`, 22 secciones / 120 claves, con el
+  parser `parseDefaultConfig` verificado en `settings.test.ts` contra
+  `tests/fixtures/default-config.toml`), y ahora las superficies: formulario (T3.5) y editor de
+  atajos (T3.6), ambas en `features/settings/`, con `settings.svelte.ts` **sin `localStorage`**
+  (§6quinquies), y e2e propia (`settings.spec.ts`). Pendiente: persistencia real verificada
+  contra un backend vivo y `theme_custom` sigue siendo solo lectura en el formulario.
+  - El codegen ahora exige que el valor de una línea sea TOML válido (igual que
+    `try_parse_value` del backend), así que los comentarios de prosa del `--default-config` que
+    empezaban por comilla o corchete —p. ej. `# type = "shell" runs detached`— ya no cuentan
+    como clave: de ahí el descenso de 127 a 120 claves.
+- **Temas** (F3/T3.7): cerrados en cliente (§6sexies) — 18 paletas transcritas, ANSI derivada,
+  aplicación en caliente a CSS y xterm, y Mica claro/oscuro. Pendiente: la atribución formal de
+  las paletas en `THIRD-PARTY-NOTICES.md` (T5.6) y validar el contraste de los 7 temas claros
+  sobre el glass en vivo.
+- **Presets, worktrees, comandos personalizados, scrollback y git** (F3/T3.3, T3.4, T3.8-T3.10):
+  implementados en cliente (§6septies c-g) y con commands de backend ya registrados. Pendiente
+  la verificación **en vivo** de cada uno contra un herdr real (aquí todo se ha medido con el
+  arnés y los 388 tests), el e2e del borrado de worktree con su doble aviso, el **cierre
+  automático del panel de un comando `pane`/`popup`** (hoy no hay canal de eventos en la UI que
+  avise de `pane_exited`, §6septies e), **tests propios de la salida de panel** —buscar, editar
+  el scrollback y esperar solo se cubren indirectamente por el recuento del menú (§6septies f)—,
+  **el watcher de `.git/HEAD` y `.git/index`** que el plan pedía para el estado git, sustituido
+  por el refresco atado al snapshot con tope de 3 s (§6septies g), y decidir si
+  `run_shell_command` —que sale de la superlista a propósito— se queda así.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
-- **Kick del store por evento (backend, no tocado en esta ronda)**: `events::run_with` sólo
-  hace `kick.notify_one()` al cerrarse la conexión de eventos, así que el store no se refresca
-  durante la operación normal y el canal `store_subscribe` queda mudo (ver §7quater(f)). La UI
-  lo mitiga con el catch-up del latido y con un refresco tras cada acción, pero el arreglo de
-  raíz es de una línea en `crates/herdr-core/src/events.rs` o en el consumidor de `ev_rx` de
-  `lib.rs` (un kick por evento; `Notify` coalesce). Queda para el frente de backend.
+- **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del
+  frontend se retiró en `a27facb`: el latido solo hace ping de salud y
+  `session-heartbeat.test.ts` comprueba que **ni una** llamada a `session.snapshot`. Ya no es deuda.
 - **Clics en vivo con la ventana tapada**: si el usuario tiene otra ventana encima, el GUI no
   puede ganar el foco y la verificación en vivo de botones no es posible (los clics irían a la
   ventana de encima). Los scripts de verificación abortan en ese caso.

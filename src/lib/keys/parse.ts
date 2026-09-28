@@ -160,6 +160,66 @@ export function chordFromEvent(event: KeyboardEvent): KeyChord | null {
   };
 }
 
+/** Tecla canónica → nombre de la sintaxis de herdr (para capturar atajos). */
+const KEY_TO_NAME: Record<string, string> = {
+  Escape: 'esc',
+  Enter: 'enter',
+  Tab: 'tab',
+  ' ': 'space',
+  Backspace: 'backspace',
+  Delete: 'delete',
+  Insert: 'insert',
+  Home: 'home',
+  End: 'end',
+  PageUp: 'pageup',
+  PageDown: 'pagedown',
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  '-': 'minus',
+  ',': 'comma',
+  '+': 'plus',
+  '.': 'period',
+  '/': 'slash',
+  '\\': 'backslash',
+  '`': 'backtick',
+  "'": 'quote',
+  ';': 'semicolon',
+  ':': 'colon',
+  '&': 'ampersand',
+  '=': 'equals',
+  _: 'underscore',
+  '!': 'exclamation',
+  '?': 'question',
+};
+
+/** Serializa un chord a la sintaxis de herdr: `ctrl+shift+n`, `minus`, `up`… */
+export function serializeChord(chord: KeyChord): string {
+  const parts: string[] = [];
+  if (chord.ctrl) parts.push('ctrl');
+  if (chord.shift) parts.push('shift');
+  if (chord.alt) parts.push('alt');
+  if (chord.meta) parts.push('meta');
+  const name = KEY_TO_NAME[chord.key];
+  if (name) parts.push(name);
+  else if (chord.key.length === 1) parts.push(chord.key);
+  else parts.push(chord.key.toLowerCase());
+  return parts.join('+');
+}
+
+/**
+ * Binding a partir de un evento del teclado (captura del editor de atajos).
+ * `prefix` delante cuando el llamador ya consumió la tecla de prefix.
+ */
+export function bindingFromEvent(event: KeyboardEvent, withPrefix: boolean): string | null {
+  const chord = chordFromEvent(event);
+  if (!chord) return null;
+  const serialized = serializeChord(chord);
+  if (serialized.length === 0) return null;
+  return withPrefix ? `prefix+${serialized}` : serialized;
+}
+
 /** Etiqueta legible del atajo, para el cheatsheet y los menús. */
 export function bindingLabel(raw: string, prefixKey: string): string {
   const parsed = parseBinding(raw);

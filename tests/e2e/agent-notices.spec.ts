@@ -125,8 +125,14 @@ test('el overlay lleva el conteo y el toast el detalle (sin solaparse)', async (
 test('la campana recuerda la preferencia entre arranques', async ({ page }) => {
   await bootApp(page);
   await enableNotices(page);
-  const stored = await page.evaluate(() => localStorage.getItem('herdr-desk.settings'));
-  expect(stored).toContain('"toast_delivery":"herdr"');
+  // T3.5: la preferencia se persiste en config.toml (config_write).
+  await expect
+    .poll(async () =>
+      (await recordedCalls(page, 'config_write')).some((call) =>
+        JSON.stringify(call).includes('ui.toast.delivery'),
+      ),
+    )
+    .toBe(true);
 
   // Al recargar, la preferencia sigue puesta.
   await page.reload();

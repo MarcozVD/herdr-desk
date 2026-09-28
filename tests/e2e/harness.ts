@@ -33,6 +33,10 @@ export interface BootOptions {
   staleBridgeFirstOpen?: boolean;
   /** Árbol de `layout.export` por tab (`{ 'w1:t1': root, ... }`). */
   layoutTrees?: Record<string, unknown>;
+  /** F3: ajustes iniciales de la GUI (settings.json simulado). */
+  guiSettings?: Record<string, unknown> | null;
+  /** F3: overrides iniciales de config.toml (ruta → valor TOML). */
+  configEntries?: Record<string, string> | null;
 }
 
 export async function bootApp(page: Page, options: BootOptions = {}): Promise<void> {
@@ -45,6 +49,8 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     layoutTrees: options.layoutTrees ?? null,
     agentKinds: options.agentKinds ?? null,
     staleBridgeFirstOpen: options.staleBridgeFirstOpen ?? null,
+    guiSettings: options.guiSettings ?? null,
+    configEntries: options.configEntries ?? null,
     sessionStartError: options.sessionStartError ?? null,
     sessionCurrentMissing: options.sessionCurrentMissing ?? false,
   };

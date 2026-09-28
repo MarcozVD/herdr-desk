@@ -1,6 +1,15 @@
 # herdr-desk: arquitectura backend
 
-Estado: F1 en curso. Última actualización: T1.5 + conexión S + T1.8 (backend).
+Estado: F0-F2 cerradas. F3 con el **backend** hecho (config, worktrees) y **el cliente completo**
+(formulario de configuración, editor de atajos, temas en vivo, redimensionar/intercambiar/mover
+paneles, reordenar pestañas y espacios, presets de layout, worktrees, comandos personalizados,
+scrollback y estado git). F4 con el **backend** hecho (plugins, integraciones, estado del server
+y catálogo de la consola API por RPC) y sin superficies de UI todavía. Última actualización:
+contrato de `plugin.*` (13 commands) y `api_catalog` documentados, `terminal_release` añadido a
+la lista de commands, aclarado el gating de los tests de sandbox, añadidos los commands
+`gui_settings_*` con sus preferencias exclusivas de la GUI y, en `system.rs`, `set_mica`
+(cristal del tema), `run_shell_command`, `write_scratch_file` y `git_status` con su variante de
+CLI con directorio de trabajo.
 
 ## Capas
 
@@ -27,7 +36,9 @@ crates/herdr-core (Rust puro, sin Tauri)
  │               stdout NDJSON → BridgeEvent::Frame/Closed; kill_on_drop
  ├─ cli.rs       session list/stop/delete + start_server_detached
  │               (DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP, env HERDR_* limpiado)
- └─ config.rs    rutas de config de herdr y settings de la GUI
+  └─ config.rs    rutas de config de herdr y settings de la GUI
+                  (gui_settings_dir → %APPDATA%\herdr-desk, F3/T3.5)
+
 
 src-tauri (capa fina)
  ├─ state.rs              AppState {runtime: RwLock<Arc<Runtime>>, bridges, event_channels}
@@ -37,8 +48,12 @@ src-tauri (capa fina)
  ├─ window.rs             show_main() desde ui_ready
  ├─ commands/api.rs       herdr_call, store_subscribe, events_forward, ui_ready
  ├─ commands/session.rs   session_list/connect/start/stop/delete (F1, T1.11)
- ├─ commands/terminal.rs  terminal_open/input/input_bytes/resize/scroll/close (gracia 3 s)
- └─ lib.rs                wiring: L → store kick; runtime_watcher (polling local 150 ms):
+  ├─ commands/terminal.rs  terminal_open/input/input_bytes/resize/scroll/close/release
+  │                        (gracia 3 s en close; release suelta el bridge —mata su proceso— y
+  │                        deja el pane vivo, que es lo que se usa al ocultar un panel)
+  ├─ commands/gui_settings.rs  gui_settings_read/gui_settings_write (F3/T3.5): preferencias
+  │                        exclusivas de la GUI en %APPDATA%\herdr-desk\settings.json
+  └─ lib.rs                wiring: L → store kick; runtime_watcher (polling local 150 ms):
                           respawn de bridges + conexión S
 ```
 
@@ -84,6 +99,41 @@ de la máquina. Detectado en esta máquina: `Cascadia Code`.
 **Menú contextual del WebView2**: la supresión del menú del navegador es cosa del
 FRONTEND (`preventDefault` en el evento `contextmenu` del DOM), no del backend ni de la
 configuración de la ventana. No reintentarlo por el lado de Tauri/ventana.
+
+### Mica oscuro/claro (`set_mica`, F3/T3.7)
+
+`set_mica(dark: bool) -> ()` cambia el efecto de la ventana principal entre `MicaDark` y
+`MicaLight` con `WindowEffectsConfig`, para que el cristal Accompañe al tema activo. Va en
+`system.rs` y no como JS de ventana porque el enum `Effect` de la API JS de Tauri no expone
+`MicaDark`/`MicaLight`; el frontend lo envuelve en `setMica()` (`lib/herdr/client.ts`) y
+tolera el fallo (`.catch(() => undefined)`): sin efecto no se rompe la app, solo se pierde el
+contraste del cristal. Si no hay ventana `main`, sale `Ok` sin hacer nada. Error del SO →
+`ApiError { code: "window" }`. No lleva test unitario (necesita ventana real); se ejercita en
+vivo. Se registró además `core:window:allow-set-effects` en `capabilities/default.json`.
+
+### Comandos de shell, temporales y git (`system.rs`, F3/T3.8-T3.10)
+
+Tres commands más en `system.rs`, los tres con degradación explícita en el frontend
+(`optionalCommand`: si no existen, aviso y se sigue):
+
+- `run_shell_command(command, cwd?)` — comando `type = "shell"` de `[[keys.command]]`. Es la
+  **excepción documentada del §7**: sale de la superlista a propósito, porque es configuración
+  del propio usuario y no un command de la app. Se lanza **detached y sin consola**
+  (`DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`, `stdin/stdout/stderr` nulos), con `cwd`
+  opcional; comando vacío → `invalid_params`. En no-Windows usa `sh -c`.
+- `write_scratch_file(name, text) -> String` — temporal para `edit_scrollback` (T3.9), que el
+  visor externo abre con el plugin `opener`. El nombre se sanea a alfanumérico + `-`/`_`
+  (60 chars) y se le añade un sell timestamp; devuelve la ruta absoluta.
+- `git_status(cwd) -> GitStatusInfo { branch, dirty, ahead, behind }` — lee
+  `git status --porcelain=v2 --branch` con lista blanca y **directorio de trabajo**, que es lo
+  que hace falta la variante nueva `cli_run::run_whitelisted_in(argv, cwd)` (la anterior
+  `run_whitelisted_with_env` no lo tenía). `parse_git_status()` es una función pura: cuenta
+  líneas no comentario como cambios sucios, saca la rama de `# branch.head` (ignora
+  `(detached)`) y `ahead`/`behind` de `# branch.ab`. `cwd` vacío → `invalid_params`; salida con
+  exit ≠ 0 → `cli_failed`. Sin watcher de archivos: el refresco lo manda el frontend con el
+  snapshot. Tests: 2 unitarios del parser (`parsea_git_status_v2` y
+  `git_detached_sin_rama_y_sin_cambios`).
+
 
 ## Suscripción al store (contrato)
 
@@ -300,6 +350,26 @@ Contrato verificado contra la CLI y el server reales (no deducido). Commands en
   por defecto, roundtrip con reload `applied` + backup real + segunda escritura sin
   backup, rechazo sin tocar el archivo, y `failed` → rollback).
 
+### Preferencias exclusivas de la GUI (`commands/gui_settings.rs`, F3/T3.5)
+
+Lo que herdr no conoce (nivel de cristal, WebGL, LRU de terminales…) **no** entra en su
+`config.toml`: el server lo avisaría como `unknown_section`. Va a
+`%APPDATA%\herdr-desk\settings.json`, un objeto JSON plano con dos commands:
+
+- `gui_settings_read() -> serde_json::Value`: devuelve el objeto del archivo. Ausente,
+  ilegible o corrupto devuelve `{}` — la GUI arranca con sus defaults en vez de quedarse
+  sin preferencias. Un JSON que no sea objeto (p. ej. `[1,2]`) también se degrada a `{}`
+  al leer.
+- `gui_settings_write(values) -> GuiSettingsWrite { path, written }`: escribe el objeto
+  **completo** de forma atómica (`settings.json.tmp` + `rename`), creando el directorio
+  si falta. Un valor que no sea objeto se rechaza con `invalid_params` (`io` si falla el
+  disco). `written` es el número de claves del objeto.
+- `gui_settings_path()` usa `herdr_core::config::gui_settings_dir()`; los helpers
+  `read_gui_settings`/`write_gui_settings` reciben la ruta como parámetro para poder
+  testearlos sin tocar el home del usuario.
+- Tests: 4 unitarios (ausente → `{}`, roundtrip con `written`, corrupto → `{}`,
+  no-objeto → `invalid_params`).
+
 ## Worktrees, estado del server, integraciones y notificaciones
 
 ### Worktrees (`src-tauri/src/commands/worktrees.rs`, T3.4)
@@ -350,6 +420,143 @@ Contrato verificado contra la CLI y el server reales (no deducido). Commands en
   `integration_status.txt`, lógica de AUMID, expansión de `~`, guards) más sandbox en
   `hd-test-*` (ciclo de worktree, ping vivo con protocolo 19 + manifests + reload +
   integration status vivo, y roundtrip de registro de AUMID).
+
+## Plugins (T4.1, `src-tauri/src/commands/plugins.rs`)
+
+13 commands registrados en `lib.rs` (líneas 173-185) sobre el grupo `plugin.*` del protocolo 19.
+La capa es fina y tipada: RPC + parseo del `type` de cada respuesta. La UI nunca ve JSON crudo.
+
+- **Ciclo de vida**: `plugin_list { plugin_id? } -> Vec<PluginInfo>` (`plugin.list`),
+  `plugin_enable`/`plugin_disable { plugin_id } -> PluginInfo` (se espera `plugin_enabled` o
+  `plugin_disabled`), `plugin_link { path, enabled? } -> PluginInfo` (`plugin.linked`) y
+  `plugin_unlink { plugin_id, confirm } -> PluginUnlinked { plugin_id, removed }`
+  (`plugin.unlinked`). Los identificadores vacíos (`plugin_id`, `action_id`, `entrypoint`,
+  `pane_id`) se rechazan con `invalid_params` antes de tocar el server.
+- **Confirmaciones en el contrato** (misma política que `worktree_remove`):
+  `plugin_unlink` exige `confirm: Some(true)`; sin ella responde `invalid_params` con el motivo
+  explícito y no desvincula nada. La UI pregunta y reenvía.
+- `PluginInfo` reproduce el `InstalledPluginInfo` del schema (`plugin_id`, `name`, `version`,
+  `manifest_path`, `plugin_root`, `enabled`, `warnings`, `min_herdr_version`, `source`, `actions`,
+  `panes`, `events`). `build`, `startup` y `link_handlers` viajan como `Value` a propósito: no
+  forman parte de la vista principal de T4.1 y duplicar esos tipos no aporta fidelidad.
+- **Acciones y logs**: `plugin_action_list { plugin_id? }` (`plugin.action.list`),
+  `plugin_action_invoke { action_id, plugin_id?, context? }` (`plugin.action.invoke`, que
+  devuelve la acción, el contexto aplicado y la entrada de log) y
+  `plugin_logs { plugin_id?, limit? }` (`plugin.log.list` →
+  `PluginCommandLogInfo { log_id, plugin_id, command, status, started_unix_ms, finished_unix_ms,
+  exit_code, error, event, action_id, stdout, stderr }`).
+  `PluginInvocationContext` cubre workspace/tab/pane/selección/URL e incluye
+  `PluginWorktreeContext`; el contexto se reenvía al server tal cual.
+- **Panes de plugin**: `plugin_pane_open { plugin_id, entrypoint, workspace_id?,
+  target_pane_id?, cwd?, direction?, env?, focus?, width?, height?, placement? }`
+  (`plugin.pane.open`) y `plugin_pane_focus`/`plugin_pane_close { pane_id }`; los tres devuelven
+  el pane como `Value` (mismo criterio de fidelidad que `worktree_create`). `width`/`height`
+  admiten celdas o porcentaje (`"80%"`) y `placement` es `overlay | popup | split | tab | zoomed`.
+- **Instalación desde GitHub en dos pasos, con la prueba en el contrato**:
+  1. `plugin_install_preview { spec, git_ref? } -> PluginInstallPreview`. Valida el spec
+     `owner/repo[/subdir]` y la ref (rechaza `..`, espacios, metacarácteres, refs que empiezan
+     por `-` o `/`), clona **shallow** en un temporal (`git clone --depth 1`, spawn directo sin
+     shell, `HERDR_*` limpiadas, timeout 60 s), lee `herdr-plugin.toml` o `manifest.toml`
+     (exige `id`, `name`, `version` y `min_herdr_version`), borra el temporal y devuelve
+     `spec, owner, repo, subdir, requested_ref, resolved_commit, manifest, manifest_raw,
+     preview_token`. No instala nada.
+  2. `plugin_install { spec, git_ref?, preview_token?, confirm? } -> PluginInstallOutcome
+     { spec, requested_ref, exit_code, output }`. Solo continúa con `confirm = true` **y** un
+     token de vista previa vigente. El token es one-shot (se consume al usarlo) y además liga
+     `spec + ref`, así que la vista previa de otro repo u otra ref no vale. Ejecuta
+     `herdr plugin install <spec> --ref X -y` (argv directo, timeout 180 s).
+- **Parseo estricto**: cada respuesta se valida contra su `type`; un `type` inesperado devuelve
+  `ApiError { code: "server" }` nombrando el tipo recibido, en vez de forzar la estructura.
+- **Tests**: 10 unitarios (parseo de las fixtures reales `schema/fixtures/plugin_link.json` y
+  `plugin_list.json`, `type` inesperado, confirmación de `unlink`, specs y refs válidas e
+  inválidas, manifiesto mínimo y sus campos obligatorios, unicidad del token, memoria one-shot y
+  rechazo de `install` sin `confirm` o sin vista previa vigente). Además existe
+  `src-tauri/src/plugins_sandbox_tests.rs` con 4 tests contra un server `hd-test-*` real, **pero
+  ese archivo no está declarado como módulo en `lib.rs`**, así que hoy no se compila ni se
+  ejecuta (ver «Tests: la puerta por defecto y los tests de sandbox»).
+
+## Catálogo de la consola API (T4.5, `src-tauri/src/commands/api_catalog.rs`)
+
+`api_catalog(refresh?) -> ApiCatalog { protocol, schema_version, total, methods }`. Lee
+`schema/herdr-api.schema.json` —el contrato real, protocolo 19, 90 métodos— y lo normaliza para
+que la UI de consola pueda generar formularios y visores **sin conocer JSON Schema**. Es el único
+command que no habla con el server: no usa `RpcClient`.
+
+- **Localización del schema**, en orden: `HERDR_DESK_SCHEMA_PATH`, la ruta de compilación
+  (`$CARGO_MANIFEST_DIR/../schema/herdr-api.schema.json`, válida en dev) y hasta 4 ancestros del
+  directorio del ejecutable (instalado junto al binario). Si no aparece, `ApiError { code:
+  "schema_not_found" }` con la lista de rutas probadas.
+- **Normalización** (`normalize_param`): resuelve `$ref` guardando el nombre de la definición en
+  `ref_name` (para las badges de la UI) con tope de profundidad 6, resuelve `anyOf` quedándose con
+  la primera rama no nula (`null` solo marca `nullable`) y traduce cada tipo a un `kind` estable:
+  `string | bool | int | float | enum | array | object | map | unknown`. `array` y `map` traen su
+  `item`; `object` trae sus `properties` con su `required`. `ApiParamSpec` expone `name, kind,
+  required, nullable, default, enum_values, item, properties, ref_name`.
+- `group` es el segmento anterior al primer punto (`plugin`, `worktree`, …); los métodos raíz
+  como `ping` caen en `core`. Los métodos salen **ordenados por nombre** y `total` coincide con
+  el `oneOf` del schema.
+- `description` solo existe para los 27 métodos con texto escrito a mano (`method_description`:
+  `ping`, `server.*`, `session.snapshot`, `workspace.*`, `worktree.*`, `plugin.*`,
+  `integration.*`, `notification.show`, `events.subscribe`). El resto llega con `None` y la UI
+  muestra el nombre: no se inventa documentación.
+- **Cacheado** en memoria (un `Arc<ApiCatalog>` estático): el schema se parsea una vez por
+  proceso y la segunda llamada devuelve el mismo `Arc`; `refresh: true` fuerza el reread.
+- **Tests**: 8, todos contra el **schema real** del repo y no contra un schema sintético
+  (protocolo 19, `total == oneOf.len()`, orden estricto sin duplicados, `notification.show` con
+  `required`/`nullable`/`enum`, `worktree.remove` con `force` por defecto `false` y
+  `worktree.create` con sus 7 params, `ping` sin params, resolución de
+  `PluginInvocationContext` y de `PopupSize` (`anyOf` int | `"80%"`), `env` como `map<string>`,
+  los 14 grupos con métodos, caché devolviendo el mismo `Arc` y error tipado de schema
+  inexistente).
+
+## Tests: la puerta por defecto y los tests de sandbox
+
+`cargo test --workspace` (lo único que hace `pnpm verify` en Rust) da **100 tests, 0 fallos**:
+
+| Target | Tests |
+|---|---|
+| unit de la lib de `herdr-core` | 12 |
+| `crates/herdr-core/tests/fixtures.rs` (T1.1, no gated) | 4 |
+| unit de la lib de `src-tauri` | 84 |
+
+En la misma corrida aparecen **7 targets con 0 tests**. No están ignorados con `#[ignore]`: están
+compilados a vacío por *feature gating*.
+
+- `crates/herdr-core/tests/{sandbox,survive,experiments,record_fixtures}.rs` empiezan con
+  `#![cfg(feature = "sandbox")]` a nivel de crate (línea 1 de cada archivo). Sin la feature, el
+  binario existe y no contiene ni un test.
+- Los módulos de `src-tauri` no son binarios propios: se declaran en `lib.rs:8-27` como
+  `#[cfg(all(test, feature = "sandbox"))] mod …` (`api_catalog`, `cli_run`, `config`,
+  `notification`, `sandbox_guard`, `server`, `session_switch`, `terminal_cycle`,
+  `terminal_release`, `worktree`). Los que llevan `_tests.rs` repiten además ese mismo
+  `#![cfg(all(test, feature = "sandbox"))]` en su línea 1. Un archivo de test que no aparezca en
+  esa lista **no se compila**: es el caso de `plugins_sandbox_tests.rs`.
+- `sandbox` **no** es feature por defecto en ninguno de los dos `Cargo.toml`
+  (`crates/herdr-core`: `sandbox = []`; `src-tauri`: `sandbox = ["herdr-core/sandbox"]`), así que
+  la corrida del workspace no la activa.
+
+El gating es deliberado (guardarraíl D10): esos tests arrancan servidores y sesiones reales de
+herdr (`hd-test-<pid>-<seq>`, con guard `Sandbox` que hace `stop` + `delete` en `Drop`) y se
+pisan entre sí. Se corren a mano **y en serie**:
+
+```powershell
+cargo test -p herdr-core --features sandbox -- --test-threads=1
+```
+
+`--test-threads=1` no es cosmético. Consecuencia: nada de esa cobertura entra en la puerta
+automática (`pnpm verify` solo hace `cargo test --workspace`); quien la quiera tiene que acordarse
+del comando anterior.
+
+### Guard de deriva del schema
+
+`pnpm schema:check` (`scripts/schema-check.mjs`) es el guard de R6: compara
+`herdr api schema --json` con `schema/herdr-api.schema.json` sobre **JSON estable** (claves
+ordenadas, para que el resultado no dependa del formato) y exige además que `schema/VERSION` sea
+exactamente `<version de la CLI> protocol=<protocol>`. Si algo difiere sale con código 1 diciendo
+qué campo falla, cuántos métodos tiene cada lado y cómo regenerar
+(`herdr api schema --json --output schema/herdr-api.schema.json`). No arranca ningún server:
+`api schema` solo imprime el schema empaquetado. Estado verificado: protocolo 19,
+`schema_version` 1, 90 métodos, `herdr 0.8.0-preview.2026-08-04-d78e3d3b5126`.
 
 ## Protocolo (hallazgos vigentes)
 
