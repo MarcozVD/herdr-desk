@@ -1,15 +1,14 @@
 # herdr-desk: arquitectura backend
 
-Estado: F0-F2 cerradas. F3 con el **backend** hecho (config, worktrees) y **el cliente completo**
+Estado: **F0-F5 cerradas.** F3 con el **backend** hecho (config, worktrees) y **el cliente completo**
 (formulario de configuración, editor de atajos, temas en vivo, redimensionar/intercambiar/mover
 paneles, reordenar pestañas y espacios, presets de layout, worktrees, comandos personalizados,
 scrollback y estado git). F4 con el **backend** hecho (plugins, integraciones, estado del server
-y catálogo de la consola API por RPC) y sin superficies de UI todavía. Última actualización:
-contrato de `plugin.*` (13 commands) y `api_catalog` documentados, `terminal_release` añadido a
-la lista de commands, aclarado el gating de los tests de sandbox, añadidos los commands
-`gui_settings_*` con sus preferencias exclusivas de la GUI y, en `system.rs`, `set_mica`
-(cristal del tema), `run_shell_command`, `write_scratch_file` y `git_status` con su variante de
-CLI con directorio de trabajo.
+y catálogo de la consola API por RPC) y sus superficies de UI. F5 añade el lado backend del pulido:
+memoria del WebView2 al minimizar, flags de navegador, instalador NSIS y la resolución de sesión por
+defecto (ver «F5» más abajo). Última actualización: añadido `src-tauri/src/power.rs` y
+`tauri.conf.json` (flags + `bundle`), `lib.rs` con `resolve_session()`, y el apartado «F5: memoria,
+flags y empaquetado».
 
 ## Capas
 
@@ -45,7 +44,8 @@ src-tauri (capa fina)
  │                        Runtime {session, client, store} — se reemplaza entero en session_connect
  │                        BridgeRegistry: id → {bridge, pane_id, alive, closing_since, on_frame,
  │                        last_cols/rows (para respawn con el tamaño correcto)}
- ├─ window.rs             show_main() desde ui_ready
+  ├─ window.rs             show_main() desde ui_ready
+  ├─ power.rs              memoria del WebView2 al minimizar/restarurar (F5/T5.2, solo Windows)
  ├─ commands/api.rs       herdr_call, store_subscribe, events_forward, ui_ready
  ├─ commands/session.rs   session_list/connect/start/stop/delete (F1, T1.11)
   ├─ commands/terminal.rs  terminal_open/input/input_bytes/resize/scroll/close/release
@@ -595,6 +595,19 @@ cargo test -p herdr-core --features sandbox -- --test-threads=1
 automática (`pnpm verify` solo hace `cargo test --workspace`); quien la quiera tiene que acordarse
 del comando anterior.
 
+Conteo real de F5 (verificado en esta máquina, sin dejar sesiones `hd-test-*`):
+
+| Suite | Tests |
+|---|---|
+| `pnpm test` (unit del frontend) | **408** en 48 archivos |
+| `cargo test --workspace` (lo que mete `pnpm verify`) | 100 |
+| `cargo test -p herdr-desk --features sandbox` (en serie) | **116** |
+| `cargo test -p herdr-core --features sandbox` (en serie) | **33** |
+| `pnpm e2e` (Playwright) | **129** en 22 specs |
+
+F5 no añadió tests de Rust: `power.rs` es una envoltura de una llamada COM cuyos fallos se ignoran,
+y el empaquetado se comprueba con el tamaño del instalador.
+
 ### Guard de deriva del schema
 
 `pnpm schema:check` (`scripts/schema-check.mjs`) es el guard de R6: compara
@@ -605,6 +618,95 @@ qué campo falla, cuántos métodos tiene cada lado y cómo regenerar
 (`herdr api schema --json --output schema/herdr-api.schema.json`). No arranca ningún server:
 `api schema` solo imprime el schema empaquetado. Estado verificado: protocolo 19,
 `schema_version` 1, 90 métodos, `herdr 0.8.0-preview.2026-08-04-d78e3d3b5126`.
+
+## F5: memoria, flags y empaquetado (T5.2, T5.3)
+
+### (a) Memoria del WebView2 al minimizar (`src-tauri/src/power.rs`)
+
+`power::install(&main)` engancha el evento de ventana y llama a
+`set_memory_usage_low(window, bool)`, que baja el WebView2 a
+`COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW` y lo devuelve a `NORMAL` al restaurar o al traer la
+ventana al frente (incluido el «Mostrar herdr-desk» del icono de bandeja). Se hace con
+`window.with_webview` + `ICoreWebView2_19` sobre `webview2-com` **0.38**, la misma versión que usa
+Tauri 2.11: con otra versión el cast COM no compila o falla en ejecución.
+
+- **La señal es `is_minimized()`, no el tamaño del evento `Resized`**: el tamaño llega a 0 px de
+  forma intermitente al minimizar y no es fiable.
+- **Medido**: `MemoryUsageTargetLevel=low` en el log al minimizar; RAM de la app 193,0 → 183,3 MB en
+  40 s minimizada.
+- **Es una optimización, no un requisito**: si el runtime de WebView2 es anterior a
+  `ICoreWebView2_19`, o la llamada falla, se registra en `debug` y se sigue como si nada (no hay
+  panic ni error al usuario).
+
+### (b) Flags de navegador (`tauri.conf.json` → `additionalBrowserArgs`)
+
+```
+--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,BackForwardCache,MediaRouter
+--enable-low-end-device-mode
+--in-process-gpu
+--js-flags=--max-old-space-size=64
+--disk-cache-size=1
+```
+
+`CalculateNativeWinOcclusion` viene ya de F1 y está aquí por completitud. El resto se añadió
+midiendo la RAM del árbol (exe + WebView2) sin paneles: **263,2 → 177,8 MB**.
+
+**`--in-process-gpu` no es un flag oficial de WebView2.** Antes de darlo por bueno se verificó con
+CDP que sigue habiendo contexto WebGL (`webgl2=true`, 3 canvas de xterm) y que el input hace ida y
+vuelta (`hd-probe-1234`); aun así conviene re-probarlo tras actualizar el runtime de WebView2.
+
+### (c) Instalador NSIS (`tauri.conf.json` → `bundle`)
+
+- `bundle.targets: ["nsis"]` (antes `"all"`, que pedía también `msi`).
+- `bundle.windows.nsis.installMode: "currentUser"`: instala en `%LOCALAPPDATA%\herdr-desk` **sin
+  UAC**. `pnpm tauri build` produce `target/release/bundle/nsis/herdr-desk_0.1.0_x64-setup.exe`,
+  **3,51 MB** (3.680.106 bytes), dentro del criterio de ≤ 10 MB. El exe `release` mide 11,1 MB.
+- `languages: ["Spanish", "English"]`.
+- Sin firma: no hay `tauri-plugin-updater` ni claves de firma (T5.5 omitida a falta de decisión),
+  así que SmartScreen avisa la primera vez y actualizar es reinstalar encima.
+- `src-tauri/icons` se regeneró desde `assets/icons/herdr-white.svg`: los `.ico` y `.png` de Windows
+  salen **byte a byte iguales** a los commiteados, así que no hay diff. El `.icns` cambia por
+  metadatos (se revirtió) y los iconos de android/ios generados se borraron.
+
+### (d) Sesión por defecto (`lib.rs` → `resolve_session`)
+
+Antes la app abortaba si no encontraba `HERDR_DESK_SESSION`, lo que hacía imposible lanzarla desde
+el menú o desde un `[[keys.command]]` de herdr, donde no hay esa variable. Ahora:
+
+1. Si `HERDR_DESK_SESSION` viene del entorno y no está vacía, manda (desarrollo, tests, scripts).
+2. Si no, `herdr_core::cli::session_list()` busca la sesión marcada `default` y, si no hay, la
+   primera de la lista. Se registra en `info` qué sesión se ha elegido.
+3. Solo si el CLI no responde, o no hay ninguna sesión, se aborta con un error claro por stderr.
+
+Sigue sin heredarse nada de `HERDR_*` (D10): el pipe se resuelve por nombre explícito a partir de
+ahí. herdr no exporta `HERDR_DESK_SESSION` a los `[[keys.command]]`; si se quiere otra sesión que
+la `default`, el snippet de T5.4 tiene que fijarla él.
+
+**Arreglo tras la prueba real (el exe release no abría nada)**: `paths::session_socket("default")`
+devolvía `%APPDATA%\herdr\sessions\default\herdr.sock`, que no existe; la sesión `default`
+vive en la raíz (`%APPDATA%\herdr\herdr.sock`, el mismo `socket_path` que da
+`herdr session list --json`). La app arrancaba sin conectar (`os error 2` en bucle). Ahora
+`session_socket` devuelve `default_socket()` para `DEFAULT_SESSION`; lo usan el arranque y
+`session_connect`. Test: `paths::tests::la_sesion_default_usa_el_socket_raiz`.
+
+### (e) `scripts/perf.ps1`
+
+- `settle` de 5 a **30 s**: a 5 s el WebView2 todavía estaba liberando (209 MB a 10 s, 199 a 30 s,
+  192 a 60 s) y la medida mentía.
+- Mata el **árbol WebView2 completo**: los PIDs reutilizados dejaban procesos vivos de la corrida
+  anterior y sumaban ~650 MB falsos.
+
+### Medición (release, sesión `hd-test-perf`, 1 pane con prompt visible, 3 corridas)
+
+| Métrica | Meta | Medido |
+|---|---|---|
+| `boot_ms` | ≤ 800 | 451 / 472 / 473 (`startup_ms` interno 374 / 434 / 402) |
+| RAM | ≤ 200 MB | 202,8 / 192,8 / 200,7 MB (cumple en 2 de 3; sin pane 177,8) |
+| CPU en reposo | ≤ 0,5 % | **0,89 / 0,83 / 1,04 % — no cumple** (rango 0,42-1,04 en 5 corridas) |
+
+El CPU es el suelo del compositor de WebView2 con ventana transparente y capas de cristal; quitar el
+parpadeo del cursor lo bajó de ~5,6 % a ~0,8 % con terminal visible (ver `docs/04`). El eco,
+evento→UI, cambio de pestaña y flood **no se remedieron** en F5: son los valores de F0/F1.
 
 ## Protocolo (hallazgos vigentes)
 

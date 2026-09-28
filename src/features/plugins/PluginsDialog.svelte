@@ -35,6 +35,7 @@
 
   let plugins = $state<PluginInfo[]>([]);
   let error = $state<string | null>(null);
+  let loading = $state(false);
   let busy = $state(false);
   let expanded = $state<string | null>(null);
   let actions = $state<PluginActionInfo[]>([]);
@@ -43,7 +44,9 @@
 
   async function load(): Promise<void> {
     error = null;
+    loading = true;
     const outcome = await pluginList();
+    loading = false;
     if (!outcome.ok) {
       plugins = [];
       error =
@@ -300,8 +303,9 @@
   >
     {#if error}
       <p class="plugins__error" data-testid="plugins-error">{error}</p>
-    {/if}
-    {#if plugins.length === 0 && !error}
+    {:else if loading}
+      <p class="plugins__empty" data-testid="plugins-loading">{es.dialog.loading}</p>
+    {:else if plugins.length === 0}
       <p class="plugins__empty" data-testid="plugins-empty">{es.plugins.empty}</p>
     {:else}
       <ul class="plugins" data-testid="plugins-list">

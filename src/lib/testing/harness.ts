@@ -434,9 +434,12 @@ export function installHarness(): void {
         if (stale) deadBridges.add(id);
         if (!stale) {
           // Al enganchar un bridge, el server manda el viewport completo: así un
-          // panel cuya vista acaba de montarse se repinta entero.
+          // panel cuya vista acaba de montarse se repinta entero. Va con
+          // setTimeout(0) y no con microtask: el frame tiene que llegar DESPUÉS
+          // de que `terminal_open` resuelva y el pool arme su vigilante (si
+          // llega antes, el vigilante no se desarma y se auto-cierra a los 1,5 s).
           const frame = serverFrame(paneId);
-          queueMicrotask(() => deliver(payload.onFrame as Channel<unknown>, frame));
+          setTimeout(() => deliver(payload.onFrame as Channel<unknown>, frame), 0);
         }
         if (config.terminalOpenDelayMs && config.terminalOpenDelayMs > 0) {
           return new Promise((resolve) =>

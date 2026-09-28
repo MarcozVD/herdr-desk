@@ -65,7 +65,11 @@ Confirmado:
   (§3 capa 3 del plan): el cristal no se aplica sobre el texto de la terminal.
 - Accesibilidad ya respetada y a preservar: `prefers-reduced-transparency` desactiva el cristal,
   `prefers-reduced-motion` desactiva las animaciones, y existe un ajuste para forzar o apagar el
-  cristal.
+  cristal. Desde F5 la regla de movimiento reducido es **global** y los pisos de opacidad del
+  cristal en tema claro salen del **contraste WCAG medido** contra el peor fondo (negro), no de
+  criterio visual. Límite conocido: los temas de herdr sustituyen `--text`/`--text-dim` y algunas
+  paletas claras (`solarized-light`, el `--text-dim` de `catppuccin-latte`) no llegan a AA ni con
+  la capa opaca; el piso garantiza los tokens de respaldo de la GUI, no cualquier paleta.
 - Rendimiento: animar `box-shadow` está prohibido; el glow de estado solo anima `opacity`.
 - Verificación obligatoria antes de dar algo por terminado: `format:check`, `lint`, `check`,
   tests unitarios, e2e, gates de Rust (fmt, clippy con `-D warnings`, workspace, sandbox).
@@ -98,8 +102,9 @@ Decisiones de producto sin cerrar:
 
 - `schema/herdr-api.schema.json` y `schema/fixtures/` (eventos y respuestas reales grabadas del
   servidor).
-- Suite de pruebas viva: 397 tests de frontend (47 archivos) y 22 specs e2e (129 pruebas), más
-  las suites de Rust (unit y sandbox contra sesiones `hd-test-*` reales).
+- Suite de pruebas viva: 408 tests de frontend (48 archivos) y 22 specs e2e (129 pruebas), más
+  las suites de Rust: 100 en el workspace (lo que mete `pnpm verify`), 116 de `herdr-desk` y 33 de
+  `herdr-core` contra sesiones `hd-test-*` reales, en serie.
 - Assets de marca: `assets/icons/` (SVG blanco y `currentColor`, PNG y WebP negros).
 - Documentación pública: `docs/03-arquitectura.md`, `docs/04-ui-arquitectura.md`.
 - **Ausencias que no se deben inventar:** no hay testimonios, clientes, métricas de adopción,

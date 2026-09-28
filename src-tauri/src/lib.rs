@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod overlay;
+pub mod power;
 pub mod state;
 pub mod toast_identity;
 pub mod tray;
@@ -38,6 +39,32 @@ use tauri::Manager;
 /// icono del exe, que sale de assets/icons/herdr-white.svg via `tauri icon`.
 const WINDOW_ICON_PNG: &[u8] = include_bytes!("../icons/128x128.png");
 
+/// Sesion activa: `HERDR_DESK_SESSION` si viene del entorno (dev/scripts); si no,
+/// la `default` de herdr (o la primera) resuelta por el CLI. Sin CLI no hay app.
+fn resolve_session() -> String {
+    if let Ok(name) = std::env::var("HERDR_DESK_SESSION")
+        && !name.is_empty()
+    {
+        return name;
+    }
+    match herdr_core::cli::session_list() {
+        Ok(list) => {
+            if let Some(session) = list
+                .sessions
+                .iter()
+                .find(|s| s.default)
+                .or_else(|| list.sessions.first())
+            {
+                tracing::info!("sin HERDR_DESK_SESSION: se usa la sesion {}", session.name);
+                return session.name.clone();
+            }
+            eprintln!("[herdr-desk] error: herdr no tiene ninguna sesion.");
+        }
+        Err(err) => eprintln!("[herdr-desk] error: no se pudo listar las sesiones: {err}"),
+    }
+    std::process::exit(1);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -47,16 +74,11 @@ pub fn run() {
         )
         .init();
 
-    // La sesion es explicita: HERDR_DESK_SESSION. Nunca HERDR_* heredada (D10).
-    let session = match std::env::var("HERDR_DESK_SESSION") {
-        Ok(s) if !s.is_empty() => s,
-        _ => {
-            eprintln!(
-                "[herdr-desk] error: falta HERDR_DESK_SESSION. Solo se corre contra una sesion explicita (ej. herdr-desk-dev)."
-            );
-            std::process::exit(1);
-        }
-    };
+    // La sesion es explicita: HERDR_DESK_SESSION (dev, tests y scripts). Nunca se
+    // hereda HERDR_* del entorno (D10). Instalada y lanzada desde el menu o la TUI
+    // no hay variable: se usa la sesion `default` de herdr (T5.3/T5.4); si el CLI
+    // no responde, se aborta con un error claro.
+    let session = resolve_session();
 
     let pipe = herdr_core::paths::pipe_name(&herdr_core::paths::session_socket(&session));
     let startup = Instant::now();
@@ -111,6 +133,8 @@ pub fn run() {
                     }
                     Err(err) => tracing::warn!("icono de ventana no decodificable: {err}"),
                 }
+                // T5.2 — al minimizar, WebView2 a memoria baja; al volver, normal.
+                power::install(&main);
             }
 
             // watcher: respawn de bridges + conexión S (make-before-break, debounce 100 ms)

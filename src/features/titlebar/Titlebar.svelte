@@ -1,7 +1,7 @@
 <!-- Titlebar glass (T1.6): drag region, selector de sesión, botón de paleta, chip
      de PREFIX, píldora de conexión y controles de ventana. -->
 <script lang="ts">
-  import { Search, Settings } from '@lucide/svelte';
+  import { Menu, Search, Settings } from '@lucide/svelte';
 
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
@@ -21,7 +21,7 @@
       active={!ui.sidebarCollapsed}
       onclick={() => ui.toggleSidebar()}
     >
-      <span aria-hidden="true">☰</span>
+      <Menu size={14} aria-hidden="true" />
     </IconButton>
     <span class="titlebar__brand">herdr</span>
     <button

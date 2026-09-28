@@ -22,6 +22,7 @@
         "transparent": true,
         "shadow": true,
         "visible": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,BackForwardCache,MediaRouter --enable-low-end-device-mode --in-process-gpu --js-flags=--max-old-space-size=64 --disk-cache-size=1",
         "windowEffects": {
           "effects": ["micaDark"]
         }
@@ -40,7 +41,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "resources": [
       "../assets/icons/*"
     ],
@@ -50,6 +51,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Spanish", "English"]
+      }
+    }
   }
 }

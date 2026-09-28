@@ -478,6 +478,7 @@ export const es = {
     apply: 'Aplicar',
     remove: 'Quitar',
     required: 'Escribe un valor.',
+    loading: 'Cargando…',
   },
   cardSplit: {
     /** Etiqueta accesible del bloque. */

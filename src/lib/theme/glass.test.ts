@@ -22,9 +22,9 @@ describe('nivel de cristal', () => {
 
   it('el tema claro nunca baja de su piso de legibilidad', () => {
     const light = glassAlphas(100, true);
-    expect(light.surface).toBeGreaterThanOrEqual(0.6);
-    expect(light.overlay).toBeGreaterThanOrEqual(0.74);
-    expect(light.elevated).toBeGreaterThanOrEqual(0.84);
+    expect(light.surface).toBeGreaterThanOrEqual(0.85);
+    expect(light.overlay).toBeGreaterThanOrEqual(0.89);
+    expect(light.elevated).toBeGreaterThanOrEqual(0.93);
     expect(light.tint).toBeGreaterThanOrEqual(150);
     // con poco cristal manda el valor propio, no el piso
     expect(glassAlphas(1, true).surface).toBe(glassAlphas(1, false).surface);

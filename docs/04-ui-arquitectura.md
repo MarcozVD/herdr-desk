@@ -1,6 +1,8 @@
 # 04 · Arquitectura de la UI (herdr-desktop)
 
-Fecha: 2026-09-25 · ramas `f0-spike` (cerrada) y `f1-nucleo` · herdr 0.8.0-preview, protocol 19
+Fecha: 2026-09-25 · última actualización 2026-09-28 con F5 (T5.1 accesibilidad y contraste medido,
+T5.2 carga diferida, memoria y gracia de `hide`, §6novies) · ramas `f0-spike` (cerrada) y
+`f1-nucleo` · herdr 0.8.0-preview, protocol 19
 Alcance: la parte FRONTEND (Vite + Svelte 5 + xterm 6 dentro del WebView2 de Tauri 2).
 El backend (herdr-core + `src-tauri`) se documenta en `03-arquitectura.md`.
 
@@ -45,7 +47,8 @@ src/
                         spec.ts (contrato de payload + TOML), map.ts (config.toml ↔ ajustes)
     theme/tokens.css    tokens del §3 (glass, radios, tipografías, acentos)
     theme/              themes.ts (18 paletas transcritas de herdr), ansi.ts (ANSI-16 derivada),
-                        apply.ts (tema efectivo + variables CSS), F3/T3.7
+                        apply.ts (tema efectivo + variables CSS), F3/T3.7; contrast.ts (contraste
+                        WCAG sobre las capas de cristal, T5.1) y glass.ts (nivel 1-100)
   features/             titlebar, sidebar, tabs, panes, statusbar, sessions, settings
                         (SettingsDialog.svelte + KeymapEditor.svelte, F3/T3.5-T3.6), worktrees
                         (WorktreesDialog.svelte, T3.4), y los cinco diálogos de F4: plugins
@@ -90,6 +93,14 @@ sube en cada reconexión y es la señal para que el pool reabra los bridges visi
   su propia gracia de 3 s y reusa `bridge_id`/Channel al respawnear tras una caída del server,
   así que la UI solo reabre cuando el panel vuelve a ser visible (durante la gracia el bridge
   rechaza input con `bridge_closed`).
+  - **F5/T5.2 — `hide` respeta la gracia** (`bridge_grace_ms`, 3 s): ocultar destruye la vista
+    xterm al instante pero **aplaza la suelta del bridge**. Volver dentro de la ventana cancela
+    el temporizador y marca `needsRepaint`, de modo que `show`/`open` piden el viewport completo
+    (truco del resize, una sola vez) en vez de renegociar el attach. Pasado el plazo se suelta
+    como antes. Antes el ajuste se leía y se ignoraba en `hide`.
+  - **F5/T5.2 — `cursorBlink: false`**: cada parpadeo recompone la ventana transparente con sus
+    capas de `backdrop-filter`; con una terminal visible el CPU en reposo bajó de ~5,6 % a ~0,8 %.
+    El cursor queda fijo.
 - **Scroll**: `scrollback: 0` en xterm; el scrollback vive en el server. La rueda y la barra
   propia (`TerminalScrollbar`) traducen cada gesto a `terminal_scroll(direction, lines)`, con
   `mouse_scroll_lines` de la configuración (3 por defecto).
@@ -397,13 +408,14 @@ como variables CSS **y** como paleta ANSI de xterm, y Mica acompaña al modo cla
   `.shell-fallback` (taparían el desenfoque de Windows). La terminal no cambia: sigue casi opaca.
 - **Nivel de cristal** (`lib/theme/glass.ts`): `glassAlphas(level, light)` interpola 1→100 las
   opacidades de las capas (surface 0,90→0,12; overlay 0,95→0,32; elevated 0,97→0,55) y el alpha
-  del tinte del acrílico (220→20). En tema **claro** hay pisos de legibilidad (surface 0,60,
-  overlay 0,74, elevated 0,84, tinte 150): con mucho cristal el texto oscuro sobre lo de detrás
-  dejaba de leerse. `applyGlassLevel()` escribe `--glass-alpha-*` en el `style` de `<html>`
-  (gana a `tokens.css`) desde `settings.applyTheme()`. Por defecto 60. Tests: 4 en
-  `glass.test.ts` y el e2e del deslizador en `settings.spec.ts`. Los pisos del claro están
-  elegidos a ojo: pendiente validarlos en la ventana real. `auto_switch` se reevalúa con el evento `change` de
-  `prefers-color-scheme` registrado en `onMount`.
+  del tinte del acrílico (220→20). En tema **claro** hay pisos de legibilidad (surface **0,85**,
+  overlay **0,89**, elevated **0,93**, tinte 150), que desde F5/T5.1 **no están elegidos a ojo**:
+  los calcula `lib/theme/contrast.ts` a partir del contraste WCAG real (contraste + mezcla sRGB)
+  de los tokens claros de `tokens.css` contra el peor fondo posible, el negro. Ver §6novies(a).
+  `applyGlassLevel()` escribe `--glass-alpha-*` en el `style` de `<html>` (gana a `tokens.css`)
+  desde `settings.applyTheme()`. Por defecto 60. Tests: 4 en `glass.test.ts` más los 14 de
+  `contrast.test.ts`, y el e2e del deslizador en `settings.spec.ts`. `auto_switch` se reevalúa
+  con el evento `change` de `prefers-color-scheme` registrado en `onMount`.
 - **Selector**: la primera sección del formulario es el tema —`select` con los 18 nombres
   (`THEME_NAMES`), interruptor de `auto_switch` y, cuando está activo, los select de
   `theme_dark_name` y `theme_light_name`. `settings.applyTheme()` es el punto único: pone
@@ -647,6 +659,102 @@ el build.
 **Desviación (bitácora):** `events.wait` queda como `console` aunque `events.subscribe` sea
 `curated:console`. Los dos se siguen cubriendo desde la consola, así que la asimetría es solo de
 clasificación, pero conviene saber que existe antes de usarla como criterio.
+
+## 6novies. F5 en la UI: accesibilidad, pulido y carga diferida (T5.1, T5.2)
+
+F5 no cambió el layout ni añadió superficies: lo medible es accesibilidad (contraste medido,
+movimiento reducido, estados de carga) y carga (diálogos bajo demanda, memoria del WebView2,
+gracia de `hide`). El lado backend está en `docs/03` («F5: memoria, flags y empaquetado»).
+
+### (a) Contraste real sobre el cristal (`lib/theme/contrast.ts`)
+
+Los pisos de opacidad del tema claro estaban puestos «a ojo» desde F3. Ahora hay cálculo:
+`minAlphaForContrast(fg, bg, ratio)` compone la capa de cristal sobre el color de fondo en
+sRGB y devuelve el alfa mínimo que alcanza el ratio pedido.
+
+- **Tokens reales** de `tokens.css`: texto `#1b1b23`, texto atenuado `#55556a`, panel `#f4f4f8`.
+- **Peor fondo posible: negro** (ni Mica ni el tinte del acrílico detrás). Sale que el texto pide
+  alfa ≥ **0,535** y el atenuado ≥ **0,833** para 4,5:1.
+- **Pisos aplicados** (`LIGHT_FLOOR`): surface 0,85 (margen sobre 0,833), overlay 0,89, elevated
+  0,93, conservando el orden de opacidad (cada capa tapa más que la anterior). Contraste medido a
+  esos alfos: texto **11,05 / 12,17 / 13,35** y atenuado **4,69 / 5,16 / 5,66**.
+- **Tests**: `contrast.test.ts` recorre **los 100 niveles** con los tokens reales y `glass.test.ts`
+  sigue fijando la monotonía y los pisos (14 tests nuevos, 406 en total; 408 al cerrar F5).
+
+**Desviaciones, con su precio:**
+
+1. En tema claro el nivel de cristal queda **clavado en el piso** a partir del ~7 (surface) y el
+   ~10 (overlay, elevated): por encima, el deslizador deja de cambiar el claro. Es lo que cuesta
+   cumplir AA contra un fondo negro.
+2. Los **temas de herdr sustituyen `--text`/`--text-dim`** por los tokens de su paleta, así que el
+   piso garantiza los colores de respaldo de la GUI, no cualquier paleta:
+   - `solarized-light` no llega a AA ni con la capa opaca (4,13);
+   - `catppuccin-latte` pasa el texto (5,01 con alfa 0,85) pero su `--text-dim` (`#8c8fa1`) no
+     puede (2,83 ni opaco);
+   - `tokyo-night-day` necesitaría alfa ~1,0.
+   Es un límite de las paletas, no del piso. **Pendiente**: validarlo en la ventana real.
+
+### (b) Movimiento reducido global
+
+`app.css` mete una regla `prefers-reduced-motion: reduce` sobre `*`, `*::before`, `*::after` que
+pone `animation-duration: 0.01ms !important`, `animation-iteration-count: 1 !important` y
+`transition-duration: 0.01ms !important`. Antes solo se respetaba componente a componente
+(`CardSplitAccordion`, glow de estado, `lib/ui/motion.ts`): con esta regla **no se anima nada**,
+ni siquiera los cambios de color. Las animaciones propias ya usaban solo `transform`/`opacity`.
+
+### (c) Estados de carga en los cinco diálogos de datos
+
+`plugins`, `integraciones`, `worktrees`, `sesiones` y `servidor` muestran `es.dialog.loading`
+(«Cargando…») mientras llegan los datos y aún no hay nada pintado; si la llamada falla, el estado
+de carga desaparece y manda el error. Antes el diálogo salía vacío durante la espera.
+
+### (d) Diálogos cargados bajo demanda (`App.svelte`)
+
+Los **siete** diálogos pesados (`SettingsDialog`, `PluginsDialog`, `IntegrationsDialog`,
+`ServerDialog`, `ApiConsole`, `AdvancedDialog` y `WorktreesDialog`) se importan con
+`import()` dinámico y se montan al abrirlos. `Dialog.svelte` se queda como chunk compartido por
+todos ellos.
+
+| Chunk | Tamaño |
+|---|---|
+| `index` (inicial) | 696,15 → **494,46 kB** (gzip 192,13 → 131,18) |
+| `Dialog` (compartido) | 110,92 kB |
+| `SettingsDialog` | 48,09 kB |
+| `PluginsDialog` | 11,18 kB |
+| `AdvancedDialog` | 10,06 kB |
+| `ApiConsole` | 8,90 kB |
+| `ServerDialog` | 7,97 kB |
+| `WorktreesDialog` | 7,30 kB |
+| `IntegrationsDialog` | 4,18 kB |
+| `f4` | 1,66 kB |
+
+El JS inicial cumple el presupuesto de ≤ 600 kB. Cero dependencias nuevas: `pnpm-lock.yaml`
+intacto.
+
+### (e) Memoria y flags (resumen; detalles en `docs/03`)
+
+`--enable-low-end-device-mode` e `--in-process-gpu` bajan la RAM del árbol sin paneles de
+263,2 a 177,8 MB, y al minimizar la ventana el backend baja el WebView2 a memoria baja (193,0 →
+183,3 MB en 40 s). WebGL e input se re-verificaron por CDP con esos flags. En el lado JS lo
+visible es `cursorBlink: false` (§4) y la gracia de `hide` (§4).
+
+### (f) Verificación de F5 (conteos reales, ejecutados en esta máquina)
+
+| Suite | Resultado |
+|---|---|
+| `pnpm test` | **408 tests en 48 archivos** |
+| `pnpm e2e` | **129 pruebas en 22 specs** |
+| `pnpm verify` | `EXIT=0` (format:check, lint, check, 408 unit, schema:check, clippy `-D warnings`, Rust) |
+| `cargo test -p herdr-desk --features sandbox` | 116/116 (en serie) |
+| `cargo test -p herdr-core --features sandbox` | 33/33 (en serie) |
+
+**Colaterales** que entraron de paso: el arnés e2e entrega el frame inicial de `terminal_open`
+con `setTimeout(0)` y no con microtask (si llegaba antes de que `terminal_open` resolviera, el
+vigilante de bridge de 1,5 s disparaba; salió al aflorar la gracia de `hide`), y `cargo fmt --all`
+normalizó tres archivos sin cambios de lógica.
+
+**No remedido en F5** (los valores siguen siendo los de F0/F1): eco de input, evento→UI, cambio
+de pestaña y flood. El input→echo sí se validó de punta a punta por CDP en T5.2.
 
 ## 7. Huecos del contrato §5 encontrados
 
@@ -945,14 +1053,15 @@ pnpm build              dist/assets/index-*.js 498,32 kB min (136,76 kB gzip) + 
 ```
 
 Ese bloque es la foto del cierre de F1 y así se queda. Los números **de hoy**, medidos en esta
-máquina con `pnpm test` y contando `tests/e2e/`: **397 tests unit en 47 archivos**, **22 specs
-e2e** y **129 pruebas e2e** (las 3 nuevas de `settings.spec.ts`: botón, acrílico y nivel de
-cristal). Lo que se ha sumado desde el cierre de F1, tarea a tarea: los
+máquina con `pnpm test` y contando `tests/e2e/`: **408 tests unit en 48 archivos**, **22 specs
+e2e** y **129 pruebas e2e** (las 3 de `settings.spec.ts`: botón, acrílico y nivel de cristal, más
+las 2 de T5.2). Lo que se ha sumado desde el cierre de F1, tarea a tarea: los
 5 de `lib/settings/settings.test.ts` (codegen de T3.5), los 13 de `lib/settings/map.test.ts`
 (puente `config.toml` ↔ ajustes), los 7 de T3.6 en `lib/keys/{config,parse}.test.ts`, los 9 de
 `lib/theme/theme.test.ts` (T3.7), los de `lib/layout/presets.test.ts` y
-`lib/keys/customCommands.test.ts` (T3.3/T3.8), los de `PaneFrame.test.ts` (T3.1) y los **4 de
-`lib/herdr/coverage.test.ts`** (T4.7, la clasificación de los 90 métodos).
+`lib/keys/customCommands.test.ts` (T3.3/T3.8), los de `PaneFrame.test.ts` (T3.1), los **4 de
+`lib/herdr/coverage.test.ts`** (T4.7, la clasificación de los 90 métodos) y los **14 de
+`lib/theme/contrast.test.ts`** (T5.1) más los reescritos de `pool-hide.test.ts` (T5.2).
 Los specs nuevos son `f3.spec.ts` (preset de layout, modo redimensionar, mover panel y
 worktrees) y `settings.spec.ts` (guardar en `config.toml` y la pestaña de atajos con su reset);
 el arnés acepta ya `guiSettings` y `configEntries` iniciales. La lista es: `shell`, `shell-f1`,
@@ -960,9 +1069,9 @@ el arnés acepta ya `guiSettings` y `configEntries` iniciales. La lista es: `she
 `sessions`, `session-switch`, `reconnect`, `font-menu`, `navigation`, `agents`, `agent-state`,
 `agent-actions`, `agent-notices`, `f3`, `settings`.
 
-Bundle tras añadir el acordeón y los presets (no cableados al shell, así que no entran en el
-grafo inicial): `pnpm build` sigue en 493 kB min. `pnpm-lock.yaml` sin cambios: **cero
-dependencias nuevas**.
+Bundle tras F5: el chunk inicial baja a **494,46 kB** (gzip 131,18) con los siete diálogos fuera
+del grafo inicial (§6novies d). `pnpm-lock.yaml` sin cambios desde F1: **cero dependencias nuevas**
+(T5.2 añade `webview2-com` y `windows-core`, pero en Rust y a la versión que ya usa Tauri).
 
 Mediciones de la corrida de F1:
 
@@ -1036,3 +1145,20 @@ Mediciones de la corrida de F1:
 - **Clics en vivo con la ventana tapada**: si el usuario tiene otra ventana encima, el GUI no
   puede ganar el foco y la verificación en vivo de botones no es posible (los clics irían a la
   ventana de encima). Los scripts de verificación abortan en ese caso.
+- **F5 (T5.1-T5.5)**:
+  - **Contraste de los 7 temas claros sobre el cristal, en la ventana real** (§6novies a): las
+    paletas claras de herdr sustituyen `--text`/`--text-dim` y algunas no llegan a AA ni con la
+    capa opaca. El piso está medido, la vista real no se ha comprobado.
+  - **CPU en reposo** 0,42–1,04 % con la meta de ≤ 0,5 %: es el suelo del compositor de WebView2
+    con ventana transparente y capas de cristal. Sin margen sin tocar el diseño.
+  - **RAM** ≈ 200 MB con una terminal visible: el presupuesto se cumple justo (177,8 MB sin pane).
+  - **Auto-actualización (T5.5) omitida**: sin `tauri-plugin-updater` ni claves de firma, a la
+    espera de decisión del usuario. Firmar y auto-actualizar quedan como deuda de v0.2.
+  - **Una jornada real sin TUI** (instalar, trabajar el día entero) no es verificable desde el
+    agente: la prueba el usuario con el instalador y el lanzador (`README.md`).
+  - **`--in-process-gpu`** no es un flag oficial de WebView2: funciona (WebGL e input verificados
+    por CDP) pero conviene re-probarlo tras actualizar el runtime.
+  - **El deslizador de cristal en tema claro** deja de tener efecto por encima del piso (~7): es
+    intencionado, pero no está anotado en la propia interfaz, así que se lee como un botón muerto.
+  - **`THIRD-PARTY-NOTICES.md` no existe**: la atribución de las 18 paletas de herdr
+    (Apache-2.0) seguía apuntada a T5.6 y esa tarea no lo creó. Sigue pendiente.

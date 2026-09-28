@@ -654,6 +654,19 @@ body {
   outline-offset: var(--focus-ring-offset);
 }
 
+/* T5.1 — Motion accesible: las animaciones propias ya usan solo transform/opacity
+   (glow, toasts, spinner) y las transiciones de estado son de color; con
+   `prefers-reduced-motion` no se anima NADA, ni siquiera esos cambios. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 :where(input, select, textarea):disabled {
   opacity: var(--control-disabled-opacity);
   cursor: default;

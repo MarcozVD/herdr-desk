@@ -2,6 +2,8 @@
      recarga, recargar config, detener con doble confirmación, y update/canal por
      la lista blanca del CLI con la salida visible. -->
 <script lang="ts">
+  import { TriangleAlert } from '@lucide/svelte';
+
   import { call } from '../../lib/herdr/client';
   import { describeApiError, errorText, parseApiError } from '../../lib/herdr/errors';
   import {
@@ -21,12 +23,15 @@
   let status = $state<ServerStatusReport | null>(null);
   let manifests = $state<AgentManifestStatus | null>(null);
   let error = $state<string | null>(null);
+  let loading = $state(false);
   let busy = $state(false);
   let output = $state('');
 
   async function load(): Promise<void> {
     error = null;
+    loading = true;
     const [report, manifestReport] = await Promise.all([serverStatus(), agentManifests()]);
+    loading = false;
     if (!report.ok) {
       status = null;
       error =
@@ -150,6 +155,8 @@
   >
     {#if error}
       <p class="server__error" data-testid="server-error">{error}</p>
+    {:else if loading && !status && !manifests}
+      <p class="server__line" data-testid="server-loading">{es.dialog.loading}</p>
     {/if}
     {#if status}
       <section class="server__card" data-testid="server-status">
@@ -194,7 +201,9 @@
               <span class="server__source">{manifest.source_kind}</span>
               <span class="server__version">{manifest.active_version ?? '—'}</span>
               {#if manifest.warning}
-                <span class="server__warn" title={manifest.warning}>⚠</span>
+                <span class="server__warn" title={manifest.warning}
+                  ><TriangleAlert size={13} aria-label={manifest.warning} /></span
+                >
               {/if}
             </li>
           {/each}
@@ -351,6 +360,8 @@
   }
 
   .server__warn {
+    display: inline-flex;
+    vertical-align: -2px;
     color: var(--yellow);
   }
 

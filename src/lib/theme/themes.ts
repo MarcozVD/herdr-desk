@@ -4,7 +4,7 @@
  * volver a transcribir; el orden y los nombres son los de `theme.name`.
  * El tema `terminal` usa colores ANSI con nombre de ratatui; `Reset` se
  * resuelve a los fallbacks de RESET_FALLBACK (la GUI no tiene terminal host).
- * La atribución formal va en THIRD-PARTY-NOTICES.md (T5.6).
+ * Atribución formal: THIRD-PARTY-NOTICES.md.
  */
 
 export interface ThemeTokens {

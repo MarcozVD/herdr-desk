@@ -19,6 +19,7 @@
 
   let result = $state<WorktreeListResult | null>(null);
   let error = $state<string | null>(null);
+  let loading = $state(false);
   let busy = $state(false);
   let creating = $state(false);
 
@@ -30,7 +31,9 @@
 
   async function load(): Promise<void> {
     error = null;
+    loading = true;
     const outcome = await worktreeList(visible.workspaceId);
+    loading = false;
     if (!outcome.ok) {
       result = null;
       error =
@@ -152,8 +155,9 @@
   >
     {#if error}
       <p class="worktrees__error" data-testid="worktrees-error">{error}</p>
-    {/if}
-    {#if result}
+    {:else if loading}
+      <p class="worktrees__empty" data-testid="worktrees-loading">{es.dialog.loading}</p>
+    {:else if result}
       <p class="worktrees__repo" data-testid="worktrees-repo">
         {es.worktrees.repo
           .replace('{name}', result.source.repo_name)

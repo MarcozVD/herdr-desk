@@ -76,10 +76,7 @@ pub async fn open_event_subscription(
     open_subscription(pipe, subs).await
 }
 
-async fn open_subscription(
-    pipe: String,
-    subs: Vec<Value>,
-) -> Result<PaneSubscription, HerdrError> {
+async fn open_subscription(pipe: String, subs: Vec<Value>) -> Result<PaneSubscription, HerdrError> {
     let stream = crate::transport::open(&pipe).await?;
     let mut writer = stream;
 

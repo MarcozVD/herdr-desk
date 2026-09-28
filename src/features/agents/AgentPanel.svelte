@@ -5,6 +5,8 @@
      row_gap) y sus tokens `$name` de metadata. Respeta el ancho de la sidebar y
      su colapso: en modo compacto quedan solo los iconos de estado (app.css). -->
 <script lang="ts">
+  import { Bell, BellOff } from '@lucide/svelte';
+
   import { flows } from '../../lib/actions/flows';
   import {
     agentRowGap,
@@ -108,7 +110,11 @@
       aria-label={notifyOn ? es.sidebar.notifyOff : es.sidebar.notifyOn}
       onclick={toggleNotifications}
     >
-      {notifyOn ? '🔔' : '🔕'}
+      {#if notifyOn}
+        <Bell size={14} aria-hidden="true" />
+      {:else}
+        <BellOff size={14} aria-hidden="true" />
+      {/if}
     </button>
   </div>
 
@@ -201,6 +207,34 @@
   .agent-panel__filter:focus {
     outline: none;
     border-color: var(--control-hover-border);
+  }
+
+  .agent-panel__bell {
+    display: grid;
+    place-items: center;
+    inline-size: 24px;
+    block-size: 24px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition:
+      background var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease),
+      border-color var(--t-fast) var(--ease);
+  }
+
+  .agent-panel__bell:hover {
+    background: var(--control-hover-bg);
+    color: var(--text);
+  }
+
+  .agent-panel__bell[data-on='true'] {
+    background: var(--control-active-bg);
+    border-color: var(--control-active-border);
+    color: var(--text);
   }
 
   .agent-panel__sort {
