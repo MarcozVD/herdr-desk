@@ -4,6 +4,9 @@ pub fn pipe_name(socket_path: &Path) -> String {
     format!(r"\\.\pipe\{}", socket_path.display())
 }
 
+/// Nombre de la sesion por defecto de herdr.
+pub const DEFAULT_SESSION: &str = "default";
+
 pub fn herdr_appdata() -> PathBuf {
     let base = std::env::var("APPDATA").unwrap_or_default();
     PathBuf::from(base).join("herdr")
@@ -13,7 +16,13 @@ pub fn default_socket() -> PathBuf {
     herdr_appdata().join("herdr.sock")
 }
 
+/// Socket de una sesion con nombre. La sesion `default` NO vive en
+/// `sessions\default\`: su socket es el de la raiz (`%APPDATA%\herdr\herdr.sock`),
+/// igual que el `socket_path` que devuelve `herdr session list --json`.
 pub fn session_socket(name: &str) -> PathBuf {
+    if name == DEFAULT_SESSION {
+        return default_socket();
+    }
     herdr_appdata()
         .join("sessions")
         .join(name)
@@ -70,5 +79,12 @@ mod tests {
             pipe_name(&socket),
             r"\\.\pipe\C:\Users\dev\AppData\Roaming\herdr\herdr.sock"
         );
+    }
+
+    #[test]
+    fn la_sesion_default_usa_el_socket_raiz() {
+        assert_eq!(session_socket(DEFAULT_SESSION), default_socket());
+        let named = session_socket("hd-test-1");
+        assert!(named.ends_with(r"sessions\hd-test-1\herdr.sock"));
     }
 }
