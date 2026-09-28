@@ -156,7 +156,7 @@ pub(crate) async fn server_status_report(
 
 #[tauri::command]
 pub async fn server_status(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
 ) -> Result<ServerStatusReport, ApiError> {
     let client = state.current().client.clone();
     server_status_report(Some(&client)).await
@@ -276,7 +276,7 @@ pub(crate) async fn agent_manifests_reload_rpc(
 
 #[tauri::command]
 pub async fn agent_manifests(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
 ) -> Result<AgentManifestStatus, ApiError> {
     let client = state.current().client.clone();
     agent_manifests_rpc(&client).await
@@ -284,7 +284,7 @@ pub async fn agent_manifests(
 
 #[tauri::command]
 pub async fn agent_manifests_reload(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
 ) -> Result<AgentManifestReload, ApiError> {
     let client = state.current().client.clone();
     agent_manifests_reload_rpc(&client).await
