@@ -13,14 +13,20 @@ pub const AGENT_KINDS_TTL: Duration = Duration::from_secs(60);
 /// Para agregar una entrada basta sumarla aqui (y resolver su exe en `resolve_program`).
 /// `config reset-keys` delega en la CLI el backup y la limpieza de atajos
 /// (semantica propia de herdr); argv exacto sin flags ni argumentos.
-pub const WHITELIST: [&[&str]; 9] = [
+pub const WHITELIST: [&[&str]; 15] = [
     &["herdr", "agent", "start", "--help"],
     &["herdr", "status", "--json"],
     &["herdr", "--default-config"],
+    &["herdr", "--skill"],
     &["herdr", "config", "check"],
     &["herdr", "config", "reset-keys"],
     &["herdr", "integration", "status"],
     &["herdr", "plugin", "config-dir"],
+    &["herdr", "update"],
+    &["herdr", "update", "--handoff"],
+    &["herdr", "channel", "show"],
+    &["herdr", "channel", "set", "stable"],
+    &["herdr", "channel", "set", "preview"],
     &["git", "branch", "--format=%(refname:short)"],
     &["git", "status", "--porcelain=v2", "--branch"],
 ];
@@ -279,6 +285,13 @@ mod tests {
             "--format=%(refname:short)"
         ])));
         assert!(is_whitelisted(&argv(&["herdr", "config", "reset-keys"])));
+        // F4/T4.4: update y canal entran con argv exacto.
+        assert!(is_whitelisted(&argv(&["herdr", "update"])));
+        assert!(is_whitelisted(&argv(&["herdr", "update", "--handoff"])));
+        assert!(is_whitelisted(&argv(&["herdr", "channel", "show"])));
+        assert!(is_whitelisted(&argv(&["herdr", "channel", "set", "preview"])));
+        assert!(!is_whitelisted(&argv(&["herdr", "channel", "set", "nightly"])));
+        assert!(!is_whitelisted(&argv(&["herdr", "update", "--extra"])));
         assert!(!is_whitelisted(&argv(&["herdr"])));
         assert!(!is_whitelisted(&argv(&["git"])));
         assert!(!is_whitelisted(&argv(&["herdr", "server", "stop"])));
