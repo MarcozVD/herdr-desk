@@ -28,7 +28,13 @@
 </script>
 
 {#if view}
-  <Dialog title={view.title} testId="viewer" width="46rem" onclose={() => ui.closeViewer()}>
+  <Dialog
+    title={view.title}
+    testId="viewer"
+    width="46rem"
+    level={30}
+    onclose={() => ui.closeViewer()}
+  >
     <div class="viewer">
       <div class="viewer__tools">
         <input

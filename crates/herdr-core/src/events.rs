@@ -59,13 +59,30 @@ pub async fn open_pane_subscription(
     pipe: String,
     panes: Vec<String>,
 ) -> Result<PaneSubscription, HerdrError> {
-    let stream = crate::transport::open(&pipe).await?;
-    let mut writer = stream;
-
     let subs: Vec<Value> = panes
         .iter()
         .map(|p| json!({"type": "pane.agent_status_changed", "pane_id": p}))
         .collect();
+    open_subscription(pipe, subs).await
+}
+
+/// T4.5 — Suscripción temporal a tipos globales elegidos (24 disponibles). La usa
+/// el visor de eventos de la consola API; se cierra al soltar el `close`/`rx`.
+pub async fn open_event_subscription(
+    pipe: String,
+    types: Vec<String>,
+) -> Result<PaneSubscription, HerdrError> {
+    let subs: Vec<Value> = types.iter().map(|t| json!({"type": t})).collect();
+    open_subscription(pipe, subs).await
+}
+
+async fn open_subscription(
+    pipe: String,
+    subs: Vec<Value>,
+) -> Result<PaneSubscription, HerdrError> {
+    let stream = crate::transport::open(&pipe).await?;
+    let mut writer = stream;
+
     let request = json!({"id": "hd-pane-events", "method": "events.subscribe", "params": {"subscriptions": subs}});
     let mut line = serde_json::to_string(&request).map_err(|e| HerdrError::Parse(e.to_string()))?;
     line.push('\n');

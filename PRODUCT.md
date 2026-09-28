@@ -56,6 +56,11 @@ Confirmado:
   (cerrar) son caminos distintos; close emite `user_close` y mata el proceso del pane. Ocultar un
   panel nunca debe matarlo.
 - Protocolo: `schema/herdr-api.schema.json` es la autoridad de métodos y parámetros.
+- Sin métodos muertos: los **90 métodos del protocolo** están clasificados (`curated:<feature>` si
+  tienen superficie propia, `console` si se cubren desde la consola) y un test falla si el schema
+  añade uno sin clasificar. La consola API es, por diseño, la red de seguridad del API.
+- La GUI solo ejecuta procesos por argv exacto de una lista blanca; `run_shell_command` y
+  `herdr update` / `herdr channel set` son las dos rutas mutantes asumidas a propósito.
 - Superficies de terminal: casi opacas, **sin** `backdrop-filter`. Es una decisión deliberada
   (§3 capa 3 del plan): el cristal no se aplica sobre el texto de la terminal.
 - Accesibilidad ya respetada y a preservar: `prefers-reduced-transparency` desactiva el cristal,
@@ -93,8 +98,8 @@ Decisiones de producto sin cerrar:
 
 - `schema/herdr-api.schema.json` y `schema/fixtures/` (eventos y respuestas reales grabadas del
   servidor).
-- Suite de pruebas viva: 388 tests de frontend (45 archivos) y 21 specs e2e, más las suites de
-  Rust (unit y sandbox contra sesiones `hd-test-*` reales).
+- Suite de pruebas viva: 392 tests de frontend (46 archivos) y 22 specs e2e (126 pruebas), más
+  las suites de Rust (unit y sandbox contra sesiones `hd-test-*` reales).
 - Assets de marca: `assets/icons/` (SVG blanco y `currentColor`, PNG y WebP negros).
 - Documentación pública: `docs/03-arquitectura.md`, `docs/04-ui-arquitectura.md`.
 - **Ausencias que no se deben inventar:** no hay testimonios, clientes, métricas de adopción,

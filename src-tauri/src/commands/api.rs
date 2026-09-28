@@ -73,6 +73,40 @@ pub async fn events_forward(
     Ok(())
 }
 
+/// T4.5 — Visor de eventos de la consola: suscripción temporal a los tipos
+/// globales elegidos, reenviada por el canal mientras el frontend la mantenga.
+#[tauri::command]
+pub async fn events_watch(
+    state: State<'_, std::sync::Arc<AppState>>,
+    types: Vec<String>,
+    on_evt: Channel<InvokeResponseBody>,
+) -> Result<(), ApiError> {
+    if types.is_empty() {
+        return Err(ApiError {
+            code: "invalid_params".to_string(),
+            message: "sin tipos de evento que escuchar".to_string(),
+        });
+    }
+    let pipe = state.current().client.pipe().to_string();
+    let herdr_core::events::PaneSubscription { rx, close } =
+        herdr_core::events::open_event_subscription(pipe, types)
+            .await
+            .map_err(|e| e.api())?;
+    tauri::async_runtime::spawn(async move {
+        // `close` vive con la tarea: al caer el canal del frontend se suelta y la
+        // conexión de eventos se cierra sola.
+        let _close = close;
+        let mut rx = rx;
+        while let Some(event) = rx.recv().await {
+            let line = serde_json::to_string(&event).unwrap_or_default();
+            if on_evt.send(InvokeResponseBody::Json(line)).is_err() {
+                break;
+            }
+        }
+    });
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn ui_ready(
     app: AppHandle,

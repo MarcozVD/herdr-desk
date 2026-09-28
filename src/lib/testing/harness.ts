@@ -472,6 +472,311 @@ export function installHarness(): void {
       }
       case 'ui_ready':
         return null;
+      // F4/T4.1 — plugins.
+      case 'plugin_list':
+        return [
+          {
+            plugin_id: 'p1',
+            name: 'demo',
+            version: '1.0.0',
+            manifest_path: 'C:/plugins/demo/plugin.toml',
+            plugin_root: 'C:/plugins/demo',
+            enabled: true,
+            description: 'un plugin de prueba',
+            warnings: [],
+            min_herdr_version: '0.8.0',
+            source: {
+              kind: 'github',
+              owner: 'acme',
+              repo: 'demo',
+              subdir: null,
+              requested_ref: 'v1',
+              resolved_commit: 'abc123',
+              managed_path: null,
+              installed_unix_ms: 1,
+            },
+            actions: [],
+            panes: [
+              {
+                id: 'main',
+                title: 'Panel demo',
+                command: ['demo'],
+                description: null,
+                placement: 'split',
+                width: null,
+                height: null,
+                platforms: null,
+              },
+            ],
+            events: [],
+            build: [],
+            startup: [],
+            link_handlers: [],
+            platforms: null,
+          },
+          {
+            plugin_id: 'p2',
+            name: 'apagado',
+            version: '0.2.0',
+            manifest_path: 'C:/plugins/apagado/plugin.toml',
+            plugin_root: 'C:/plugins/apagado',
+            enabled: false,
+            description: null,
+            warnings: ['aviso de prueba'],
+            min_herdr_version: '0.8.0',
+            source: {
+              kind: 'local',
+              owner: null,
+              repo: null,
+              subdir: null,
+              requested_ref: null,
+              resolved_commit: null,
+              managed_path: 'C:/plugins/apagado',
+              installed_unix_ms: null,
+            },
+            actions: [],
+            panes: [],
+            events: [],
+            build: [],
+            startup: [],
+            link_handlers: [],
+            platforms: null,
+          },
+        ];
+      case 'plugin_enable':
+      case 'plugin_disable':
+        return {
+          plugin_id: String(payload.pluginId),
+          name: String(payload.pluginId),
+          version: '1.0.0',
+          manifest_path: '',
+          plugin_root: '',
+          enabled: cmd === 'plugin_enable',
+          description: null,
+          warnings: [],
+          min_herdr_version: '',
+          source: null,
+          actions: [],
+          panes: [],
+          events: [],
+          build: [],
+          startup: [],
+          link_handlers: [],
+          platforms: null,
+        };
+      case 'plugin_unlink':
+        return { plugin_id: 'p2', removed: true };
+      case 'plugin_link':
+        return {
+          plugin_id: 'p3',
+          name: 'local',
+          version: '0.1.0',
+          manifest_path: '',
+          plugin_root: 'C:/plugins/local',
+          enabled: true,
+          description: null,
+          warnings: [],
+          min_herdr_version: '',
+          source: null,
+          actions: [],
+          panes: [],
+          events: [],
+          build: [],
+          startup: [],
+          link_handlers: [],
+          platforms: null,
+        };
+      case 'plugin_action_list':
+        return [
+          {
+            plugin_id: 'p1',
+            action_id: 'a1',
+            title: 'Hacer algo',
+            command: ['demo', 'go'],
+            contexts: ['workspace'],
+            description: null,
+            platforms: null,
+          },
+        ];
+      case 'plugin_action_invoke':
+        return {
+          action: {
+            plugin_id: 'p1',
+            action_id: 'a1',
+            title: 'Hacer algo',
+            command: [],
+            contexts: [],
+            description: null,
+            platforms: null,
+          },
+          context: null,
+          log: {
+            log_id: 'l1',
+            plugin_id: 'p1',
+            status: 'succeeded',
+            started_unix_ms: 1,
+            finished_unix_ms: 2,
+            exit_code: 0,
+            error: null,
+            event: null,
+            action_id: 'a1',
+            stdout: 'ok',
+            stderr: null,
+          },
+        };
+      case 'plugin_logs':
+        return [
+          {
+            log_id: 'l1',
+            plugin_id: 'p1',
+            status: 'succeeded',
+            started_unix_ms: 1,
+            finished_unix_ms: 2,
+            exit_code: 0,
+            error: null,
+            event: null,
+            action_id: 'a1',
+            stdout: 'salida',
+            stderr: null,
+          },
+        ];
+      case 'plugin_pane_open':
+        return { pane_id: 'w9:p1' };
+      case 'plugin_pane_focus':
+      case 'plugin_pane_close':
+        return { pane_id: String(payload.paneId) };
+      case 'plugin_install_preview':
+        return {
+          spec: String(payload.spec),
+          owner: 'acme',
+          repo: 'demo',
+          subdir: null,
+          requested_ref: payload.gitRef ?? null,
+          resolved_commit: 'abc123',
+          manifest: {
+            id: 'demo',
+            name: 'demo',
+            version: '1.0.0',
+            min_herdr_version: '0.8.0',
+            description: null,
+          },
+          manifest_raw: '[plugin]\nid = "demo"\n',
+          preview_token: 'tok',
+        };
+      case 'plugin_install':
+        return {
+          spec: String(payload.spec),
+          requested_ref: null,
+          exit_code: 0,
+          output: 'instalado',
+        };
+      // F4/T4.2 — integraciones.
+      case 'integration_status':
+        return [
+          {
+            name: 'claude',
+            state: 'current',
+            version: 'v7',
+            path: 'C:/home/.claude',
+            raw: 'claude: current (v7) (C:/home/.claude)',
+          },
+          {
+            name: 'codex',
+            state: 'not_installed',
+            version: null,
+            path: 'C:/home/.codex',
+            raw: 'codex: not installed (C:/home/.codex)',
+          },
+        ];
+      case 'integration_install':
+      case 'integration_uninstall':
+        return { target: String(payload.target), messages: ['ok'] };
+      // F4/T4.3-T4.4 — servidor.
+      case 'server_status':
+        return {
+          cli: {
+            client: {
+              version: '0.8.0',
+              channel: 'preview',
+              protocol: 19,
+              binary: 'C:/herdr.exe',
+              session: 'herdr-desk-dev',
+            },
+            server: {
+              status: 'running',
+              running: true,
+              version: '0.8.0',
+              protocol: 19,
+              compatible: true,
+              socket: 'C:/sock',
+              session: 'herdr-desk-dev',
+              restart_needed: false,
+              capabilities: { live_handoff: false, detached_server_daemon: true },
+            },
+            update: null,
+          },
+          cli_error: null,
+          live: {
+            version: '0.8.0',
+            protocol: 19,
+            capabilities: { live_handoff: false, detached_server_daemon: true },
+          },
+          live_error: null,
+        };
+      case 'agent_manifests':
+      case 'agent_manifests_reload':
+        return {
+          manifests: [
+            {
+              agent: 'claude',
+              source: 'bundled',
+              source_kind: 'bundled',
+              local_override_shadowing_remote: false,
+              active_version: 'v1',
+              cached_remote_version: null,
+              remote_last_checked_unix: null,
+              remote_update_error: null,
+              remote_update_result: null,
+              warning: null,
+            },
+          ],
+          last_check_unix: null,
+          last_result: 'ok',
+        };
+      // F4/T4.5 — catálogo de la consola.
+      case 'api_catalog':
+        return {
+          protocol: 19,
+          schema_version: 1,
+          total: 2,
+          methods: [
+            { method: 'ping', group: 'server', description: 'ping', params: [] },
+            {
+              method: 'workspace.list',
+              group: 'workspace',
+              description: 'lista espacios',
+              params: [
+                {
+                  name: 'include_archived',
+                  kind: 'bool',
+                  required: false,
+                  nullable: false,
+                  default: null,
+                  enum_values: null,
+                  item: null,
+                  properties: null,
+                  ref_name: null,
+                },
+              ],
+            },
+          ],
+        };
+      case 'events_watch':
+        return null;
+      case 'notification_show':
+        return { delivered: true, reason: null };
+      case 'cli_run':
+        return { exit_code: 0, stdout: 'C:/fake/plugin-config-dir\n', stderr: '' };
       // F3/T3.5 — configuración: defaults, lectura, escritura y ajustes GUI.
       case 'config_default':
         return {
