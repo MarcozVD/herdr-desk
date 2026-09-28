@@ -2,6 +2,8 @@
      recarga, recargar config, detener con doble confirmación, y update/canal por
      la lista blanca del CLI con la salida visible. -->
 <script lang="ts">
+  import { TriangleAlert } from '@lucide/svelte';
+
   import { call } from '../../lib/herdr/client';
   import { describeApiError, errorText, parseApiError } from '../../lib/herdr/errors';
   import {
@@ -199,7 +201,9 @@
               <span class="server__source">{manifest.source_kind}</span>
               <span class="server__version">{manifest.active_version ?? '—'}</span>
               {#if manifest.warning}
-                <span class="server__warn" title={manifest.warning}>⚠</span>
+                <span class="server__warn" title={manifest.warning}
+                  ><TriangleAlert size={13} aria-label={manifest.warning} /></span
+                >
               {/if}
             </li>
           {/each}
@@ -356,6 +360,8 @@
   }
 
   .server__warn {
+    display: inline-flex;
+    vertical-align: -2px;
     color: var(--yellow);
   }
 
