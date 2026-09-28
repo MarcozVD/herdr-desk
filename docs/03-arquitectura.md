@@ -483,6 +483,17 @@ cargo test -p herdr-core --features sandbox -- --test-threads=1
 automática (`pnpm verify` solo hace `cargo test --workspace`); quien la quiera tiene que acordarse
 del comando anterior.
 
+### Guard de deriva del schema
+
+`pnpm schema:check` (`scripts/schema-check.mjs`) es el guard de R6: compara
+`herdr api schema --json` con `schema/herdr-api.schema.json` sobre **JSON estable** (claves
+ordenadas, para que el resultado no dependa del formato) y exige además que `schema/VERSION` sea
+exactamente `<version de la CLI> protocol=<protocol>`. Si algo difiere sale con código 1 diciendo
+qué campo falla, cuántos métodos tiene cada lado y cómo regenerar
+(`herdr api schema --json --output schema/herdr-api.schema.json`). No arranca ningún server:
+`api schema` solo imprime el schema empaquetado. Estado verificado: protocolo 19,
+`schema_version` 1, 90 métodos, `herdr 0.8.0-preview.2026-08-04-d78e3d3b5126`.
+
 ## Protocolo (hallazgos vigentes)
 
 1. 1 request por conexión; respuesta `{"id","result"}` o `{"id","error":{code,message}}`.

@@ -87,7 +87,7 @@ Decisiones de producto sin cerrar:
 
 - `schema/herdr-api.schema.json` y `schema/fixtures/` (eventos y respuestas reales grabadas del
   servidor).
-- Suite de pruebas viva: 344 tests de frontend y las suites de Rust (unit y sandbox contra
+- Suite de pruebas viva: 349 tests de frontend y las suites de Rust (unit y sandbox contra
   sesiones `hd-test-*` reales).
 - Assets de marca: `assets/icons/` (SVG blanco y `currentColor`, PNG y WebP negros).
 - Documentación pública: `docs/03-arquitectura.md`, `docs/04-ui-arquitectura.md`.

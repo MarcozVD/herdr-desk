@@ -35,6 +35,7 @@ src/
     actions/flows.ts    flujos de UI (diálogos + comandos) usados por menús y atajos
     ui/                 primitivas glass: Dialog, Confirm, Prompt, Field, IconButton, Kbd, Toast, ContextMenu
     i18n/es.ts          todos los strings (decisión D3)
+    settings/           settings.gen.ts (config por defecto, GENERADO por scripts/gen-settings.mjs)
     theme/tokens.css    tokens del §3 (glass, radios, tipografías, acentos)
   features/             titlebar, sidebar, tabs, panes, statusbar, sessions
 tests/e2e/              Playwright + mockIPC (arnés en src/lib/testing/harness.ts)
@@ -52,7 +53,7 @@ con `full`, los frames anteriores en cola se descartan.
 | `session.svelte.ts` | snapshot crudo (`$state.raw`), colecciones reconciliadas, foco, conexión, versión/protocolo, latencia p50, `revision`, `connectionEpoch` | el snapshot se reemplaza entero en cada evento; las colecciones se reconcilian **en sitio** (`reconcileById`) para que nada se remonte |
 | `layout.svelte.ts` | árbol del tab visible (`layout.export`), `zoomed`, `revision` | `schedule()` no lee runas: se llama desde un `$effect` y Svelte corta con `effect_update_depth_exceeded` si un efecto lee y escribe el mismo estado |
 | `ui.svelte.ts` | qué está abierto (paleta, cheatsheet, contexto, sesiones), foco local, toasts y promesas de confirmación/prompt | un solo `ConfirmDialog`/`PromptDialog` montado; `{#key}` lo recrea con cada petición |
-| `settings.svelte.ts` | preferencias (ancho de sidebar, `collapsed_mode`, posición de la tab bar, `pane_borders/gaps`, `mouse_scroll_lines`, `webgl_max_panes`, LRU, `copy_on_select`, sincronizar foco…) | por defecto salen de `herdr --default-config`; se persisten en `localStorage` (`STORAGE_KEY = 'herdr-desk.settings'`) y **siguen en `localStorage`**: el backend de configuración ya expone `config_default`/`config_read`/`config_write`/`config_reset_keys` (ver `docs/03`), pero no hay formulario que lo cablee (T3.5) |
+| `settings.svelte.ts` | preferencias (ancho de sidebar, `collapsed_mode`, posición de la tab bar, `pane_borders/gaps`, `mouse_scroll_lines`, `webgl_max_panes`, LRU, `copy_on_select`, sincronizar foco…) | por defecto salen de `herdr --default-config`; se persisten en `localStorage` (`STORAGE_KEY = 'herdr-desk.settings'`) y **siguen en `localStorage`**: el backend ya expone `config_default`/`config_read`/`config_write`/`config_reset_keys` (ver `docs/03`) y `scripts/gen-settings.mjs` deja la copia estática tipada de la config por defecto en `lib/settings/settings.gen.ts` (22 secciones, 127 claves), pero el formulario que la consume en runtime (T3.5) todavía no existe |
 
 `reconcileById(current, next, key, assign)` conserva la identidad de los objetos que siguen
 existiendo (mutando sus campos), añade los nuevos y descarta los que ya no están; devuelve
@@ -571,10 +572,11 @@ pnpm build              dist/assets/index-*.js 498,32 kB min (136,76 kB gzip) + 
 ```
 
 Ese bloque es la foto del cierre de F1 y así se queda. Los números **de hoy**, medidos en esta
-máquina con `pnpm test` y contando `tests/e2e/`: **344 tests unit en 38 archivos** y **19 specs
-e2e** (`shell`, `shell-f1`, `terminal`, `terminal-stale`, `focus`, `layout`, `split-drag`,
-`actions`, `keys`, `palette`, `sessions`, `session-switch`, `reconnect`, `font-menu`,
-`navigation`, `agents`, `agent-state`, `agent-actions`, `agent-notices`).
+máquina con `pnpm test` y contando `tests/e2e/`: **349 tests unit en 39 archivos** (los 5 de
+`lib/settings/settings.test.ts` son del codegen de T3.5) y **19 specs e2e** (`shell`,
+`shell-f1`, `terminal`, `terminal-stale`, `focus`, `layout`, `split-drag`, `actions`, `keys`,
+`palette`, `sessions`, `session-switch`, `reconnect`, `font-menu`, `navigation`, `agents`,
+`agent-state`, `agent-actions`, `agent-notices`).
 
 Bundle tras añadir el acordeón y los presets (no cableados al shell, así que no entran en el
 grafo inicial): `pnpm build` sigue en 493 kB min. `pnpm-lock.yaml` sin cambios: **cero
@@ -601,8 +603,10 @@ Mediciones de la corrida de F1:
 - **Arrastrar divisores** (T3.1): cerrado (`48eab4d`, e2e `split-drag.spec.ts`). Sigue pendiente
   el **drag & drop de pestañas/paneles** (T3.2).
 - **Config real** (F3): el backend ya está (`config_default`/`config_read`/`config_write`/
-  `config_reset_keys`, documentados en `docs/03`); en la UI `settings.svelte.ts` sigue en
-  `localStorage` porque el formulario y el codegen de settings (T3.5) todavía no lo cablean.
+  `config_reset_keys`, documentados en `docs/03`) y el codegen de settings también
+  (`pnpm gen` → `src/lib/settings/settings.gen.ts`, 22 secciones / 127 claves, con el parser
+  `parseDefaultConfig` verificado en `settings.test.ts` contra `tests/fixtures/default-config.toml`).
+  Falta el formulario (T3.5): `settings.svelte.ts` sigue en `localStorage`.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
 - **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del

@@ -22,7 +22,8 @@ de terminales para agentes de código, con estética glassmorphism sobre Mica.
 - **Bandeja y overlay** de la barra de tareas, con iconos propios: blanco en la barra de tareas
   y negro en la bandeja.
 - **Backend** de configuración, worktrees, plugins, integraciones, estado del servidor y
-  catálogo de métodos para la consola API.
+  catálogo de métodos para la consola API, con `pnpm schema:check` vigilando que el schema
+  commiteado no derive del que trae el herdr instalado.
 
 Lo que todavía no está: la UI de configuración y atajos, la consola API, el gestor de plugins y
 el resto de superficies de F4, y el pulido de F5.
@@ -73,6 +74,8 @@ powershell -File scripts\sandbox.ps1 stop         # al terminar
 ```powershell
 pnpm test                                                  # unit del frontend
 pnpm e2e                                                   # e2e (Playwright)
+pnpm gen                                                   # codegen de types y settings desde herdr
+pnpm schema:check                                          # deriva del schema (sale != 0 si difiere)
 cargo test --workspace                                     # unit de Rust
 cargo test -p herdr-core --features sandbox -- --test-threads=1   # contra sesiones hd-test-*
 ```
