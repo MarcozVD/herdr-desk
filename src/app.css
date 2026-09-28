@@ -71,6 +71,13 @@ body {
   display: none;
 }
 
+/* Acrílico: Windows ya desenfoca en vivo lo que hay detrás de la ventana. El
+   mesh propio y el fallback lo taparían. La opacidad del chrome la fija el
+   nivel de cristal (lib/theme/glass.ts). La terminal NO cambia: sigue casi opaca por legibilidad. */
+:root[data-backdrop='acrylic'] :is(.bg-mesh, .bg-noise, .shell-fallback) {
+  display: none;
+}
+
 .shell {
   position: relative;
   z-index: 1;

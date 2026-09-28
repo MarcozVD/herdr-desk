@@ -36,6 +36,7 @@ export const es = {
     reloadConfig: 'Recargar configuración',
     reloaded: 'Configuración recargada.',
     toggleSidebar: 'Mostrar u ocultar la barra lateral',
+    settings: 'Ajustes (prefix+s)',
   },
   palette: {
     title: 'Paleta de acciones',
@@ -407,6 +408,14 @@ export const es = {
     glassAuto: 'Automático',
     glassFull: 'Forzado',
     glassOff: 'Apagado',
+    backdrop: 'Fondo de ventana',
+    backdropHint:
+      'Acrílico desenfoca en vivo lo que hay detrás de la ventana (otras ventanas incluidas); Mica solo tiñe con el fondo de escritorio. Windows quita el acrílico en ahorro de batería.',
+    glassLevel: 'Nivel de cristal',
+    glassLevelHint:
+      '1 = casi sólido, 100 = lo más transparente. En tema claro hay un mínimo para que textos y botones se lean.',
+    backdropMica: 'Mica',
+    backdropAcrylic: 'Acrílico (ver lo de detrás)',
     syncFocus: 'Sincronizar el foco con la TUI',
     syncFocusHint: 'Si se activa, los cambios de foco de la GUI también mueven la vista de herdr.',
     webgl: 'WebGL en la terminal',

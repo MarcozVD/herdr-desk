@@ -9,6 +9,7 @@
 import type { AgentRows } from '../agents/agentPanel';
 import type { GuiSettingsValues, ConfigChange, ConfigEntry } from './spec';
 import { entriesByPath, parseTomlValue, toTomlScalar } from './spec';
+import { clampGlassLevel } from '../theme/glass';
 import type { UiSettings } from '../stores/settings.svelte';
 
 /** Ruta en config.toml de cada ajuste que herdr sí conoce. */
@@ -45,6 +46,8 @@ export const HERDR_PATHS: Partial<Record<keyof UiSettings, string>> = {
 /** Claves exclusivas de la GUI (settings.json). */
 export const GUI_KEYS = [
   'glass',
+  'backdrop',
+  'glass_level',
   'sync_focus_with_tui',
   'webgl',
   'webgl_max_panes',
@@ -58,6 +61,7 @@ export const GUI_KEYS = [
 ] as const satisfies readonly (keyof UiSettings)[];
 
 const GLASS_MODES = ['auto', 'full', 'off'] as const;
+const BACKDROP_MODES = ['mica', 'acrylic'] as const;
 const COLLAPSED_MODES = ['compact', 'hidden'] as const;
 const TAB_POSITIONS = ['top', 'bottom'] as const;
 const AGENT_SORTS = ['spaces', 'priority'] as const;
@@ -200,6 +204,12 @@ export function applyGuiValues(values: UiSettings, raw: GuiSettingsValues): UiSe
     switch (key) {
       case 'glass':
         if (oneOf(GLASS_MODES, incoming)) next.glass = incoming;
+        break;
+      case 'backdrop':
+        if (oneOf(BACKDROP_MODES, incoming)) next.backdrop = incoming;
+        break;
+      case 'glass_level':
+        if (typeof incoming === 'number') next.glass_level = clampGlassLevel(incoming);
         break;
       case 'sync_focus_with_tui':
         if (typeof incoming === 'boolean') next.sync_focus_with_tui = incoming;

@@ -359,9 +359,9 @@ export async function guiDefaults(): Promise<CommandOutcome<unknown>> {
   return optionalCommand<unknown>('gui_defaults');
 }
 
-/** T3.7 — Cambia el efecto Mica de la ventana (oscuro/claro). Best-effort. */
-export async function setMica(dark: boolean): Promise<void> {
-  await invoke('set_mica', { dark });
+/** T3.7 — Cambia el material de la ventana: Mica oscuro/claro o Acrílico. Best-effort. */
+export async function setMica(dark: boolean, acrylic = false, tint?: number): Promise<void> {
+  await invoke('set_mica', { dark, acrylic, tint: tint ?? null });
 }
 
 /**

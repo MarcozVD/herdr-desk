@@ -64,18 +64,37 @@ pub async fn gui_defaults() -> Result<GuiDefaults, ApiError> {
 /// activo. El frontend llama a este command en vez de la API JS de ventana
 /// (cuyo enum `Effect` no expone `micaDark`/`micaLight`).
 #[tauri::command]
-pub async fn set_mica(app: tauri::AppHandle, dark: bool) -> Result<(), ApiError> {
+pub async fn set_mica(
+    app: tauri::AppHandle,
+    dark: bool,
+    acrylic: Option<bool>,
+    tint: Option<u8>,
+) -> Result<(), ApiError> {
     use tauri::Manager;
     use tauri::utils::config::WindowEffectsConfig;
     use tauri::window::Effect;
 
-    let effects = WindowEffectsConfig {
-        effects: vec![if dark {
-            Effect::MicaDark
-        } else {
-            Effect::MicaLight
-        }],
-        ..Default::default()
+    // Acrílico desenfoca en vivo lo que hay detrás de la ventana; el color es
+    // el tinte (RGBA) que Windows pone encima del desenfoque.
+    let effects = if acrylic.unwrap_or(false) {
+        WindowEffectsConfig {
+            effects: vec![Effect::Acrylic],
+            color: Some(if dark {
+                tauri::window::Color(16, 18, 28, tint.unwrap_or(90))
+            } else {
+                tauri::window::Color(245, 245, 250, tint.unwrap_or(170))
+            }),
+            ..Default::default()
+        }
+    } else {
+        WindowEffectsConfig {
+            effects: vec![if dark {
+                Effect::MicaDark
+            } else {
+                Effect::MicaLight
+            }],
+            ..Default::default()
+        }
     };
     if let Some(window) = app.get_webview_window("main") {
         window.set_effects(effects).map_err(|e| ApiError {
@@ -190,7 +209,11 @@ pub async fn git_status(cwd: String) -> Result<GitStatusInfo, ApiError> {
     if out.exit_code != 0 {
         return Err(ApiError {
             code: "cli_failed".to_string(),
-            message: format!("git status salió con {}: {}", out.exit_code, out.stderr.trim()),
+            message: format!(
+                "git status salió con {}: {}",
+                out.exit_code,
+                out.stderr.trim()
+            ),
         });
     }
     Ok(parse_git_status(&out.stdout))
