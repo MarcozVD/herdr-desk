@@ -106,8 +106,14 @@ test('los recientes salen arriba y se recuerdan al reabrir', async ({ page }) =>
   await expect(page.getByTestId('palette-group-recent')).toBeAttached();
   expect((await itemIds(page))[0]).toBe('settings.sound');
 
-  const stored = await page.evaluate(() => localStorage.getItem('herdr-desk.settings'));
-  expect(stored).toContain('"palette_recent":["settings.sound"]');
+  // T3.5: los recientes viven en los ajustes de la GUI (settings.json).
+  await expect
+    .poll(async () =>
+      (await recordedCalls(page, 'gui_settings_write')).some((call) =>
+        JSON.stringify(call).includes('"palette_recent":["settings.sound"]'),
+      ),
+    )
+    .toBe(true);
 });
 
 test('los comandos de agente reutilizan los flujos del panel', async ({ page }) => {

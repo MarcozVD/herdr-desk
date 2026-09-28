@@ -19,14 +19,35 @@ de terminales para agentes de código, con estética glassmorphism sobre Mica.
 - **Acciones de agente**: arrancar un agente en un workspace, prompt, foco, lectura y espera de
   salida, todo vía RPC contra el CLI.
 - **Paleta de acciones** con navegación de agentes y sonidos.
+- **Ajustes** (`prefix+s`): formulario de la configuración real de herdr —secciones y claves
+  generadas desde `herdr --default-config`, valores efectivos de `config.toml` y guardado con
+  backup, check y recarga— más las preferencias que la GUI no puede meter en `config.toml`
+  (cristal, WebGL, LRU), que van a `%APPDATA%\herdr-desk\settings.json`.
+- **Editor de atajos**: captura de combinaciones, ámbitos y conflictos en vivo, y escritura
+  sobre `[keys]` de `config.toml` (reinicio con `herdr config reset-keys`).
+- **Temas en vivo**: las 18 paletas de herdr aplicadas a la interfaz y a la paleta ANSI del
+  terminal, con `auto_switch` según la apariencia de Windows y el cristal Mica cambiando a
+  claro/oscuro con el tema.
+- **Paneles y pestañas**: modo redimensionar con las flechas (chip en la barra de título),
+  intercambio de paneles arrastrando uno sobre otro, mover un panel a otra pestaña, a una
+  pestaña nueva o a un espacio nuevo, y reordenar pestañas y espacios arrastrando.
+- **Presets de layout** guardados con nombre y aplicables desde la paleta, validados contra el
+  contrato antes de mandarlos al servidor.
+- **Worktrees**: diálogo con los checkouts del repo, creación desde la ruta elegida, apertura y
+  borrado con doble confirmación.
+- **Comandos personalizados** de `[[keys.command]]`: cada uno atado a una tecla desde la
+  configuración, con tipo `shell` (detached, sin consola), `pane` o `popup`.
+- **Salida de los paneles**: buscar en el scrollback, abrirlo en el editor externo y esperar a
+  que aparezca un texto o un `re:`.
+- **Estado git** por espacio: rama y número de cambios sin limpiar en la barra lateral.
 - **Bandeja y overlay** de la barra de tareas, con iconos propios: blanco en la barra de tareas
   y negro en la bandeja.
 - **Backend** de configuración, worktrees, plugins, integraciones, estado del servidor y
   catálogo de métodos para la consola API, con `pnpm schema:check` vigilando que el schema
   commiteado no derive del que trae el herdr instalado.
 
-Lo que todavía no está: la UI de configuración y atajos, la consola API, el gestor de plugins y
-el resto de superficies de F4, y el pulido de F5.
+Lo que todavía no está: el modo navegar de atajos, la consola API, el gestor de plugins y el
+resto de superficies de F4, y el pulido de F5.
 
 ## Arquitectura
 
@@ -93,8 +114,10 @@ Remove-Item Env:\RECORD_FIXTURES                           # re-graba schema/fix
 - [x] F0 — spike y medición
 - [x] F1 — núcleo: modelo, sesiones, reconexión, conexión S, pool de terminales, workspaces
 - [x] F2 — panel de agentes, acciones, notificaciones nativas, paleta
-- [~] F3 — worktrees y configuración por RPC, redimensionado por arrastre; falta la UI de
-  configuración y atajos
+- [~] F3 — worktrees, configuración por RPC, redimensionado e intercambio de paneles, reordenar
+  pestañas y espacios, formulario de configuración, editor de atajos, temas en vivo, presets de
+  layout, worktrees, comandos personalizados, scrollback y estado git; falta el modo navegar de
+  atajos
 - [~] F4 — plugins, integraciones, estado del servidor y catálogo de la consola API por RPC;
   faltan sus superficies de UI
 - [ ] F5 — pulido, rendimiento y distribución

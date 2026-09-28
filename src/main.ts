@@ -6,6 +6,7 @@ import { mount } from 'svelte';
 
 import App from './App.svelte';
 import { uiReady } from './lib/herdr/client';
+import { keymapOverridesFromEntries } from './lib/keys/config';
 import { keymap } from './lib/keys/keymap';
 import { session } from './lib/stores/session.svelte';
 import { settings } from './lib/stores/settings.svelte';
@@ -29,11 +30,20 @@ async function boot(): Promise<void> {
     installHarness();
   }
 
-  settings.load();
+  settings.onPersistError = (message) => ui.notify(message, 'error');
   settings.applyTheme();
   keymap.load();
   // La sidebar arranca colapsada si así lo pide la configuración.
   ui.setSidebarCollapsed(settings.values.sidebar_start_collapsed);
+
+  // F3/T3.5: la config real (config.toml + settings.json) llega del backend. Los
+  // defaults cubren el primer render; cuando responde se reaplica sin bloquear.
+  void settings.init().then(() => {
+    ui.setSidebarCollapsed(settings.values.sidebar_start_collapsed);
+    settings.applyTheme();
+    // [keys] de config.toml manda sobre los defaults del motor (T3.6).
+    keymap.load(keymapOverridesFromEntries(settings.configEntries));
+  });
 
   mount(App, { target: document.getElementById('app') as HTMLElement });
 

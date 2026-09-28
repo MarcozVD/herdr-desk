@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  bindingFromEvent,
   bindingLabel,
   chordFromEvent,
   chordId,
@@ -11,6 +12,7 @@ import {
   parseBinding,
   parseChord,
   parseIndexedRange,
+  serializeChord,
 } from './parse';
 
 function fakeEvent(init: {
@@ -192,5 +194,41 @@ describe('fixture de --default-config', () => {
     const keys = defaultKeys();
     const extra = Object.keys(DEFAULT_KEYBINDINGS).filter((action) => !(action in keys));
     expect(extra).toEqual([]);
+  });
+});
+
+describe('captura de atajos (T3.6)', () => {
+  it('serializa chords a la sintaxis de herdr', () => {
+    expect(serializeChord({ key: 'b', ctrl: true, shift: false, alt: false, meta: false })).toBe(
+      'ctrl+b',
+    );
+    expect(
+      serializeChord({ key: 'N', ctrl: true, shift: true, alt: false, meta: false }).toLowerCase(),
+    ).toBe('ctrl+shift+n');
+    expect(serializeChord({ key: '-', ctrl: false, shift: false, alt: false, meta: false })).toBe(
+      'minus',
+    );
+    expect(
+      serializeChord({ key: 'ArrowUp', ctrl: false, shift: false, alt: false, meta: false }),
+    ).toBe('up');
+    expect(serializeChord({ key: '?', ctrl: false, shift: false, alt: false, meta: false })).toBe(
+      'question',
+    );
+  });
+
+  it('bindingFromEvent respeta el prefix consumido', () => {
+    expect(bindingFromEvent(fakeEvent({ key: 'n', shiftKey: true }), true)).toBe('prefix+shift+n');
+    expect(bindingFromEvent(fakeEvent({ key: 'v', ctrlKey: true }), false)).toBe('ctrl+v');
+    expect(bindingFromEvent(fakeEvent({ key: 'Control', ctrlKey: true }), false)).toBeNull();
+  });
+
+  it('ida y vuelta: lo capturado se vuelve a parsear', () => {
+    const binding = bindingFromEvent(fakeEvent({ key: 'j', ctrlKey: true, altKey: true }), true);
+    expect(binding).toBe('prefix+ctrl+alt+j');
+    const parsed = parseBinding(binding as string);
+    expect(parsed?.prefix).toBe(true);
+    expect(parsed?.chord.key).toBe('j');
+    expect(parsed?.chord.ctrl).toBe(true);
+    expect(parsed?.chord.alt).toBe(true);
   });
 });

@@ -6,13 +6,9 @@ import { expect, test } from '@playwright/test';
 import { bootApp, readSnapshotFixture } from './harness';
 
 test('la sidebar respeta sidebar_width y los modos de colapsada', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'herdr-desk.settings',
-      JSON.stringify({ sidebar_width: 30, sidebar_collapsed_mode: 'compact' }),
-    );
+  await bootApp(page, {
+    configEntries: { 'ui.sidebar_width': '30', 'ui.sidebar_collapsed_mode': '"compact"' },
   });
-  await bootApp(page);
 
   const width = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width').trim(),
@@ -28,13 +24,12 @@ test('la sidebar respeta sidebar_width y los modos de colapsada', async ({ page 
 });
 
 test('el modo hidden esconde la sidebar del todo', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'herdr-desk.settings',
-      JSON.stringify({ sidebar_start_collapsed: true, sidebar_collapsed_mode: 'hidden' }),
-    );
+  await bootApp(page, {
+    configEntries: {
+      'ui.sidebar_start_collapsed': 'true',
+      'ui.sidebar_collapsed_mode': '"hidden"',
+    },
   });
-  await bootApp(page);
   await expect(page.locator('.body')).toHaveAttribute('data-sidebar', 'hidden');
   await expect(page.getByTestId('sidebar')).toBeHidden();
 });
@@ -49,21 +44,14 @@ test('la tab bar muestra las pestañas del espacio activo', async ({ page }) => 
 });
 
 test('hide_tab_bar_when_single_tab oculta la barra con una sola pestaña', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'herdr-desk.settings',
-      JSON.stringify({ hide_tab_bar_when_single_tab: true }),
-    );
+  await bootApp(page, {
+    configEntries: { 'ui.hide_tab_bar_when_single_tab': 'true' },
   });
-  await bootApp(page);
   await expect(page.getByTestId('tabbar')).toHaveCount(0);
 });
 
 test('tab_bar_position=bottom coloca la barra abajo', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('herdr-desk.settings', JSON.stringify({ tab_bar_position: 'bottom' }));
-  });
-  await bootApp(page);
+  await bootApp(page, { configEntries: { 'ui.tab_bar_position': '"bottom"' } });
   await expect(page.getByTestId('tabbar')).toHaveAttribute('data-position', 'bottom');
 });
 

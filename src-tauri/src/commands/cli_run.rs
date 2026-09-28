@@ -88,6 +88,22 @@ pub async fn run_whitelisted_with_env(
     argv: &[String],
     extra_env: &[(String, String)],
 ) -> Result<CliRunOutput, ApiError> {
+    run_whitelisted_impl(argv, extra_env, None).await
+}
+
+/// Variante con directorio de trabajo (T3.10: `git status` por workspace).
+pub async fn run_whitelisted_in(
+    argv: &[String],
+    cwd: Option<&std::path::Path>,
+) -> Result<CliRunOutput, ApiError> {
+    run_whitelisted_impl(argv, &[], cwd).await
+}
+
+async fn run_whitelisted_impl(
+    argv: &[String],
+    extra_env: &[(String, String)],
+    cwd: Option<&std::path::Path>,
+) -> Result<CliRunOutput, ApiError> {
     if argv.is_empty() {
         return Err(ApiError {
             code: "invalid_params".to_string(),
@@ -126,6 +142,9 @@ pub async fn run_whitelisted_with_env(
     }
     for (key, value) in extra_env {
         cmd.env(key, value);
+    }
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
     }
 
     let mut child = cmd.spawn().map_err(|e| ApiError {

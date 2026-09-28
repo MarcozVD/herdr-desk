@@ -32,7 +32,32 @@ interface HarnessConfig {
   agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
   /** El PRIMER `terminal_open` de cada panel no manda frames (canal muerto). */
   staleBridgeFirstOpen?: boolean | null;
+  /** F3: ajustes iniciales de la GUI (settings.json simulado). */
+  guiSettings?: Record<string, unknown> | null;
+  /** F3: overrides iniciales de config.toml (ruta → valor TOML). */
+  configEntries?: Record<string, string> | null;
 }
+
+/** Claves de localStorage donde el arnés persiste config y ajustes GUI. */
+const HARNESS_GUI_KEY = '__HD_GUI__';
+const HARNESS_CONFIG_KEY = '__HD_CONFIG__';
+
+/** Defaults de config.toml que usan los e2e (mismo contrato que config_read). */
+const HARNESS_CONFIG_BASE: ReadonlyArray<[string, string]> = [
+  ['theme.name', '"catppuccin"'],
+  ['ui.sidebar_width', '26'],
+  ['ui.sidebar_collapsed_mode', '"compact"'],
+  ['ui.sidebar_start_collapsed', 'false'],
+  ['ui.hide_tab_bar_when_single_tab', 'false'],
+  ['ui.tab_bar_position', '"top"'],
+  ['ui.confirm_close', 'true'],
+  ['ui.copy_on_select', 'true'],
+  ['ui.toast.delivery', '"off"'],
+  ['ui.agent_panel_sort', '"spaces"'],
+  ['ui.sidebar.agents.rows', '[["state_icon", "workspace", "tab"], ["agent"]]'],
+  ['ui.sidebar.agents.rows_by_agent', '{}'],
+  ['ui.sidebar.agents.row_gap', '0'],
+];
 
 export interface RecordedCall {
   cmd: string;
@@ -308,6 +333,19 @@ export function installHarness(): void {
     return bridges.values().next().value?.channel;
   }
 
+  /** Estado persistido del arnés (sobrevive a page.reload). */
+  const readStored = (key: string): Record<string, unknown> => {
+    try {
+      return JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  };
+  const configStore: Record<string, string> = {
+    ...(config.configEntries ?? {}),
+    ...(readStored(HARNESS_CONFIG_KEY) as Record<string, string>),
+  };
+
   mockWindows('main');
   mockIPC((cmd, args) => {
     const payload = (args ?? {}) as Record<string, unknown>;
@@ -434,6 +472,164 @@ export function installHarness(): void {
       }
       case 'ui_ready':
         return null;
+      // F3/T3.5 — configuración: defaults, lectura, escritura y ajustes GUI.
+      case 'config_default':
+        return {
+          sections: [
+            {
+              path: '',
+              table_array: false,
+              description: '',
+              keys: [
+                {
+                  key: 'onboarding',
+                  value: 'true',
+                  active: false,
+                  description: 'primer arranque',
+                },
+              ],
+            },
+            {
+              path: 'theme',
+              table_array: false,
+              description: 'Tema',
+              keys: [
+                { key: 'name', value: '"catppuccin"', active: false, description: 'tema activo' },
+                { key: 'auto_switch', value: 'false', active: false, description: '' },
+                { key: 'dark_name', value: '"catppuccin"', active: false, description: '' },
+                { key: 'light_name', value: '"catppuccin-latte"', active: false, description: '' },
+              ],
+            },
+            {
+              path: 'ui',
+              table_array: false,
+              description: '',
+              keys: [
+                { key: 'sidebar_width', value: '26', active: false, description: 'ancho' },
+                { key: 'confirm_close', value: 'true', active: false, description: '' },
+              ],
+            },
+            {
+              path: 'keys.command',
+              table_array: true,
+              description: '',
+              keys: [
+                { key: 'key', value: '"prefix+alt+g"', active: false, description: '' },
+                { key: 'type', value: '"popup"', active: false, description: '' },
+                { key: 'command', value: '"lazygit"', active: false, description: '' },
+                { key: 'width', value: '"80%"', active: false, description: '' },
+                { key: 'height', value: '"80%"', active: false, description: '' },
+              ],
+            },
+          ],
+        };
+      case 'config_read':
+        return {
+          path: 'C:/fake/config.toml',
+          exists: Object.keys(configStore).length > 0,
+          diagnostics: [],
+          entries: HARNESS_CONFIG_BASE.map(([path, fallback]) => ({
+            path,
+            value: configStore[path] ?? fallback,
+            origin: path in configStore ? 'file' : 'default',
+            description: null,
+            in_defaults: true,
+          })),
+        };
+      case 'config_write': {
+        const changes = (payload.changes ?? []) as Array<{ path: string; value: string | null }>;
+        for (const change of changes) {
+          if (change.value === null) delete configStore[change.path];
+          else configStore[change.path] = change.value;
+        }
+        localStorage.setItem(HARNESS_CONFIG_KEY, JSON.stringify(configStore));
+        return {
+          applied: changes.length,
+          rejected: false,
+          backup: null,
+          reload: { status: 'applied', diagnostics: [], skipped: false, error: null },
+          rolled_back: false,
+          diagnostics: [],
+        };
+      }
+      case 'config_reset_keys':
+        return {
+          output: { exit_code: 0, stdout: 'ok', stderr: '' },
+          reload: { status: 'applied', diagnostics: [], skipped: false, error: null },
+        };
+      case 'gui_settings_read':
+        return { ...(config.guiSettings ?? {}), ...readStored(HARNESS_GUI_KEY) };
+      case 'gui_settings_write': {
+        const values = (payload.values as Record<string, unknown>) ?? {};
+        localStorage.setItem(HARNESS_GUI_KEY, JSON.stringify(values));
+        return { path: 'C:/fake/settings.json', written: Object.keys(values).length };
+      }
+      // F3/T3.4 — worktrees.
+      case 'worktree_list':
+        return {
+          source: {
+            repo_key: 'k',
+            repo_name: 'herdr',
+            repo_root: 'C:/repo',
+            source_checkout_path: 'C:/repo',
+            source_workspace_id: 'w1',
+          },
+          worktrees: [
+            {
+              path: 'C:/repo',
+              is_bare: false,
+              is_detached: false,
+              is_prunable: false,
+              is_linked_worktree: false,
+              label: 'herdr',
+              branch: 'main',
+              open_workspace_id: 'w1',
+            },
+            {
+              path: 'C:/wt/dev',
+              is_bare: false,
+              is_detached: false,
+              is_prunable: false,
+              is_linked_worktree: true,
+              label: 'dev',
+              branch: 'dev',
+              open_workspace_id: null,
+            },
+          ],
+        };
+      case 'worktree_create':
+      case 'worktree_open':
+        return {
+          worktree: {
+            path: 'C:/wt/dev',
+            is_bare: false,
+            is_detached: false,
+            is_prunable: false,
+            is_linked_worktree: true,
+            label: 'dev',
+            branch: 'dev',
+            open_workspace_id: null,
+          },
+          already_open: false,
+          workspace: {},
+          tab: {},
+          root_pane: {},
+        };
+      case 'worktree_remove':
+        return {
+          workspace_id: 'w1',
+          path: 'C:/wt/dev',
+          forced: Boolean((payload.request as { force?: boolean } | undefined)?.force),
+        };
+      // F3/T3.8-T3.10 — comandos personalizados, scrollback y git.
+      case 'run_shell_command':
+      case 'set_mica':
+      case 'plugin:opener|open_path':
+        return null;
+      case 'write_scratch_file':
+        return 'C:/fake/scratch.txt';
+      case 'git_status':
+        return { branch: 'main', dirty: 2, ahead: 0, behind: 0 };
       case 'gui_defaults':
         // Mismo payload que el backend (src-tauri/src/commands/system.rs).
         return {

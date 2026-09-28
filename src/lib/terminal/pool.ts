@@ -147,7 +147,25 @@ function readTheme() {
     background: value('--panel-bg-solid', '#21222c'),
     foreground: value('--text', '#f8f8f2'),
     cursor: value('--accent', '#bd93f9'),
+    cursorAccent: value('--panel-bg-solid', '#21222c'),
     selectionBackground: value('--selection-bg', '#44475a'),
+    // ANSI-16 del tema (T3.7): los escribe lib/theme/apply.ts.
+    black: value('--ansi-black', '#45475a'),
+    red: value('--ansi-red', '#f38ba8'),
+    green: value('--ansi-green', '#a6e3a1'),
+    yellow: value('--ansi-yellow', '#f9e2af'),
+    blue: value('--ansi-blue', '#89b4fa'),
+    magenta: value('--ansi-magenta', '#cba6f7'),
+    cyan: value('--ansi-cyan', '#94e2d5'),
+    white: value('--ansi-white', '#cdd6f4'),
+    brightBlack: value('--ansi-bright-black', '#6c7086'),
+    brightRed: value('--ansi-bright-red', '#f38ba8'),
+    brightGreen: value('--ansi-bright-green', '#a6e3a1'),
+    brightYellow: value('--ansi-bright-yellow', '#f9e2af'),
+    brightBlue: value('--ansi-bright-blue', '#89b4fa'),
+    brightMagenta: value('--ansi-bright-magenta', '#cba6f7'),
+    brightCyan: value('--ansi-bright-cyan', '#94e2d5'),
+    brightWhite: value('--ansi-bright-white', '#cdd6f4'),
   };
 }
 
@@ -688,6 +706,14 @@ export class TerminalPool {
    * hay que volver a hacer `fit` y avisar del nuevo tamaño al bridge. La rejilla
    * se descuadra si no se reajusta (las celdas viejas ya no valen).
    */
+  /** Reaplica el tema de xterm desde las variables CSS (temas en vivo, T3.7). */
+  applyXtermTheme(): void {
+    const theme = readTheme();
+    for (const entry of this.#entries.values()) {
+      if (entry.view) entry.view.terminal.options.theme = theme;
+    }
+  }
+
   applyFont(font: TerminalFont): void {
     const options = terminalOptions(font);
     for (const entry of this.#entries.values()) {

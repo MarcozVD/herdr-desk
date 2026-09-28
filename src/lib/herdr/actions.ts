@@ -59,6 +59,11 @@ export const tabApi = {
     await call('tab.close', { tab_id: tabId });
   },
 
+  /** Reordena la pestaña dentro de su espacio (drag de la tab bar, T3.2). */
+  async move(tabId: string, insertIndex: number): Promise<void> {
+    await call('tab.move', { tab_id: tabId, insert_index: insertIndex });
+  },
+
   async focus(tabId: string): Promise<void> {
     await call('tab.focus', { tab_id: tabId });
   },
@@ -97,8 +102,48 @@ export const paneApi = {
     await call('pane.focus_direction', { direction, pane_id: paneId ?? null });
   },
 
+  /** Modo resize (T3.1): mueve el divisor del panel en `direction`. */
+  async resize(direction: PaneDirection, amount = 0.05, paneId?: string | null): Promise<void> {
+    await call('pane.resize', { pane_id: paneId ?? null, direction, amount });
+  },
+
+  /** Intercambia dos paneles (drag del header sobre otro, T3.1). */
+  async swap(sourcePaneId: string, targetPaneId: string): Promise<void> {
+    await call('pane.swap', {
+      source_pane_id: sourcePaneId,
+      target_pane_id: targetPaneId,
+    });
+  },
+
+  /** Mueve un panel a otra pestaña, pestaña nueva o espacio nuevo (T3.1). */
+  async move(paneId: string, destination: Api.PaneMoveDestination, focus = true): Promise<void> {
+    await call('pane.move', { pane_id: paneId, destination, focus });
+  },
+
   async sendText(paneId: string, text: string): Promise<void> {
     await call('pane.send_text', { pane_id: paneId, text });
+  },
+
+  /** Texto + teclas de golpe (`pane.send_input`, T3.8). */
+  async sendInput(paneId: string, text: string, keys: string[] = []): Promise<void> {
+    await call('pane.send_input', { pane_id: paneId, text, keys });
+  },
+
+  /** Espera a que la salida del panel coincida (T3.9). Devuelve la respuesta. */
+  async waitForOutput(
+    paneId: string,
+    match: Api.OutputMatch,
+    timeoutMs: number,
+    lines: number,
+  ): Promise<Api.ResponseResult> {
+    return call('pane.wait_for_output', {
+      pane_id: paneId,
+      match,
+      source: 'recent_unwrapped',
+      lines,
+      strip_ansi: true,
+      timeout_ms: timeoutMs,
+    });
   },
 
   async read(paneId: string, lines = 200): Promise<string> {
@@ -241,6 +286,25 @@ export const layoutApi = {
 
   async setSplitRatio(tabId: string, path: boolean[], ratio: number): Promise<void> {
     await call('layout.set_split_ratio', { tab_id: tabId, path, ratio });
+  },
+
+  /** Aplica un preset de layout (`layout.apply`, T3.3). */
+  async apply(
+    root: Api.LayoutNode,
+    options: {
+      workspace_id?: string | null;
+      tab_id?: string | null;
+      tab_label?: string | null;
+      focus?: boolean;
+    } = {},
+  ): Promise<void> {
+    await call('layout.apply', {
+      root,
+      workspace_id: options.workspace_id ?? null,
+      tab_id: options.tab_id ?? null,
+      tab_label: options.tab_label ?? null,
+      focus: options.focus ?? true,
+    });
   },
 };
 

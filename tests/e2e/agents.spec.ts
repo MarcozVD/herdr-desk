@@ -4,7 +4,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { bootApp, readSnapshotFixture } from './harness';
+import { bootApp, readSnapshotFixture, recordedCalls } from './harness';
 
 /** Empuja un snapshot por el canal del store del arnés. */
 async function push(page: import('@playwright/test').Page, snapshot: unknown): Promise<void> {
@@ -38,7 +38,10 @@ test('el botón de orden pasa a la cola de prioridad y lo persiste', async ({ pa
   await expect(page.getByTestId('agent-row').nth(0)).toHaveAttribute('data-status', 'blocked');
   await expect(page.getByTestId('agent-row').nth(1)).toHaveAttribute('data-status', 'working');
 
-  // Queda guardado: al recargar sigue en priority.
+  // Queda guardado en config.toml (T3.5) y al recargar sigue en priority.
+  expect(await recordedCalls(page, 'config_write')).toContainEqual({
+    changes: [{ path: 'ui.agent_panel_sort', value: '"priority"' }],
+  });
   await page.reload();
   await expect(page.getByTestId('agent-panel')).toHaveAttribute('data-sort', 'priority');
 });
@@ -91,18 +94,14 @@ test('el chip de bloqueados cuenta los agentes en blocked', async ({ page }) => 
 test('las filas salen de `[ui.sidebar.agents]`: rows, rows_by_agent y el token $name', async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'herdr-desk.settings',
-      JSON.stringify({
-        agent_rows: [['state_icon', 'agent', '$jj_status']],
-        agent_rows_by_agent: { 'hd-bot': [['state_icon'], ['terminal_title_stripped']] },
-        agent_row_gap: 1,
-      }),
-    );
-  });
   const fixture = readSnapshotFixture() as { agents: Array<Record<string, unknown>> };
   await bootApp(page, {
+    configEntries: {
+      'ui.sidebar.agents.rows': '[["state_icon", "agent", "$jj_status"]]',
+      'ui.sidebar.agents.rows_by_agent':
+        '{ "hd-bot" = [["state_icon"], ["terminal_title_stripped"]] }',
+      'ui.sidebar.agents.row_gap': '1',
+    },
     snapshot: {
       ...fixture,
       agents: fixture.agents.map((agent) => ({

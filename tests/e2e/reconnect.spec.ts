@@ -183,10 +183,7 @@ test('si session_current existe, el nombre se resuelve y se usa al arrancar', as
 test('si el servidor se cae, la UI lo nota y reabre los paneles al volver', async ({ page }) => {
   // Gracia de reenganche larga: así el reenganche por frames es el único camino
   // posible y el conteo de `terminal_open` no compite con el temporizador.
-  await page.addInitScript(() => {
-    localStorage.setItem('herdr-desk.settings', JSON.stringify({ bridge_reopen_grace_ms: 15_000 }));
-  });
-  await bootApp(page);
+  await bootApp(page, { guiSettings: { bridge_reopen_grace_ms: 15_000 } });
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
 
   // El bridge se cierra porque el server se fue. El panel queda «reconectando»…
@@ -227,10 +224,7 @@ test('un cierre normal (terminal terminada) NO se toma como caída', async ({ pa
 });
 
 test('si el respawn no manda frames, el pool reengancha solo el bridge', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('herdr-desk.settings', JSON.stringify({ bridge_reopen_grace_ms: 600 }));
-  });
-  await bootApp(page);
+  await bootApp(page, { guiSettings: { bridge_reopen_grace_ms: 600 } });
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
 
   await page.evaluate(() => window.__HD_TEST__?.pushClosed('server is shutting down'));

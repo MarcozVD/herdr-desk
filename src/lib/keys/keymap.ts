@@ -3,6 +3,7 @@
 // el test unitario compara esta tabla con el fixture para que no derive.
 // En F3 el usuario los podrá editar desde Settings (config.toml → [keys]).
 
+import type { CustomCommand } from './customCommands';
 import {
   bindingLabel,
   chordFromEvent,
@@ -33,6 +34,8 @@ export interface KeymapOverrides {
   prefix?: string;
   bindings?: Record<string, string>;
   indexed?: Partial<Record<'tabs' | 'workspaces' | 'agents', string>>;
+  /** Comandos personalizados de `[[keys.command]]` (T3.8). */
+  commands?: CustomCommand[];
 }
 
 /** Defaults de herdr 0.8.0-preview (los del `--default-config`, sin comentar). */
@@ -111,6 +114,8 @@ export class Keymap {
   prefixKey = DEFAULT_PREFIX_KEY;
   entries: KeymapEntry[] = [];
   indexed: Partial<Record<'tabs' | 'workspaces' | 'agents', IndexedRange>> = {};
+  /** Comandos personalizados cargados (`command:<índice>` los referencia). */
+  commands: CustomCommand[] = [];
   /** chordId (`p:` prefix, `d:` directo) → acción. */
   lookup = new Map<string, string>();
 
@@ -156,6 +161,23 @@ export class Keymap {
       if (scope === 'navigate') continue;
       this.lookup.set(`${scope === 'prefix' ? 'p' : 'd'}:${id}`, action);
     }
+
+    // T3.8 — [[keys.command]]: cada comando atado a una tecla es una acción
+    // `command:<índice>` que `runAction` despacha a flows.runCustomCommand.
+    this.commands = overrides.commands ?? [];
+    this.commands.forEach((command, index) => {
+      const parsed = parseBinding(command.key);
+      if (!parsed) return;
+      const scope: KeyScope = parsed.prefix ? 'prefix' : 'direct';
+      const id = chordId(parsed.chord);
+      this.entries.push({
+        action: `command:${index}`,
+        binding: command.key,
+        scope,
+        chordId: id,
+      });
+      this.lookup.set(`${scope === 'prefix' ? 'p' : 'd'}:${id}`, `command:${index}`);
+    });
 
     const indexOverrides = overrides.indexed ?? {};
     for (const [kind, raw] of Object.entries(indexOverrides)) {

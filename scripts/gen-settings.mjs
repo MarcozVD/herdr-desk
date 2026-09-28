@@ -100,6 +100,25 @@ function stripTrailingComment(value) {
 }
 
 /**
+ * ¿El texto es UN valor TOML completo? Igual que `try_parse_value` del backend:
+ * una línea de prosa que empieza por comilla o corchete no vale como valor.
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isTomlValue(text) {
+  const t = text.trim();
+  if (t.length === 0) return false;
+  if (t.startsWith('"')) return /^"(?:[^"\\]|\\.)*"$/.test(t);
+  if (t.startsWith("'")) return /^'[^']*'$/.test(t);
+  if (t === 'true' || t === 'false') return true;
+  if (/^[+-]?\d+$/.test(t)) return true;
+  if (/^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) return true;
+  if (t.startsWith('[')) return t.endsWith(']');
+  if (t.startsWith('{')) return t.endsWith('}');
+  return false;
+}
+
+/**
  * Tipo inferido del valor TOML (orientativo para el formulario).
  * @param {string | null | undefined} value
  * @returns {'string' | 'boolean' | 'integer' | 'float' | 'array' | 'toml'}
@@ -119,7 +138,9 @@ function inferType(value) {
  * Parsea la salida de `herdr --default-config`. Mismo contrato que el backend:
  * secciones (incluida la raiz con path ""), `table_array` para [[...]],
  * descripciones de los comentarios previos y comentario final, claves activas
- * (sin comentar) y comentadas, valor canonico o null.
+ * (sin comentar) y comentadas y valor canonico. Un comentario de prosa que
+ * empieza tipo `# type = "shell" runs detached` NO es una clave (misma
+ * validacion que `try_parse_value` de toml_edit en el backend).
  * @param {string} text
  * @returns {SettingsSectionSpec[]}
  */
@@ -157,7 +178,7 @@ export function parseDefaultConfig(text) {
     const kv = splitKv(headerSrc);
     if (kv) {
       const [rawValue, trailing] = stripTrailingComment(kv.value);
-      if (rawValue !== '') {
+      if (isTomlValue(rawValue)) {
         let description = pending.join('\n');
         if (trailing) description = description ? `${description}\n${trailing}` : trailing;
         sections[current].keys.push({

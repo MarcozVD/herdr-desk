@@ -14,6 +14,7 @@ import type { AgentInfo, PaneInfo, TabInfo, WorkspaceInfo } from '../herdr/types
 import { es } from '../i18n/es';
 import { ACTION_LABELS, runAction } from '../keys/actions';
 import { keymap } from '../keys/keymap';
+import { presetNames } from '../layout/presets';
 import { settings, type AgentPanelSort, type ToastDelivery } from '../stores/settings.svelte';
 import { ui } from '../stores/ui.svelte';
 import { fuzzyScore, rankByScore, recencyIndex } from './fuzzy';
@@ -148,6 +149,13 @@ function curatedCommands(context: PaletteContext): PaletteCommand[] {
       keywords: 'orden agentes panel espacios prioridad',
       run: () =>
         settings.set('agent_panel_sort', toggleAgentSort(settings.values.agent_panel_sort)),
+    },
+    {
+      id: 'worktrees.open',
+      label: es.worktrees.open,
+      group: 'settings',
+      keywords: 'worktree git rama checkout espacio',
+      run: () => flows.openWorktrees(),
     },
     {
       id: 'settings.settings',
@@ -429,6 +437,31 @@ function dynamicCommands(context: PaletteContext): PaletteCommand[] {
       hint: agent ? agentLabel(agent) : (pane.cwd ?? pane.pane_id),
       keywords: `panel pane ir ${pane.pane_id} ${pane.cwd ?? ''}`,
       run: () => flows.focusPane(pane.pane_id),
+    });
+  }
+
+  // T3.3 — Presets de layout: guardar el actual y aplicar/quitar los guardados.
+  commands.push({
+    id: 'layout.save',
+    label: es.presets.save,
+    group: 'settings',
+    keywords: 'layout preset guardar tab arbol',
+    run: () => void flows.saveLayoutPreset(),
+  });
+  for (const name of presetNames(settings.values.layout_presets as Record<string, unknown>)) {
+    commands.push({
+      id: `layout.apply:${name}`,
+      label: es.presets.apply.replace('{name}', name),
+      group: 'settings',
+      keywords: `layout preset aplicar ${name}`,
+      run: () => void flows.applyLayoutPreset(name),
+    });
+    commands.push({
+      id: `layout.remove:${name}`,
+      label: es.presets.remove.replace('{name}', name),
+      group: 'settings',
+      keywords: `layout preset quitar borrar ${name}`,
+      run: () => flows.deleteLayoutPreset(name),
     });
   }
 

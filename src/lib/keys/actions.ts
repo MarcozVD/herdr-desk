@@ -5,6 +5,7 @@ import { es } from '../i18n/es';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { actionTarget, flows } from '../actions/flows';
+import { keymap } from './keymap';
 import { ui } from '../stores/ui.svelte';
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -59,15 +60,9 @@ export const ACTION_LABELS: Record<string, string> = {
 };
 
 const LATER: Record<string, string> = {
-  settings: 'Los ajustes llegan en F3.',
   open_notification_target: 'Las notificaciones llegan en F2.',
   workspace_picker: 'El selector fuzzy llega en F2.',
   goto: 'El modo navegar llega en F3.',
-  new_worktree: 'Los worktrees llegan en F3.',
-  open_worktree: 'Los worktrees llegan en F3.',
-  remove_worktree: 'Los worktrees llegan en F3.',
-  edit_scrollback: 'La edición de scrollback llega en F3.',
-  resize_mode: 'El modo redimensionar llega en F3.',
   navigate_workspace_up: 'El modo navegar llega en F3.',
   navigate_workspace_down: 'El modo navegar llega en F3.',
   navigate_pane_left: 'El modo navegar llega en F3.',
@@ -94,6 +89,11 @@ export async function runAction(action: string): Promise<void> {
     flows.focusAgentNumber(Number(action.split(':')[1]));
     return;
   }
+  if (action.startsWith('command:')) {
+    const command = keymap.commands[Number(action.split(':')[1])];
+    if (command) await flows.runCustomCommand(command);
+    return;
+  }
   if (action.startsWith('gui.')) {
     if (action === 'gui.palette') ui.togglePalette();
     if (action === 'gui.copy') dispatchToTerminal('copy');
@@ -115,6 +115,20 @@ export async function runAction(action: string): Promise<void> {
   switch (action) {
     case 'help':
       ui.toggleHelp();
+      break;
+    case 'settings':
+      ui.openSettings();
+      break;
+    case 'resize_mode':
+      ui.resizeMode = !ui.resizeMode;
+      break;
+    case 'new_worktree':
+    case 'open_worktree':
+    case 'remove_worktree':
+      flows.openWorktrees();
+      break;
+    case 'edit_scrollback':
+      if (focusedPane) await flows.editScrollback(focusedPane);
       break;
     case 'detach':
       void getCurrentWindow().close();

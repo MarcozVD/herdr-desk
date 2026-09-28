@@ -80,15 +80,21 @@ Decisiones de producto sin cerrar:
   bandeja usa un icono embebido en compilación, no el del ejecutable.
 - Material: cristal sobre Mica. Es un compromiso de identidad, no una decoración opcional.
 - Tipografías: Geist Variable para interfaz, JetBrains Mono Variable para monoespaciado.
-- Paleta por defecto de tema tipo dracula, sustituible por `[theme]` de `config.toml`.
+- Paleta e identidad: los **18 temas de herdr** son la paleta de la app, transcritos de su
+  código (Apache-2.0, atribución pendiente en `THIRD-PARTY-NOTICES.md`, T5.6) y aplicados en
+  caliente a la interfaz y a la paleta ANSI del terminal. Desviación declarada: **ANSI derivado**,
+  porque herdr no define colores ANSI por tema (su terminal los hereda del host).
+- El tema se elige desde Ajustes (`prefix+s`), que escribe en el `config.toml` real con backup,
+  check y recarga; `auto_switch` sigue la apariencia de Windows y el cristal Mica acompaña al
+  modo claro/oscuro.
 - Idioma: español.
 
 ## Evidence on Hand
 
 - `schema/herdr-api.schema.json` y `schema/fixtures/` (eventos y respuestas reales grabadas del
   servidor).
-- Suite de pruebas viva: 349 tests de frontend y las suites de Rust (unit y sandbox contra
-  sesiones `hd-test-*` reales).
+- Suite de pruebas viva: 388 tests de frontend (45 archivos) y 21 specs e2e, más las suites de
+  Rust (unit y sandbox contra sesiones `hd-test-*` reales).
 - Assets de marca: `assets/icons/` (SVG blanco y `currentColor`, PNG y WebP negros).
 - Documentación pública: `docs/03-arquitectura.md`, `docs/04-ui-arquitectura.md`.
 - **Ausencias que no se deben inventar:** no hay testimonios, clientes, métricas de adopción,

@@ -71,8 +71,14 @@ class UiStore {
   paletteSession = $state(0);
   helpOpen = $state(false);
   sessionsOpen = $state(false);
+  /** Formulario de configuración (T3.5). */
+  settingsOpen = $state(false);
+  /** Diálogo de worktrees (T3.4). */
+  worktreesOpen = $state(false);
   /** Modo prefix activo (T1.10). */
   prefixActive = $state(false);
+  /** Modo redimensionar (T3.1): las flechas cambian el tamaño del panel. */
+  resizeMode = $state(false);
   /** Chip con el último atajo resuelto, para feedback visual. */
   lastAction = $state<string | null>(null);
 
@@ -136,6 +142,22 @@ class UiStore {
 
   closeSessions(): void {
     this.sessionsOpen = false;
+  }
+
+  openSettings(): void {
+    this.settingsOpen = true;
+  }
+
+  openWorktrees(): void {
+    this.worktreesOpen = true;
+  }
+
+  closeWorktrees(): void {
+    this.worktreesOpen = false;
+  }
+
+  closeSettings(): void {
+    this.settingsOpen = false;
   }
 
   focusWorkspaceLocally(workspaceId: string): void {
@@ -204,6 +226,7 @@ class UiStore {
     this.localFocusedPaneId = null;
     this.paneHistory = [];
     this.tabByWorkspace = {};
+    this.resizeMode = false;
     // Un visor o un diálogo abiertos apuntan a la sesión vieja: se cierran.
     this.viewer = null;
     this.agentPromptTarget = null;

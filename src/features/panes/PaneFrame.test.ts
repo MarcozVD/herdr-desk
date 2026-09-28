@@ -242,6 +242,14 @@ describe('PaneFrame: los botones del header responden', () => {
       'split-down',
       'zoom',
       'rename',
+      // T3.9: buscar en la salida, editar el scrollback y esperar salida.
+      'search-output',
+      'edit-scrollback',
+      'wait-output',
+      // T3.1: modo resize y los tres destinos de pane.move (sin otros tabs).
+      'resize-mode',
+      'move-new-tab',
+      'move-new-workspace',
       'close',
     ]);
   });

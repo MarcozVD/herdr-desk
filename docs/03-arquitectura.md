@@ -1,10 +1,15 @@
 # herdr-desk: arquitectura backend
 
-Estado: F0-F2 cerradas. F3 y F4 con el **backend** hecho (config, worktrees, plugins,
-integraciones, estado del server y catálogo de la consola API por RPC) y sin superficies de UI
-todavía. Última actualización: contrato de `plugin.*` (13 commands) y `api_catalog`
-documentados, `terminal_release` añadido a la lista de commands y aclarado el gating de los
-tests de sandbox.
+Estado: F0-F2 cerradas. F3 con el **backend** hecho (config, worktrees) y **el cliente completo**
+(formulario de configuración, editor de atajos, temas en vivo, redimensionar/intercambiar/mover
+paneles, reordenar pestañas y espacios, presets de layout, worktrees, comandos personalizados,
+scrollback y estado git). F4 con el **backend** hecho (plugins, integraciones, estado del server
+y catálogo de la consola API por RPC) y sin superficies de UI todavía. Última actualización:
+contrato de `plugin.*` (13 commands) y `api_catalog` documentados, `terminal_release` añadido a
+la lista de commands, aclarado el gating de los tests de sandbox, añadidos los commands
+`gui_settings_*` con sus preferencias exclusivas de la GUI y, en `system.rs`, `set_mica`
+(cristal del tema), `run_shell_command`, `write_scratch_file` y `git_status` con su variante de
+CLI con directorio de trabajo.
 
 ## Capas
 
@@ -31,7 +36,9 @@ crates/herdr-core (Rust puro, sin Tauri)
  │               stdout NDJSON → BridgeEvent::Frame/Closed; kill_on_drop
  ├─ cli.rs       session list/stop/delete + start_server_detached
  │               (DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP, env HERDR_* limpiado)
- └─ config.rs    rutas de config de herdr y settings de la GUI
+  └─ config.rs    rutas de config de herdr y settings de la GUI
+                  (gui_settings_dir → %APPDATA%\herdr-desk, F3/T3.5)
+
 
 src-tauri (capa fina)
  ├─ state.rs              AppState {runtime: RwLock<Arc<Runtime>>, bridges, event_channels}
@@ -41,10 +48,12 @@ src-tauri (capa fina)
  ├─ window.rs             show_main() desde ui_ready
  ├─ commands/api.rs       herdr_call, store_subscribe, events_forward, ui_ready
  ├─ commands/session.rs   session_list/connect/start/stop/delete (F1, T1.11)
- ├─ commands/terminal.rs  terminal_open/input/input_bytes/resize/scroll/close/release
- │                        (gracia 3 s en close; release suelta el bridge —mata su proceso— y
- │                        deja el pane vivo, que es lo que se usa al ocultar un panel)
- └─ lib.rs                wiring: L → store kick; runtime_watcher (polling local 150 ms):
+  ├─ commands/terminal.rs  terminal_open/input/input_bytes/resize/scroll/close/release
+  │                        (gracia 3 s en close; release suelta el bridge —mata su proceso— y
+  │                        deja el pane vivo, que es lo que se usa al ocultar un panel)
+  ├─ commands/gui_settings.rs  gui_settings_read/gui_settings_write (F3/T3.5): preferencias
+  │                        exclusivas de la GUI en %APPDATA%\herdr-desk\settings.json
+  └─ lib.rs                wiring: L → store kick; runtime_watcher (polling local 150 ms):
                           respawn de bridges + conexión S
 ```
 
@@ -90,6 +99,41 @@ de la máquina. Detectado en esta máquina: `Cascadia Code`.
 **Menú contextual del WebView2**: la supresión del menú del navegador es cosa del
 FRONTEND (`preventDefault` en el evento `contextmenu` del DOM), no del backend ni de la
 configuración de la ventana. No reintentarlo por el lado de Tauri/ventana.
+
+### Mica oscuro/claro (`set_mica`, F3/T3.7)
+
+`set_mica(dark: bool) -> ()` cambia el efecto de la ventana principal entre `MicaDark` y
+`MicaLight` con `WindowEffectsConfig`, para que el cristal Accompañe al tema activo. Va en
+`system.rs` y no como JS de ventana porque el enum `Effect` de la API JS de Tauri no expone
+`MicaDark`/`MicaLight`; el frontend lo envuelve en `setMica()` (`lib/herdr/client.ts`) y
+tolera el fallo (`.catch(() => undefined)`): sin efecto no se rompe la app, solo se pierde el
+contraste del cristal. Si no hay ventana `main`, sale `Ok` sin hacer nada. Error del SO →
+`ApiError { code: "window" }`. No lleva test unitario (necesita ventana real); se ejercita en
+vivo. Se registró además `core:window:allow-set-effects` en `capabilities/default.json`.
+
+### Comandos de shell, temporales y git (`system.rs`, F3/T3.8-T3.10)
+
+Tres commands más en `system.rs`, los tres con degradación explícita en el frontend
+(`optionalCommand`: si no existen, aviso y se sigue):
+
+- `run_shell_command(command, cwd?)` — comando `type = "shell"` de `[[keys.command]]`. Es la
+  **excepción documentada del §7**: sale de la superlista a propósito, porque es configuración
+  del propio usuario y no un command de la app. Se lanza **detached y sin consola**
+  (`DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`, `stdin/stdout/stderr` nulos), con `cwd`
+  opcional; comando vacío → `invalid_params`. En no-Windows usa `sh -c`.
+- `write_scratch_file(name, text) -> String` — temporal para `edit_scrollback` (T3.9), que el
+  visor externo abre con el plugin `opener`. El nombre se sanea a alfanumérico + `-`/`_`
+  (60 chars) y se le añade un sell timestamp; devuelve la ruta absoluta.
+- `git_status(cwd) -> GitStatusInfo { branch, dirty, ahead, behind }` — lee
+  `git status --porcelain=v2 --branch` con lista blanca y **directorio de trabajo**, que es lo
+  que hace falta la variante nueva `cli_run::run_whitelisted_in(argv, cwd)` (la anterior
+  `run_whitelisted_with_env` no lo tenía). `parse_git_status()` es una función pura: cuenta
+  líneas no comentario como cambios sucios, saca la rama de `# branch.head` (ignora
+  `(detached)`) y `ahead`/`behind` de `# branch.ab`. `cwd` vacío → `invalid_params`; salida con
+  exit ≠ 0 → `cli_failed`. Sin watcher de archivos: el refresco lo manda el frontend con el
+  snapshot. Tests: 2 unitarios del parser (`parsea_git_status_v2` y
+  `git_detached_sin_rama_y_sin_cambios`).
+
 
 ## Suscripción al store (contrato)
 
@@ -306,6 +350,26 @@ Contrato verificado contra la CLI y el server reales (no deducido). Commands en
   por defecto, roundtrip con reload `applied` + backup real + segunda escritura sin
   backup, rechazo sin tocar el archivo, y `failed` → rollback).
 
+### Preferencias exclusivas de la GUI (`commands/gui_settings.rs`, F3/T3.5)
+
+Lo que herdr no conoce (nivel de cristal, WebGL, LRU de terminales…) **no** entra en su
+`config.toml`: el server lo avisaría como `unknown_section`. Va a
+`%APPDATA%\herdr-desk\settings.json`, un objeto JSON plano con dos commands:
+
+- `gui_settings_read() -> serde_json::Value`: devuelve el objeto del archivo. Ausente,
+  ilegible o corrupto devuelve `{}` — la GUI arranca con sus defaults en vez de quedarse
+  sin preferencias. Un JSON que no sea objeto (p. ej. `[1,2]`) también se degrada a `{}`
+  al leer.
+- `gui_settings_write(values) -> GuiSettingsWrite { path, written }`: escribe el objeto
+  **completo** de forma atómica (`settings.json.tmp` + `rename`), creando el directorio
+  si falta. Un valor que no sea objeto se rechaza con `invalid_params` (`io` si falla el
+  disco). `written` es el número de claves del objeto.
+- `gui_settings_path()` usa `herdr_core::config::gui_settings_dir()`; los helpers
+  `read_gui_settings`/`write_gui_settings` reciben la ruta como parámetro para poder
+  testearlos sin tocar el home del usuario.
+- Tests: 4 unitarios (ausente → `{}`, roundtrip con `written`, corrupto → `{}`,
+  no-objeto → `invalid_params`).
+
 ## Worktrees, estado del server, integraciones y notificaciones
 
 ### Worktrees (`src-tauri/src/commands/worktrees.rs`, T3.4)
@@ -447,13 +511,13 @@ command que no habla con el server: no usa `RpcClient`.
 
 ## Tests: la puerta por defecto y los tests de sandbox
 
-`cargo test --workspace` (lo único que hace `pnpm verify` en Rust) da **94 tests, 0 fallos**:
+`cargo test --workspace` (lo único que hace `pnpm verify` en Rust) da **100 tests, 0 fallos**:
 
 | Target | Tests |
 |---|---|
 | unit de la lib de `herdr-core` | 12 |
 | `crates/herdr-core/tests/fixtures.rs` (T1.1, no gated) | 4 |
-| unit de la lib de `src-tauri` | 78 |
+| unit de la lib de `src-tauri` | 84 |
 
 En la misma corrida aparecen **7 targets con 0 tests**. No están ignorados con `#[ignore]`: están
 compilados a vacío por *feature gating*.

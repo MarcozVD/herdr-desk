@@ -19,6 +19,15 @@ import type {
 } from './methods.gen';
 import type * as Api from './types.gen';
 import type { ConnectionState, SessionInfo, StoreMessage } from './types';
+import type {
+  ConfigChange,
+  ConfigDefaultPayload,
+  ConfigRead,
+  ConfigResetKeyResult,
+  ConfigWriteResult,
+  GuiSettingsValues,
+  GuiSettingsWrite,
+} from '../settings/spec';
 
 export type { Api };
 
@@ -340,4 +349,157 @@ export async function uiReady(): Promise<void> {
  */
 export async function guiDefaults(): Promise<CommandOutcome<unknown>> {
   return optionalCommand<unknown>('gui_defaults');
+}
+
+/** T3.7 — Cambia el efecto Mica de la ventana (oscuro/claro). Best-effort. */
+export async function setMica(dark: boolean): Promise<void> {
+  await invoke('set_mica', { dark });
+}
+
+/**
+ * T3.8 — Corre un comando personalizado `[[keys.command]] type="shell"` de forma
+ * detached (cmd.exe /d /c en Windows). Excepción del §7 del plan: es config del
+ * usuario, no un shell con strings de terceros.
+ */
+export async function runShellCommand(
+  command: string,
+  cwd: string | null,
+): Promise<CommandOutcome<null>> {
+  return optionalCommand<null>('run_shell_command', { command, cwd });
+}
+
+/**
+ * T3.9 — Escribe un archivo temporal (scrollback para el editor externo).
+ * Devuelve la ruta absoluta, que se abre con el plugin `opener`.
+ */
+export async function writeScratchFile(name: string, text: string): Promise<string> {
+  const path = await invoke<string>('write_scratch_file', { name, text });
+  return path;
+}
+
+/** T3.10 — Estado git de un workspace (rama + cambios). */
+export interface GitStatusInfo {
+  branch: string | null;
+  dirty: number;
+  ahead: number;
+  behind: number;
+}
+
+export async function gitStatus(cwd: string): Promise<CommandOutcome<GitStatusInfo>> {
+  return optionalCommand<GitStatusInfo>('git_status', { cwd });
+}
+
+/* ---- Worktrees (T3.4, commands del backend F3) ---- */
+
+export interface WorktreeInfo {
+  path: string;
+  is_bare: boolean;
+  is_detached: boolean;
+  is_prunable: boolean;
+  is_linked_worktree: boolean;
+  label: string;
+  branch: string | null;
+  open_workspace_id: string | null;
+}
+
+export interface WorktreeSourceInfo {
+  repo_key: string;
+  repo_name: string;
+  repo_root: string;
+  source_checkout_path: string;
+  source_workspace_id: string | null;
+}
+
+export interface WorktreeListResult {
+  source: WorktreeSourceInfo;
+  worktrees: WorktreeInfo[];
+}
+
+export interface WorktreeCreateRequest {
+  workspace_id?: string | null;
+  cwd?: string | null;
+  branch?: string | null;
+  base?: string | null;
+  path?: string | null;
+  label?: string | null;
+  focus?: boolean | null;
+}
+
+export interface WorktreeOpened {
+  worktree: WorktreeInfo;
+  already_open: boolean;
+}
+
+export interface WorktreeRemoved {
+  workspace_id: string;
+  path: string;
+  forced: boolean;
+}
+
+export async function worktreeList(
+  workspaceId: string | null,
+): Promise<CommandOutcome<WorktreeListResult>> {
+  return optionalCommand<WorktreeListResult>('worktree_list', {
+    workspaceId,
+    cwd: null,
+  });
+}
+
+export async function worktreeCreate(
+  request: WorktreeCreateRequest,
+): Promise<CommandOutcome<unknown>> {
+  return optionalCommand<unknown>('worktree_create', { request });
+}
+
+export async function worktreeOpen(
+  request: WorktreeCreateRequest,
+): Promise<CommandOutcome<WorktreeOpened>> {
+  return optionalCommand<WorktreeOpened>('worktree_open', { request });
+}
+
+/** `confirm: true` es obligatorio en el contrato: el doble aviso es de la UI. */
+export async function worktreeRemove(
+  workspaceId: string,
+  force: boolean,
+): Promise<CommandOutcome<WorktreeRemoved>> {
+  return optionalCommand<WorktreeRemoved>('worktree_remove', {
+    request: { workspace_id: workspaceId, force, confirm: true },
+  });
+}
+
+/* ---- Configuración (F3, T3.5) ---- */
+
+/** `herdr --default-config` estructurado (cacheado en el backend). */
+export async function configDefault(
+  refresh = false,
+): Promise<CommandOutcome<ConfigDefaultPayload>> {
+  return optionalCommand<ConfigDefaultPayload>('config_default', { refresh });
+}
+
+/** Config activa (config.toml + defaults) con diagnósticos si el TOML no parsea. */
+export async function configRead(): Promise<CommandOutcome<ConfigRead>> {
+  return optionalCommand<ConfigRead>('config_read');
+}
+
+/** Escribe solo las claves cambiadas (toml_edit, backup, check y reload). */
+export async function configWrite(
+  changes: ConfigChange[],
+): Promise<CommandOutcome<ConfigWriteResult>> {
+  return optionalCommand<ConfigWriteResult>('config_write', { changes });
+}
+
+/** `herdr config reset-keys` (restaura los atajos por defecto). */
+export async function configResetKeys(): Promise<CommandOutcome<ConfigResetKeyResult>> {
+  return optionalCommand<ConfigResetKeyResult>('config_reset_keys');
+}
+
+/** Ajustes exclusivos de la GUI en %APPDATA%\herdr-desk\settings.json. */
+export async function guiSettingsRead(): Promise<CommandOutcome<GuiSettingsValues>> {
+  return optionalCommand<GuiSettingsValues>('gui_settings_read');
+}
+
+export async function guiSettingsWrite(
+  values: GuiSettingsValues,
+): Promise<CommandOutcome<GuiSettingsWrite>> {
+  return optionalCommand<GuiSettingsWrite>('gui_settings_write', { values });
 }

@@ -36,6 +36,11 @@
     {#if ui.prefixActive}
       <span class="prefix-chip" data-testid="prefix-chip">{es.keys.prefixChip}</span>
     {/if}
+    {#if ui.resizeMode}
+      <span class="prefix-chip" data-testid="resize-chip" title={es.panes.resizeHint}>
+        {es.panes.resizeChip}
+      </span>
+    {/if}
   </div>
 
   <button

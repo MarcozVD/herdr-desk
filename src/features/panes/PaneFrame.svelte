@@ -40,6 +40,34 @@
     if (target?.closest('button, a, input, textarea, select, [data-no-pane-focus]')) return;
     focus();
   }
+
+  /* T3.1 — Intercambio de paneles arrastrando el header sobre otro. El id viaja
+     en `dataTransfer` (tipo propio) y el `drop` llama a `pane.swap`. */
+  let dropActive = $state(false);
+
+  function onHeaderDragStart(event: DragEvent): void {
+    const target = event.target as Element | null;
+    if (target?.closest('button')) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer?.setData('application/x-herdr-pane', paneId);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onHeaderDragOver(event: DragEvent): void {
+    if (!event.dataTransfer) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    dropActive = true;
+  }
+
+  function onHeaderDrop(event: DragEvent): void {
+    event.preventDefault();
+    dropActive = false;
+    const source = event.dataTransfer?.getData('application/x-herdr-pane');
+    if (source && source !== paneId) void flows.swapPanes(source, paneId);
+  }
 </script>
 
 <article
@@ -54,9 +82,17 @@
 >
   <header
     class="pane-header"
+    class:drop-active={dropActive}
     role="toolbar"
     tabindex="-1"
     aria-label={title}
+    draggable="true"
+    data-testid="pane-header"
+    title={es.panes.swapHint}
+    ondragstart={onHeaderDragStart}
+    ondragover={onHeaderDragOver}
+    ondragleave={() => (dropActive = false)}
+    ondrop={onHeaderDrop}
     oncontextmenu={(event) => flows.openPaneMenu(event, paneId)}
   >
     <AgentDot {status} label={es.agentStatus[status]} />
@@ -222,6 +258,11 @@
     font-size: 12px;
     color: var(--text-dim);
     user-select: none;
+  }
+
+  .pane-header.drop-active {
+    outline: 1px dashed var(--accent);
+    outline-offset: -1px;
   }
 
   .pane-header__title {

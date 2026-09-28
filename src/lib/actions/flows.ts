@@ -4,7 +4,7 @@
 import { es } from '../i18n/es';
 import type * as Api from '../herdr/types.gen';
 import type { SplitDirection } from '../herdr/types.gen';
-import { agentApi, paneApi, serverApi, tabApi, workspaceApi } from '../herdr/actions';
+import { agentApi, layoutApi, paneApi, serverApi, tabApi, workspaceApi } from '../herdr/actions';
 import { noticeCenter } from '../agents/noticeCenter';
 import { describeApiError, errorText, parseApiError } from '../herdr/errors';
 import {
@@ -20,6 +20,10 @@ import {
   type AgentKeyName,
 } from '../agents/agentActions';
 import { findPane, neighborPane } from '../layout/tree';
+import { isLayoutNode, sanitizePresetName, withoutPreset } from '../layout/presets';
+import type { CustomCommand } from '../keys/customCommands';
+import { openPath } from '@tauri-apps/plugin-opener';
+import { runShellCommand, writeScratchFile } from '../herdr/client';
 import { session } from '../stores/session.svelte';
 import { visible } from '../stores/visible.svelte';
 import { settings } from '../stores/settings.svelte';
@@ -178,6 +182,19 @@ export const flows = {
     }
   },
 
+  /** Reordenar por arrastre (T3.2): índice destino absoluto del espacio. */
+  async moveWorkspaceTo(workspaceId: string, insertIndex: number): Promise<void> {
+    const index = session.workspaces.findIndex((item) => item.workspace_id === workspaceId);
+    if (index === -1 || insertIndex === index) return;
+    const target = Math.min(session.workspaces.length - 1, Math.max(0, insertIndex));
+    if (target === index) return;
+    try {
+      await workspaceApi.move(workspaceId, target);
+    } catch (raw) {
+      fail(raw, 'workspace.move');
+    }
+  },
+
   async nextWorkspace(delta: number): Promise<void> {
     const workspaces = session.workspaces;
     if (workspaces.length === 0) return;
@@ -251,6 +268,20 @@ export const flows = {
       await tabApi.close(tabId);
     } catch (raw) {
       fail(raw, 'tab.close');
+    }
+  },
+
+  /** Reordenar por arrastre (T3.2): índice destino absoluto de la pestaña. */
+  async moveTabTo(tabId: string, insertIndex: number): Promise<void> {
+    const tabs = visible.tabs;
+    const index = tabs.findIndex((item) => item.tab_id === tabId);
+    if (index === -1) return;
+    const target = Math.min(tabs.length - 1, Math.max(0, insertIndex));
+    if (target === index) return;
+    try {
+      await tabApi.move(tabId, target);
+    } catch (raw) {
+      fail(raw, 'tab.move');
     }
   },
 
@@ -367,7 +398,64 @@ export const flows = {
     if (neighbor?.paneId) ui.focusPaneLocally(neighbor.paneId);
   },
 
-  /** Orden de lectura del árbol (cycle_pane_next/previous, T3.1 los usará). */
+  /** Modo resize (T3.1): una flecha mueve el divisor del panel enfocado. */
+  async resizePane(direction: PaneDirection): Promise<void> {
+    const target = actionTarget().paneId;
+    if (!target) return;
+    try {
+      await paneApi.resize(direction, 0.05, settings.values.sync_focus_with_tui ? target : null);
+      await layout.refreshNow();
+    } catch (raw) {
+      fail(raw, 'pane.resize');
+    }
+  },
+
+  /** Intercambia dos paneles (drag del header sobre otro, T3.1). */
+  async swapPanes(sourcePaneId: string, targetPaneId: string): Promise<void> {
+    if (sourcePaneId === targetPaneId) return;
+    try {
+      await paneApi.swap(sourcePaneId, targetPaneId);
+      await layout.refreshNow();
+    } catch (raw) {
+      fail(raw, 'pane.swap');
+    }
+  },
+
+  /**
+   * Mueve el panel (T3.1) a una pestaña existente, a una nueva o a un espacio
+   * nuevo. `pane.move` devuelve los ids creados; el layout se refresca después.
+   */
+  async movePane(
+    paneId: string,
+    destination: 'new_tab' | 'new_workspace' | { tabId: string },
+  ): Promise<void> {
+    const pane = session.panes.find((item) => item.pane_id === paneId);
+    try {
+      if (destination === 'new_tab') {
+        await paneApi.move(paneId, {
+          type: 'new_tab',
+          workspace_id: pane?.workspace_id ?? null,
+          label: null,
+        });
+      } else if (destination === 'new_workspace') {
+        await paneApi.move(paneId, { type: 'new_workspace', label: null, tab_label: null });
+      } else {
+        await paneApi.move(paneId, {
+          type: 'tab',
+          tab_id: destination.tabId,
+          split: 'right',
+          target_pane_id: null,
+          ratio: null,
+        });
+      }
+      await layout.refreshNow();
+      ok(es.panes.moved);
+    } catch (raw) {
+      fail(raw, 'pane.move');
+    }
+  },
+
+  /** Orden de lectura del árbol (cycle_pane_next/previous). */
   cyclePane(delta: number): void {
     const panes = (layout.tree ? findPane(layout.tree, '') : null) ?? null;
     void panes;
@@ -384,6 +472,148 @@ export const flows = {
   lastPane(): void {
     const previous = ui.lastPane();
     if (previous) ui.focusPaneLocally(previous);
+  },
+
+  /* ---- Scrollback y búsqueda (T3.9) ---- */
+
+  /** «Buscar en salida»: lee el panel y lo abre en el visor con búsqueda. */
+  async searchPaneOutput(paneId: string): Promise<void> {
+    try {
+      const text = await paneApi.read(paneId, settings.values.search_lines);
+      ui.openViewer({ title: es.search.title.replace('{pane}', paneId), text, kind: 'text' });
+    } catch (raw) {
+      fail(raw, 'pane.read');
+    }
+  },
+
+  /** `edit_scrollback`: archivo temporal + editor externo (plugin opener). */
+  async editScrollback(paneId: string): Promise<void> {
+    try {
+      const text = await paneApi.read(paneId, Math.max(500, settings.values.search_lines));
+      const clean = paneId.replace(/[^A-Za-z0-9_-]/g, '_');
+      const path = await writeScratchFile(`scrollback-${clean}`, text);
+      await openPath(path);
+    } catch (raw) {
+      fail(raw, 'edit_scrollback');
+    }
+  },
+
+  /** `pane.wait_for_output`: substring o `re:<regex>` con timeout de 60 s. */
+  async waitPaneOutput(paneId: string): Promise<void> {
+    const raw = await ui.prompt({
+      title: es.search.waitTitle,
+      label: es.search.waitLabel,
+      hint: es.search.waitHint,
+      submitLabel: es.dialog.accept,
+    });
+    if (raw === null) return;
+    const value = raw.trim();
+    if (value.length === 0) return;
+    const regex = value.startsWith('re:');
+    const match: Api.OutputMatch = {
+      type: regex ? 'regex' : 'substring',
+      value: regex ? value.slice(3) : value,
+    };
+    ui.notify(es.search.waiting.replace('{pattern}', value), 'info');
+    try {
+      await paneApi.waitForOutput(paneId, match, 60_000, settings.values.search_lines);
+      ok(es.search.matched.replace('{pattern}', value));
+    } catch (err) {
+      fail(err, 'pane.wait_for_output');
+    }
+  },
+
+  /* ---- Comandos personalizados (T3.8) ---- */
+
+  /**
+   * `[[keys.command]]`: `shell` corre detached por el backend (cmd.exe /d /c);
+   * `pane`/`popup` parten un panel temporal y le mandan el comando + Enter.
+   * `popup` se emula con zoom (desviación documentada del plan).
+   */
+  async runCustomCommand(command: CustomCommand): Promise<void> {
+    const kind = command.type || 'shell';
+    if (kind === 'shell') {
+      const outcome = await runShellCommand(command.command, session.focusedPane?.cwd ?? null);
+      if (!outcome.ok) {
+        if (outcome.kind === 'missing') ui.notify(es.custom.unavailable, 'warn');
+        else ui.notify(errorText(outcome.error), 'error');
+        return;
+      }
+      ok(es.custom.launched.replace('{command}', command.command));
+      return;
+    }
+    try {
+      const target = actionTarget().paneId;
+      const created = await paneApi.split({
+        direction: 'right',
+        target_pane_id: target,
+        focus: true,
+      });
+      if (!created) return;
+      await paneApi.sendInput(created.pane_id, command.command, ['enter']);
+      if (kind === 'popup') await paneApi.zoom(created.pane_id, 'on');
+      await layout.refreshNow();
+      ok(es.custom.sent.replace('{command}', command.command));
+    } catch (raw) {
+      fail(raw, 'pane.send_input');
+    }
+  },
+
+  /* ---- Worktrees (T3.4) ---- */
+
+  /** Abre el diálogo de worktrees del espacio visible. */
+  openWorktrees(): void {
+    ui.openWorktrees();
+  },
+
+  /* ---- Presets de layout (T3.3) ---- */
+
+  /**
+   * Guarda el árbol del tab visible como preset con nombre. Se guarda el
+   * `LayoutNode` CRUDO de `layout.export` (el árbol de UI no es el contrato de
+   * `layout.apply`); el validador `isLayoutNode` lo acepta.
+   */
+  async saveLayoutPreset(): Promise<void> {
+    const tabId = visible.tabId;
+    const root = tabId ? await layoutApi.export(tabId).catch(() => null) : null;
+    if (!root) {
+      ui.notify(es.presets.noTree, 'warn');
+      return;
+    }
+    const raw = await ui.prompt({
+      title: es.presets.save,
+      label: es.presets.nameLabel,
+      placeholder: es.presets.namePlaceholder,
+      submitLabel: es.dialog.save,
+      validate: (value) => (sanitizePresetName(value) === null ? es.presets.invalidName : null),
+    });
+    if (raw === null) return;
+    const name = sanitizePresetName(raw);
+    if (name === null) return;
+    settings.set('layout_presets', { ...settings.values.layout_presets, [name]: root });
+    ok(es.presets.saved.replace('{name}', name));
+  },
+
+  /** Aplica un preset (validado contra LayoutNode) al espacio visible. */
+  async applyLayoutPreset(name: string): Promise<void> {
+    const preset = settings.values.layout_presets[name];
+    if (!isLayoutNode(preset)) {
+      ui.notify(es.presets.invalid, 'error');
+      return;
+    }
+    try {
+      await layoutApi.apply(preset, { workspace_id: visible.workspaceId, focus: true });
+      await layout.refreshNow();
+      ok(es.presets.applied.replace('{name}', name));
+    } catch (raw) {
+      fail(raw, 'layout.apply');
+    }
+  },
+
+  /** Quita un preset guardado. */
+  deleteLayoutPreset(name: string): void {
+    settings.set('layout_presets', withoutPreset(settings.values.layout_presets, name));
+    ok(es.presets.removed.replace('{name}', name));
   },
 
   /* ---- Servidor / sesión ---- */
@@ -469,6 +699,7 @@ export const flows = {
           run: () => this.focusTab(tabId),
         },
         { id: 'rename', label: es.tabs.rename, run: () => this.renameTab(tabId) },
+        { id: 'save-layout', label: es.presets.save, run: () => this.saveLayoutPreset() },
         { id: 'close', label: es.tabs.close, danger: true, run: () => this.closeTab(tabId) },
       ],
     });
@@ -744,6 +975,7 @@ export const flows = {
     // `window` de ContextMenu —que cierra el menú con cualquier clic— y el menú
     // se abría y se cerraba en el mismo gesto (el botón parecía no hacer nada).
     event.stopPropagation();
+    const pane = session.panes.find((item) => item.pane_id === paneId);
     ui.openContextMenu({
       x: event.clientX,
       y: event.clientY,
@@ -766,6 +998,33 @@ export const flows = {
         { id: 'split-down', label: es.panes.splitDown, run: () => this.splitPane('down', paneId) },
         { id: 'zoom', label: es.panes.zoom, run: () => this.toggleZoom(paneId) },
         { id: 'rename', label: es.panes.rename, run: () => this.renamePane(paneId) },
+        { id: 'search-output', label: es.search.search, run: () => this.searchPaneOutput(paneId) },
+        { id: 'edit-scrollback', label: es.search.edit, run: () => this.editScrollback(paneId) },
+        { id: 'wait-output', label: es.search.wait, run: () => this.waitPaneOutput(paneId) },
+        {
+          id: 'resize-mode',
+          label: es.panes.resizeMode,
+          run: () => {
+            ui.resizeMode = true;
+          },
+        },
+        {
+          id: 'move-new-tab',
+          label: es.panes.moveNewTab,
+          run: () => this.movePane(paneId, 'new_tab'),
+        },
+        {
+          id: 'move-new-workspace',
+          label: es.panes.moveNewWorkspace,
+          run: () => this.movePane(paneId, 'new_workspace'),
+        },
+        ...session.tabs
+          .filter((tab) => tab.tab_id !== pane?.tab_id && tab.workspace_id === pane?.workspace_id)
+          .map((tab) => ({
+            id: `move-tab-${tab.tab_id}`,
+            label: es.panes.moveToTab.replace('{label}', tab.label ?? tab.tab_id),
+            run: () => this.movePane(paneId, { tabId: tab.tab_id }),
+          })),
         { id: 'close', label: es.panes.close, danger: true, run: () => this.closePane(paneId) },
       ],
     });

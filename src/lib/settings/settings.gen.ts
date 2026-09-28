@@ -3,7 +3,7 @@
  * Configuracion por defecto de herdr — GENERADO por scripts/gen-settings.mjs.
  * NO EDITAR A MANO. Regenerar: pnpm gen
  * Origen: `herdr --default-config` (0.8.0-preview.2026-08-04-d78e3d3b5126)
- * 22 secciones · 127 claves
+ * 22 secciones · 120 claves
  */
 export type SettingsValueType = 'string' | 'boolean' | 'integer' | 'float' | 'array' | 'toml';
 
@@ -413,34 +413,13 @@ export const SETTINGS_SECTIONS: SettingsSectionSpec[] = [
         type: 'string',
         description: 'right arrow always focuses the pane to the right',
       },
-      {
-        key: 'type',
-        value: '"shell" runs detached in the background.',
-        active: false,
-        type: 'string',
-        description: 'Custom commands use the same binding syntax.',
-      },
-      {
-        key: 'type',
-        value: '"pane" opens a temporary pane and closes it when the command exits.',
-        active: false,
-        type: 'string',
-        description: '',
-      },
-      {
-        key: 'type',
-        value: '"popup" opens a session-modal terminal without changing the tab layout.',
-        active: false,
-        type: 'string',
-        description: '',
-      },
     ],
   },
   {
     path: 'keys.command',
     tableArray: true,
     description:
-      'Popup width and height accept terminal cells or percentages such as "80%".\nOn Windows, command strings run through cmd.exe /d /c.',
+      'Custom commands use the same binding syntax.\ntype = "shell" runs detached in the background.\ntype = "pane" opens a temporary pane and closes it when the command exits.\ntype = "popup" opens a session-modal terminal without changing the tab layout.\nPopup width and height accept terminal cells or percentages such as "80%".\nOn Windows, command strings run through cmd.exe /d /c.',
     keys: [
       { key: 'key', value: '"prefix+alt+g"', active: false, type: 'string', description: '' },
       { key: 'type', value: '"popup"', active: false, type: 'string', description: '' },
@@ -737,28 +716,13 @@ export const SETTINGS_SECTIONS: SettingsSectionSpec[] = [
     description: 'Background notification popup delivery',
     keys: [
       {
-        key: 'off',
-        value: 'disable pop-up notifications',
+        key: 'delivery',
+        value: '"off"',
         active: false,
-        type: 'toml',
-        description: '',
+        type: 'string',
+        description:
+          'off = disable pop-up notifications\nherdr = show in-app toasts\nterminal = ask the outer terminal to show a desktop notification\nsystem = ask the OS notification service directly',
       },
-      { key: 'herdr', value: 'show in-app toasts', active: false, type: 'toml', description: '' },
-      {
-        key: 'terminal',
-        value: 'ask the outer terminal to show a desktop notification',
-        active: false,
-        type: 'toml',
-        description: '',
-      },
-      {
-        key: 'system',
-        value: 'ask the OS notification service directly',
-        active: false,
-        type: 'toml',
-        description: '',
-      },
-      { key: 'delivery', value: '"off"', active: false, type: 'string', description: '' },
       { key: 'delay_seconds', value: '1', active: false, type: 'integer', description: '' },
     ],
   },
