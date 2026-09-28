@@ -289,8 +289,12 @@ mod tests {
         assert!(is_whitelisted(&argv(&["herdr", "update"])));
         assert!(is_whitelisted(&argv(&["herdr", "update", "--handoff"])));
         assert!(is_whitelisted(&argv(&["herdr", "channel", "show"])));
-        assert!(is_whitelisted(&argv(&["herdr", "channel", "set", "preview"])));
-        assert!(!is_whitelisted(&argv(&["herdr", "channel", "set", "nightly"])));
+        assert!(is_whitelisted(&argv(&[
+            "herdr", "channel", "set", "preview"
+        ])));
+        assert!(!is_whitelisted(&argv(&[
+            "herdr", "channel", "set", "nightly"
+        ])));
         assert!(!is_whitelisted(&argv(&["herdr", "update", "--extra"])));
         assert!(!is_whitelisted(&argv(&["herdr"])));
         assert!(!is_whitelisted(&argv(&["git"])));

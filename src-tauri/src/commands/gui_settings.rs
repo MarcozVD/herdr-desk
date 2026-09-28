@@ -40,7 +40,10 @@ pub(crate) fn read_gui_settings(path: &Path) -> Value {
 }
 
 /// Escritura atómica (tmp + rename) del objeto completo.
-pub(crate) fn write_gui_settings(path: &Path, values: &Value) -> Result<GuiSettingsWrite, ApiError> {
+pub(crate) fn write_gui_settings(
+    path: &Path,
+    values: &Value,
+) -> Result<GuiSettingsWrite, ApiError> {
     let object = values
         .as_object()
         .ok_or_else(|| invalid("los ajustes de la GUI deben ser un objeto JSON".to_string()))?;
@@ -81,7 +84,10 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("hd-gui-settings-{}-{name}.json", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "hd-gui-settings-{}-{name}.json",
+            std::process::id()
+        ))
     }
 
     #[test]
