@@ -424,13 +424,25 @@ inspección del código.
 
 - Se guardan en los ajustes de la GUI (`layout_presets`, clave de `settings.json`), no en
   `config.toml`: son un árbol `LayoutNode`, no un valor TOML.
+- **Desviación de alcance: no hay editor JSON standalone.** Se guarda el `LayoutNode` **crudo**
+  que devuelve `layout.export` porque el árbol de la UI no es el contrato de `layout.apply`; al
+  aplicar se valida con `isLayoutNode()`. Editar el JSON a mano no se ofrece.
 - `lib/layout/presets.ts` valida antes de aplicar: `isLayoutNode()` acepta hoja `pane` y
-  `split` con `direction` `right`/`down` y `ratio` en `[0,1]`, recursivo; `sanitizePresetName()`
-  limita el nombre a 40 caracteres de `[\w .-]`. Aplicar un preset corrupto avisa en vez de
-  mandarlo al server.
-- `flows.saveLayoutPreset()` exporta el árbol de la pestaña visible (`layout.export`), pide
-  nombre y lo guarda; `applyLayoutPreset()` valida y llama a `layout.apply` con foco; también
-  hay borrado. Entradas en la paleta: guardar/aplicar/quitar.
+  `split` con `direction` `right`/`down` y `ratio` en `[0,1]`, recursivo; la hoja `pane` solo se
+  comprueba por su `type`, así que los ids los sigue validando el server.
+  `sanitizePresetName()` hace `trim` y **rechaza** (no recorta) lo que no case con
+  `^[\w][\w .-]*$` o pase de 40 caracteres. Aplicar un preset corrupto avisa en vez de mandarlo
+  al server.
+- `flows.saveLayoutPreset()` exporta el árbol de la pestaña visible (`layout.export`; si no hay
+  árbol, aviso), pide nombre con `validate: sanitizePresetName` y lo guarda con
+  `settings.set('layout_presets', …)`. `applyLayoutPreset()` valida y llama a
+  `layoutApi.apply(preset, { workspace_id, focus: true })`, luego `layout.refreshNow()`;
+  `deleteLayoutPreset()` quita la entrada con `withoutPreset()`.
+- Entradas: una en el **menú de la pestaña** («guardar layout», entre renombrar y cerrar) y en la
+  paleta `layout.save` fija más `layout.apply:<nombre>` y `layout.remove:<nombre>` generados con
+  `presetNames()` por cada preset guardado.
+- Tests: `src/lib/layout/presets.test.ts`, 5 casos (hojas y splits anidados, formas inválidas,
+  nombres válidos, nombres rechazados, orden y borrado sin mutar el original).
 
 ### (d) Worktrees (T3.4, UI)
 
