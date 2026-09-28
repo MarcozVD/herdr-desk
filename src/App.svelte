@@ -27,6 +27,7 @@
   import { syncBlockedOverlay } from './lib/agents/taskbarOverlay';
   import { gitStatuses } from './lib/git/status.svelte';
   import { setMica } from './lib/herdr/client';
+  import { glassAlphas } from './lib/theme/glass';
   import { es } from './lib/i18n/es';
   import { runAction } from './lib/keys/actions';
   import { flows } from './lib/actions/flows';
@@ -109,13 +110,16 @@
       settings.values.theme_dark_name,
       settings.values.theme_light_name,
       settings.values.accent,
+      settings.values.backdrop,
+      settings.values.glass_level,
       JSON.stringify(settings.values.theme_custom),
     ].join('|');
     void fingerprint;
     settings.applyTheme();
     pool.applyXtermTheme();
     const light = document.documentElement.dataset.theme === 'light';
-    void setMica(!light).catch(() => undefined);
+    const tint = glassAlphas(settings.values.glass_level, light).tint;
+    void setMica(!light, settings.values.backdrop === 'acrylic', tint).catch(() => undefined);
   });
 
   // T2.5 — El audio de los avisos se arma en el primer gesto del usuario (los

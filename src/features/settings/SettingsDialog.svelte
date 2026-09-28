@@ -24,7 +24,7 @@
     type SettingsKeySpec,
     type SettingsSectionSpec,
   } from '../../lib/settings/settings.gen';
-  import { settings, type GlassMode } from '../../lib/stores/settings.svelte';
+  import { settings, type BackdropMode, type GlassMode } from '../../lib/stores/settings.svelte';
   import { ui } from '../../lib/stores/ui.svelte';
   import { THEME_NAMES } from '../../lib/theme/themes';
   import Dialog from '../../lib/ui/Dialog.svelte';
@@ -310,6 +310,44 @@
                 <option value="full">{es.settings.glassFull}</option>
                 <option value="off">{es.settings.glassOff}</option>
               </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row__info">
+              <code>{es.settings.backdrop}</code>
+              <p class="row__doc">{es.settings.backdropHint}</p>
+            </div>
+            <div class="row__editor">
+              <select
+                class="row__input"
+                data-testid="settings-backdrop"
+                value={settings.values.backdrop}
+                onchange={(event) =>
+                  settings.set('backdrop', event.currentTarget.value as BackdropMode)}
+              >
+                <option value="mica">{es.settings.backdropMica}</option>
+                <option value="acrylic">{es.settings.backdropAcrylic}</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row__info">
+              <code>{es.settings.glassLevel}</code>
+              <p class="row__doc">{es.settings.glassLevelHint}</p>
+            </div>
+            <div class="row__editor glass-level">
+              <input
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                data-testid="settings-glass-level"
+                aria-label={es.settings.glassLevel}
+                value={settings.values.glass_level}
+                oninput={(event) => settings.set('glass_level', Number(event.currentTarget.value))}
+              />
+              <output data-testid="settings-glass-level-value">{settings.values.glass_level}</output
+              >
             </div>
           </div>
           <div class="row">
@@ -692,6 +730,24 @@
     font-size: 11px;
     color: var(--text-dim);
     white-space: pre-line;
+  }
+
+  .glass-level {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .glass-level input {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+
+  .glass-level output {
+    min-inline-size: 3ch;
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
   }
 
   .row__editor {

@@ -785,7 +785,7 @@ pub(crate) async fn write_config_file_with(
 /// Escribe solo las claves cambiadas conservando comentarios y formato.
 #[tauri::command]
 pub async fn config_write(
-    state: tauri::State<'_, crate::state::AppState>,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
     changes: Vec<ConfigChange>,
 ) -> Result<ConfigWriteResult, ApiError> {
     let path = config_path();
@@ -804,7 +804,7 @@ pub struct ConfigResetResult {
 /// argv exacto agregado a la lista blanca: sin flags ni argumentos posibles.
 #[tauri::command]
 pub async fn config_reset_keys(
-    state: tauri::State<'_, crate::state::AppState>,
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
 ) -> Result<ConfigResetResult, ApiError> {
     let argv: Vec<String> = ["herdr", "config", "reset-keys"]
         .iter()

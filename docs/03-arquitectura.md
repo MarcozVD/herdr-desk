@@ -100,10 +100,20 @@ de la máquina. Detectado en esta máquina: `Cascadia Code`.
 FRONTEND (`preventDefault` en el evento `contextmenu` del DOM), no del backend ni de la
 configuración de la ventana. No reintentarlo por el lado de Tauri/ventana.
 
-### Mica oscuro/claro (`set_mica`, F3/T3.7)
+### Mica oscuro/claro y Acrílico (`set_mica`, F3/T3.7)
 
-`set_mica(dark: bool) -> ()` cambia el efecto de la ventana principal entre `MicaDark` y
-`MicaLight` con `WindowEffectsConfig`, para que el cristal Accompañe al tema activo. Va en
+`set_mica(dark: bool, acrylic: Option<bool>, tint: Option<u8>) -> ()` cambia el efecto de la
+ventana principal con `WindowEffectsConfig`, para que el cristal acompañe al tema activo:
+
+- `acrylic` ausente o `false` → `MicaDark` / `MicaLight` (tinte del fondo de escritorio; no deja
+  ver otras ventanas).
+- `acrylic: true` → `Effect::Acrylic`, que desenfoca en vivo lo que hay DETRÁS de la ventana
+  (otras ventanas incluidas). `color` es el tinte RGBA que Windows pone encima: `16,18,28` en
+  oscuro y `245,245,250` en claro, con alpha = `tint` (por defecto 90 / 170). El frontend manda
+  el alpha derivado del nivel de cristal (`lib/theme/glass.ts`). Windows quita el acrílico en
+  ahorro de batería; puede ir con tirones al arrastrar según la build de Windows 11.
+
+Los argumentos nuevos son `Option`: una llamada vieja `set_mica({dark})` sigue valiendo. Va en
 `system.rs` y no como JS de ventana porque el enum `Effect` de la API JS de Tauri no expone
 `MicaDark`/`MicaLight`; el frontend lo envuelve en `setMica()` (`lib/herdr/client.ts`) y
 tolera el fallo (`.catch(() => undefined)`): sin efecto no se rompe la app, solo se pierde el
@@ -619,6 +629,11 @@ qué campo falla, cuántos métodos tiene cada lado y cómo regenerar
 
 ## Guardarraíles aplicados
 
+- **Estado gestionado = `Arc<AppState>`**: `lib.rs` hace `app.manage(Arc<AppState>)`, así que
+  todo command pide `tauri::State<'_, Arc<AppState>>`. Pedir `State<'_, AppState>` compila pero
+  falla EN EJECUCIÓN con «state not managed for field `state` on command `…`» (pasó con 22
+  commands de config, integraciones, plugins, server y worktrees: p. ej. `config_write` al
+  cambiar de tema). `state::managed_state_tests` recorre `src/commands/*.rs` y falla si vuelve.
 - Nunca se corre `herdr` sin argumentos; spawns explícitos: `--session <name> server`,
   `terminal session control`, o CLI de sesión.
 - Solo sesiones sandbox (`herdr-desk-dev`, `hd-test-*`); jamás `default`.

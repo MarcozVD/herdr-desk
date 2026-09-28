@@ -197,7 +197,7 @@ pub async fn integration_status() -> Result<Vec<IntegrationStatusEntry>, ApiErro
 /// Instala la integración para un agente (target normalizado al enum del server).
 #[tauri::command]
 pub async fn integration_install(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     target: String,
 ) -> Result<IntegrationOpResult, ApiError> {
     let client = state.current().client.clone();
@@ -213,7 +213,7 @@ pub async fn integration_install(
 /// Desinstala la integración para un agente (target normalizado).
 #[tauri::command]
 pub async fn integration_uninstall(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     target: String,
 ) -> Result<IntegrationOpResult, ApiError> {
     let client = state.current().client.clone();

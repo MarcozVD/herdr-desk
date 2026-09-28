@@ -47,3 +47,37 @@ test('la pestaña de atajos lista acciones y el reset confirma', async ({ page }
   await expect(page.getByTestId('confirm-accept')).toBeVisible();
   await page.getByTestId('confirm-cancel').click();
 });
+
+test('el botón de la titlebar abre y cierra los ajustes', async ({ page }) => {
+  await bootApp(page);
+  const button = page.getByTestId('settings-button');
+  await expect(button).toBeVisible();
+  await button.click();
+  await expect(page.getByTestId('settings-dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('settings-dialog')).toHaveCount(0);
+});
+
+test('el fondo acrílico se aplica en vivo y pide el efecto a la ventana', async ({ page }) => {
+  await bootApp(page);
+  await page.getByTestId('settings-button').click();
+  await page.getByTestId('settings-backdrop').selectOption('acrylic');
+  await expect(page.locator('html')).toHaveAttribute('data-backdrop', 'acrylic');
+  await expect(page.locator('.bg-mesh')).toBeHidden();
+  await expect
+    .poll(async () => (await recordedCalls(page, 'set_mica')).some((args) => args.acrylic === true))
+    .toBe(true);
+});
+
+test('el nivel de cristal (1-100) cambia la opacidad en vivo', async ({ page }) => {
+  await bootApp(page);
+  await page.getByTestId('settings-button').click();
+  const slider = page.getByTestId('settings-glass-level');
+  await slider.fill('100');
+  await expect(page.getByTestId('settings-glass-level-value')).toHaveText('100');
+  const alpha = () =>
+    page.evaluate(() => document.documentElement.style.getPropertyValue('--glass-alpha-surface'));
+  await expect.poll(alpha).toBe('0.12');
+  await slider.fill('1');
+  await expect.poll(alpha).toBe('0.9');
+});

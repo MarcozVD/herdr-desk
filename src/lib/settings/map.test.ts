@@ -122,6 +122,7 @@ describe('ajustes de la GUI (settings.json)', () => {
     const gui = guiValuesFromSettings(UI_SETTINGS_DEFAULTS);
     expect(Object.keys(gui).sort()).toEqual([...GUI_KEYS].sort());
     expect(gui.glass).toBe('auto');
+    expect(gui.backdrop).toBe('mica');
     expect('sidebar_width' in gui).toBe(false);
   });
 
@@ -147,6 +148,11 @@ describe('ajustes de la GUI (settings.json)', () => {
   it('un archivo corrupto no rompe: se quedan los defaults', () => {
     const next = applyGuiValues(UI_SETTINGS_DEFAULTS, { glass: 7, webgl: 'no' });
     expect(next).toEqual(UI_SETTINGS_DEFAULTS);
+  });
+
+  it('backdrop solo acepta mica o acrylic', () => {
+    expect(applyGuiValues(UI_SETTINGS_DEFAULTS, { backdrop: 'acrylic' }).backdrop).toBe('acrylic');
+    expect(applyGuiValues(UI_SETTINGS_DEFAULTS, { backdrop: 'blur' }).backdrop).toBe('mica');
   });
 });
 

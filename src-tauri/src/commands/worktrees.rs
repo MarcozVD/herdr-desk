@@ -408,7 +408,7 @@ fn validate_remove_request(request: &WorktreeRemoveRequest) -> Result<(), ApiErr
 
 #[tauri::command]
 pub async fn worktree_list(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     workspace_id: Option<String>,
     cwd: Option<String>,
 ) -> Result<WorktreeListResult, ApiError> {
@@ -418,7 +418,7 @@ pub async fn worktree_list(
 
 #[tauri::command]
 pub async fn worktree_create(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     request: WorktreeCreateRequest,
 ) -> Result<WorktreeCreated, ApiError> {
     let client = state.current().client.clone();
@@ -427,7 +427,7 @@ pub async fn worktree_create(
 
 #[tauri::command]
 pub async fn worktree_open(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     request: WorktreeOpenRequest,
 ) -> Result<WorktreeOpened, ApiError> {
     let client = state.current().client.clone();
@@ -436,7 +436,7 @@ pub async fn worktree_open(
 
 #[tauri::command]
 pub async fn worktree_remove(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     request: WorktreeRemoveRequest,
 ) -> Result<WorktreeRemoved, ApiError> {
     let client = state.current().client.clone();

@@ -17,8 +17,12 @@ import type { AgentTokenSpec } from '../agents/agentPanel';
 import { DEFAULT_AGENT_ROWS, DEFAULT_AGENT_ROW_GAP } from '../agents/agentPanel';
 import type { ConfigEntry } from '../settings/spec';
 import { applyThemeToDocument } from '../theme/apply';
+import { applyGlassLevel, GLASS_LEVEL_DEFAULT } from '../theme/glass';
 
 export type GlassMode = 'auto' | 'full' | 'off';
+/** Material de Windows detrás de la ventana: Mica (tinte del fondo de
+ *  escritorio) o Acrílico (desenfoque en vivo de lo que hay detrás). */
+export type BackdropMode = 'mica' | 'acrylic';
 export type SidebarCollapsedMode = 'compact' | 'hidden';
 export type TabBarPosition = 'top' | 'bottom';
 export type AgentPanelSort = 'spaces' | 'priority';
@@ -67,6 +71,9 @@ export interface UiSettings {
   copy_on_select: boolean;
   // Solo de la GUI (settings.json)
   glass: GlassMode;
+  backdrop: BackdropMode;
+  /** Cuánto cristal: 1 = casi sólido, 100 = lo más transparente. */
+  glass_level: number;
   sync_focus_with_tui: boolean;
   webgl: boolean;
   webgl_max_panes: number;
@@ -116,6 +123,8 @@ export const UI_SETTINGS_DEFAULTS: UiSettings = {
   accent: 'cyan',
   copy_on_select: true,
   glass: 'auto',
+  backdrop: 'mica',
+  glass_level: GLASS_LEVEL_DEFAULT,
   sync_focus_with_tui: false,
   webgl: true,
   webgl_max_panes: 8,
@@ -203,8 +212,10 @@ class SettingsStore {
     const mode = this.values.glass;
     root.dataset.glass = mode === 'off' ? 'off' : mode === 'full' ? 'force' : 'on';
     root.dataset.mica = mica ? 'on' : 'off';
+    root.dataset.backdrop = this.values.backdrop;
     root.lang = 'es';
     applyThemeToDocument(this.values);
+    applyGlassLevel(root, this.values.glass_level, root.dataset.theme === 'light');
   }
 
   get resolvedTheme(): string {

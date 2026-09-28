@@ -1012,7 +1012,7 @@ pub(crate) async fn plugin_install_rpc(
 
 #[tauri::command]
 pub async fn plugin_list(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     plugin_id: Option<String>,
 ) -> Result<Vec<PluginInfo>, ApiError> {
     let client = state.current().client.clone();
@@ -1021,7 +1021,7 @@ pub async fn plugin_list(
 
 #[tauri::command]
 pub async fn plugin_enable(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     plugin_id: String,
 ) -> Result<PluginInfo, ApiError> {
     let client = state.current().client.clone();
@@ -1030,7 +1030,7 @@ pub async fn plugin_enable(
 
 #[tauri::command]
 pub async fn plugin_disable(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     plugin_id: String,
 ) -> Result<PluginInfo, ApiError> {
     let client = state.current().client.clone();
@@ -1039,7 +1039,7 @@ pub async fn plugin_disable(
 
 #[tauri::command]
 pub async fn plugin_unlink(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     request: PluginUnlinkRequest,
 ) -> Result<PluginUnlinked, ApiError> {
     let client = state.current().client.clone();
@@ -1049,7 +1049,7 @@ pub async fn plugin_unlink(
 /// Vincula un plugin local; la UI resuelve la carpeta (selector) y pasa la ruta.
 #[tauri::command]
 pub async fn plugin_link(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     request: PluginLinkRequest,
 ) -> Result<PluginInfo, ApiError> {
     let client = state.current().client.clone();
@@ -1058,7 +1058,7 @@ pub async fn plugin_link(
 
 #[tauri::command]
 pub async fn plugin_action_list(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     plugin_id: Option<String>,
 ) -> Result<Vec<PluginActionInfo>, ApiError> {
     let client = state.current().client.clone();
@@ -1067,7 +1067,7 @@ pub async fn plugin_action_list(
 
 #[tauri::command]
 pub async fn plugin_action_invoke(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     request: PluginActionInvokeRequest,
 ) -> Result<PluginActionInvoked, ApiError> {
     let client = state.current().client.clone();
@@ -1076,7 +1076,7 @@ pub async fn plugin_action_invoke(
 
 #[tauri::command]
 pub async fn plugin_logs(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     plugin_id: Option<String>,
     limit: Option<u32>,
 ) -> Result<Vec<PluginCommandLogInfo>, ApiError> {
@@ -1086,7 +1086,7 @@ pub async fn plugin_logs(
 
 #[tauri::command]
 pub async fn plugin_pane_open(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     request: PluginPaneOpenRequest,
 ) -> Result<Value, ApiError> {
     let client = state.current().client.clone();
@@ -1095,7 +1095,7 @@ pub async fn plugin_pane_open(
 
 #[tauri::command]
 pub async fn plugin_pane_focus(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     pane_id: String,
 ) -> Result<Value, ApiError> {
     let client = state.current().client.clone();
@@ -1110,7 +1110,7 @@ pub async fn plugin_pane_focus(
 
 #[tauri::command]
 pub async fn plugin_pane_close(
-    state: tauri::State<'_, AppState>,
+    state: tauri::State<'_, std::sync::Arc<AppState>>,
     pane_id: String,
 ) -> Result<Value, ApiError> {
     let client = state.current().client.clone();

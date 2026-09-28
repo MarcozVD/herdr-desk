@@ -226,3 +226,31 @@ impl Default for BridgeRegistry {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod managed_state_tests {
+    /// `lib.rs` registra el estado con `app.manage(Arc<AppState>)`: un command que
+    /// pida `State<AppState>` (sin `Arc`) compila pero falla en tiempo de ejecución
+    /// con «state not managed». Este test recorre los commands y lo impide.
+    #[test]
+    fn todos_los_commands_piden_arc_app_state() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands");
+        let mut malos = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("src/commands") {
+            let path = entry.expect("entrada").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let texto = std::fs::read_to_string(&path).expect("lectura");
+            for (n, linea) in texto.lines().enumerate() {
+                let l = linea.replace(' ', "");
+                if l.contains("State<'_,AppState>")
+                    || l.contains("State<'_,crate::state::AppState>")
+                {
+                    malos.push(format!("{}:{}", path.display(), n + 1));
+                }
+            }
+        }
+        assert!(malos.is_empty(), "State<AppState> sin Arc en: {malos:?}");
+    }
+}
