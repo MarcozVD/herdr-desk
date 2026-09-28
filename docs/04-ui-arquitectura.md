@@ -321,10 +321,13 @@ pestañas («Configuración» y «Atajos»), abierto con `prefix+s` (acción `se
   `[remote]` se pinta pero no se edita (`isReadOnlySection`).
 - **Claves desconocidas**: las entradas de `config_read` cuyo path no está en los defaults se
   listan aparte y son editables (así no se pierde nada que el usuario tenga a mano).
-- **Sección GUI** (`settings-gui`), la última: cristal (`auto`/`full`/`off`), sincronizar foco
+- **Acceso**: además de `prefix+s` y la paleta, botón de engranaje en la titlebar
+  (`data-testid="settings-button"`, a la izquierda de `?`) que abre y cierra el diálogo.
+- **Sección GUI** (`settings-gui`), la última: cristal (`auto`/`full`/`off`), fondo de ventana
+  (`backdrop`: `mica`/`acrylic`), nivel de cristal (`glass_level`, deslizador 1-100), sincronizar foco
   con la TUI, WebGL, máximo de panes con WebGL, LRU de terminales, tiempos de gracia de
   cierre/reapertura del bridge, duración del toast, recientes de la paleta, presets de layout y
-  líneas de scrollback que se leen de una vez. Son las 11 claves de `GUI_KEYS` de
+  líneas de scrollback que se leen de una vez. Son las 13 claves de `GUI_KEYS` de
   `lib/settings/map.ts`:
   **no** van a `config.toml` (el server las avisaría como `unknown_section`) sino a
   `%APPDATA%\herdr-desk\settings.json` mediante `gui_settings_write` (ver `docs/03`).
@@ -388,8 +391,18 @@ como variables CSS **y** como paleta ANSI de xterm, y Mica acompaña al modo cla
   escribe ~18 variables CSS + las 16 ANSI. Deja `data-theme` y `data-theme-name` en `<html>`.
 - **Terminal**: `pool.applyXtermTheme()` relee esas variables y las pone en
   `terminal.options.theme` de cada xterm vivo, así que el cambio de tema se ve sin reiniciar.
-- **Mica**: `App.svelte` llama a `setMica(dark)` (command `set_mica`, ver `docs/03`) cuando
-  cambia el tema, y tolera el fallo. `auto_switch` se reevalúa con el evento `change` de
+- **Mica / Acrílico**: `App.svelte` llama a `setMica(dark, acrylic, tint)` (command `set_mica`,
+  ver `docs/03`) cuando cambia el tema, el fondo o el nivel de cristal, y tolera el fallo. Con
+  `data-backdrop="acrylic"` en `<html>`, `app.css` oculta `.bg-mesh`, `.bg-noise` y
+  `.shell-fallback` (taparían el desenfoque de Windows). La terminal no cambia: sigue casi opaca.
+- **Nivel de cristal** (`lib/theme/glass.ts`): `glassAlphas(level, light)` interpola 1→100 las
+  opacidades de las capas (surface 0,90→0,12; overlay 0,95→0,32; elevated 0,97→0,55) y el alpha
+  del tinte del acrílico (220→20). En tema **claro** hay pisos de legibilidad (surface 0,60,
+  overlay 0,74, elevated 0,84, tinte 150): con mucho cristal el texto oscuro sobre lo de detrás
+  dejaba de leerse. `applyGlassLevel()` escribe `--glass-alpha-*` en el `style` de `<html>`
+  (gana a `tokens.css`) desde `settings.applyTheme()`. Por defecto 60. Tests: 4 en
+  `glass.test.ts` y el e2e del deslizador en `settings.spec.ts`. Los pisos del claro están
+  elegidos a ojo: pendiente validarlos en la ventana real. `auto_switch` se reevalúa con el evento `change` de
   `prefers-color-scheme` registrado en `onMount`.
 - **Selector**: la primera sección del formulario es el tema —`select` con los 18 nombres
   (`THEME_NAMES`), interruptor de `auto_switch` y, cuando está activo, los select de
@@ -932,8 +945,9 @@ pnpm build              dist/assets/index-*.js 498,32 kB min (136,76 kB gzip) + 
 ```
 
 Ese bloque es la foto del cierre de F1 y así se queda. Los números **de hoy**, medidos en esta
-máquina con `pnpm test` y contando `tests/e2e/`: **392 tests unit en 46 archivos**, **22 specs
-e2e** y **126 pruebas e2e en verde**. Lo que se ha sumado desde el cierre de F1, tarea a tarea: los
+máquina con `pnpm test` y contando `tests/e2e/`: **397 tests unit en 47 archivos**, **22 specs
+e2e** y **129 pruebas e2e** (las 3 nuevas de `settings.spec.ts`: botón, acrílico y nivel de
+cristal). Lo que se ha sumado desde el cierre de F1, tarea a tarea: los
 5 de `lib/settings/settings.test.ts` (codegen de T3.5), los 13 de `lib/settings/map.test.ts`
 (puente `config.toml` ↔ ajustes), los 7 de T3.6 en `lib/keys/{config,parse}.test.ts`, los 9 de
 `lib/theme/theme.test.ts` (T3.7), los de `lib/layout/presets.test.ts` y
