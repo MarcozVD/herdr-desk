@@ -21,12 +21,15 @@
   let status = $state<ServerStatusReport | null>(null);
   let manifests = $state<AgentManifestStatus | null>(null);
   let error = $state<string | null>(null);
+  let loading = $state(false);
   let busy = $state(false);
   let output = $state('');
 
   async function load(): Promise<void> {
     error = null;
+    loading = true;
     const [report, manifestReport] = await Promise.all([serverStatus(), agentManifests()]);
+    loading = false;
     if (!report.ok) {
       status = null;
       error =
@@ -150,6 +153,8 @@
   >
     {#if error}
       <p class="server__error" data-testid="server-error">{error}</p>
+    {:else if loading && !status && !manifests}
+      <p class="server__line" data-testid="server-loading">{es.dialog.loading}</p>
     {/if}
     {#if status}
       <section class="server__card" data-testid="server-status">

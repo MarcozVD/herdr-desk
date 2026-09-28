@@ -15,11 +15,14 @@
 
   let entries = $state<IntegrationStatusEntry[]>([]);
   let error = $state<string | null>(null);
+  let loading = $state(false);
   let busy = $state<string | null>(null);
 
   async function load(): Promise<void> {
     error = null;
+    loading = true;
     const outcome = await integrationStatus();
+    loading = false;
     if (!outcome.ok) {
       entries = [];
       error =
@@ -94,8 +97,9 @@
   >
     {#if error}
       <p class="integrations__error" data-testid="integrations-error">{error}</p>
-    {/if}
-    {#if entries.length === 0 && !error}
+    {:else if loading}
+      <p class="integrations__empty" data-testid="integrations-loading">{es.dialog.loading}</p>
+    {:else if entries.length === 0}
       <p class="integrations__empty" data-testid="integrations-empty">
         {es.integrations.empty}
       </p>

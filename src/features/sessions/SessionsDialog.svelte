@@ -19,14 +19,18 @@
 
   let sessions = $state<SessionInfo[]>([]);
   let loadError = $state<string | null>(null);
+  let loading = $state(false);
   let busy = $state<string | null>(null);
 
   async function load(): Promise<void> {
+    loading = true;
     try {
       sessions = await sessionList();
       loadError = null;
     } catch (raw) {
       loadError = describeApiError(raw, { session: session.sessionName ?? '' });
+    } finally {
+      loading = false;
     }
   }
 
@@ -141,6 +145,8 @@
       <p class="sessions__error" data-testid="sessions-error">
         {es.sessions.unreachable} · {loadError}
       </p>
+    {:else if loading && sessions.length === 0}
+      <p class="sessions__note" data-testid="sessions-loading">{es.dialog.loading}</p>
     {:else}
       <ul class="sessions" data-testid="session-list">
         {#each sessions as item (item.name)}
