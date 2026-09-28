@@ -502,12 +502,23 @@ fallar. Cada fila muestra etiqueta, rama, ruta y banderas (`bare`, `detached`, `
 
 ### (f) Salida del panel: buscar, editar, esperar (T3.9)
 
-- `searchPaneOutput()` → `pane.read` de las últimas `search_lines` y visor de texto.
-- `editScrollback()` → `pane.read` (mínimo 500 líneas) → `write_scratch_file` → se abre con el
-  plugin `opener`. El backend sanea el nombre del temporal (solo alfanumérico, `-` y `_`, 60
-  chars) y devuelve la ruta.
-- `waitPaneOutput()` → `pane.wait_for_output` con `substring` o `re:<regex>` y timeout de 60 s
-  (`source: recent_unwrapped`, `strip_ansi: true`).
+- Las tres acciones viven en el **menú del panel** (`search-output`, `edit-scrollback`,
+  `wait-output`) y comparten el ajuste `search_lines` de `settings.json` (`GUI_KEYS`).
+  `paneApi.read` pide `source: 'recent_unwrapped'`, `format: 'text'` y `strip_ansi: true`.
+- `searchPaneOutput()` → `pane.read` de las últimas `search_lines` y visor de texto
+  (`ui.openViewer`).
+- `editScrollback()` → `pane.read` de `max(500, search_lines)` líneas → `write_scratch_file` con
+  el nombre `scrollback-<paneId>` saneado en el propio cliente y otra vez en el backend (solo
+  alfanumérico, `-` y `_`, 60 caracteres; el archivo es
+  `herdr-desk-<nombre>-<timestamp ms>.txt` en el temporal, o `scratch` si el nombre queda vacío) →
+  `openPath` (plugin `opener`) lo abre con el editor externo. Devuelve la ruta absoluta.
+- `waitPaneOutput()` → pide el patrón: si empieza por `re:` es `regex` con el resto del texto, y
+  si no `substring`. Avisa «esperando…», y va a `pane.wait_for_output` con `timeout_ms` de
+  **60 000** fijo, `source: 'recent_unwrapped'`, `strip_ansi: true` y `lines: search_lines`. Si
+  expira, el error se muestra con el mensaje del backend.
+- **Hueco de pruebas**: no hay test dedicado de estos tres flujos; la única cobertura es
+  indirecta, el recuento de 13 ítems del menú de panel en `actions.spec.ts` (5 de panel + 2 de
+  agente + 3 de scrollback), que fija que las entradas existen, no que funcionen.
 
 ### (g) Estado git por espacio (T3.10)
 
@@ -876,8 +887,9 @@ Mediciones de la corrida de F1:
   la verificación **en vivo** de cada uno contra un herdr real (aquí todo se ha medido con el
   arnés y los 388 tests), el e2e del borrado de worktree con su doble aviso, el **cierre
   automático del panel de un comando `pane`/`popup`** (hoy no hay canal de eventos en la UI que
-  avise de `pane_exited`, §6septies e), y decidir si `run_shell_command` —que sale de la
-  superlista a propósito— se queda así.
+  avise de `pane_exited`, §6septies e), **tests propios de la salida de panel** —buscar, editar
+  el scrollback y esperar solo se cubren indirectamente por el recuento del menú (§6septies f)—, y
+  decidir si `run_shell_command` —que sale de la superlista a propósito— se queda así.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
 - **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del
