@@ -455,10 +455,22 @@ inspección del código.
 ### (d) Worktrees (T3.4, UI)
 
 `features/worktrees/WorktreesDialog.svelte` sobre los commands que ya expone el backend
-(`worktree_list`/`worktree_create`/`worktree_open`/`worktree_remove`). Lista el repo y sus
-checkouts, informa de los **prunable** (los que se pueden borrar) y pide confirmación doble en
-el borrado (el propio command exige `confirm`). Se abre desde la paleta («worktrees del espacio»)
-o el menú del espacio.
+(`worktree_list`/`worktree_create`/`worktree_open`/`worktree_remove`). Se abre desde la paleta
+(«worktrees del espacio») o el menú del espacio, y el `$effect` lista al abrirse con
+`worktreeList(visible.workspaceId)`; si el command no existe, avisa con su nombre en vez de
+fallar. Cada fila muestra etiqueta, rama, ruta y banderas (`bare`, `detached`, `prunable`,
+`linked`) más la insignia de «ya abierto».
+- **Crear**: rama obligatoria (si no, `invalidBranch`), y `base`/`path`/`label` opcionales: lo
+  vacío viaja como `null`. Al crear, limpia el formulario y recarga la lista.
+- **Abrir**: si el worktree ya está abierto en un espacio, aviso y no hace nada; si no,
+  `worktree_open` con `focus: true` y cierra el diálogo.
+- **Quitar**: solo se ofrece —y solo se puede— si el worktree está abierto en un espacio, porque
+  `worktree_remove` se direcciona por **`workspace_id`** (`item.open_workspace_id`), no por ruta.
+  El doble aviso es de la UI: primero un `ui.confirm` de peligro, y si la llamada sin forzar
+  falla, un **segundo** `ui.confirm` para reintentar con `force: true`. El `confirm: true` que
+  exige el contrato lo pone siempre el cliente (`client.ts`), no el usuario.
+- e2e: `f3.spec.ts` cubre la apertura desde la paleta, las 2 filas del arnés y la creación con
+  rama. El borrado con doble aviso **no** tiene e2e.
 
 ### (e) Comandos personalizados de `[[keys.command]]` (T3.8)
 
@@ -846,8 +858,8 @@ Mediciones de la corrida de F1:
 - **Presets, worktrees, comandos personalizados, scrollback y git** (F3/T3.3, T3.4, T3.8-T3.10):
   implementados en cliente (§6septies c-g) y con commands de backend ya registrados. Pendiente
   la verificación **en vivo** de cada uno contra un herdr real (aquí todo se ha medido con el
-  arnés y los 388 tests), y decidir si `run_shell_command` —que sale de la superlista a
-  propósito— se queda así.
+  arnés y los 388 tests), el e2e del borrado de worktree con su doble aviso, y decidir si
+  `run_shell_command` —que sale de la superlista a propósito— se queda así.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
 - **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del
