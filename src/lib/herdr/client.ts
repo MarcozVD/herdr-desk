@@ -61,11 +61,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-/** Genérico: `herdr_call(method, params)`, 0,3–0,5 ms contra el named pipe. */
-export async function call<M extends MethodName>(
-  method: M,
-  params: MethodParams[M],
-): Promise<ResponseResult> {
+/**
+ * `herdr_call` sin tipos (consola API, T4.5): el método y los params vienen del
+ * catálogo del schema en runtime. Mide latencia igual que `call`.
+ */
+export async function callRaw(method: string, params: unknown): Promise<ResponseResult> {
   const started = performance.now();
   try {
     return (await invoke('herdr_call', { method, params })) as ResponseResult;
@@ -74,6 +74,14 @@ export async function call<M extends MethodName>(
   } finally {
     recordLatency(performance.now() - started);
   }
+}
+
+/** Genérico: `herdr_call(method, params)`, 0,3–0,5 ms contra el named pipe. */
+export async function call<M extends MethodName>(
+  method: M,
+  params: MethodParams[M],
+): Promise<ResponseResult> {
+  return callRaw(method, params);
 }
 
 /**
@@ -203,7 +211,7 @@ export function classifyCommandError(raw: unknown): { kind: 'missing' | 'error';
   return { kind: 'error', error: parseApiError(raw) };
 }
 
-async function optionalCommand<T>(
+export async function optionalCommand<T>(
   command: string,
   args?: Record<string, unknown>,
 ): Promise<CommandOutcome<T>> {

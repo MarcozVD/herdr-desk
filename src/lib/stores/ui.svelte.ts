@@ -75,6 +75,12 @@ class UiStore {
   settingsOpen = $state(false);
   /** Diálogo de worktrees (T3.4). */
   worktreesOpen = $state(false);
+  /** Superficies de F4. */
+  pluginsOpen = $state(false);
+  integrationsOpen = $state(false);
+  serverOpen = $state(false);
+  consoleOpen = $state(false);
+  advancedOpen = $state(false);
   /** Modo prefix activo (T1.10). */
   prefixActive = $state(false);
   /** Modo redimensionar (T3.1): las flechas cambian el tamaño del panel. */
@@ -156,6 +162,46 @@ class UiStore {
     this.worktreesOpen = false;
   }
 
+  openPlugins(): void {
+    this.pluginsOpen = true;
+  }
+
+  closePlugins(): void {
+    this.pluginsOpen = false;
+  }
+
+  openIntegrations(): void {
+    this.integrationsOpen = true;
+  }
+
+  closeIntegrations(): void {
+    this.integrationsOpen = false;
+  }
+
+  openServer(): void {
+    this.serverOpen = true;
+  }
+
+  closeServer(): void {
+    this.serverOpen = false;
+  }
+
+  openConsole(): void {
+    this.consoleOpen = true;
+  }
+
+  closeConsole(): void {
+    this.consoleOpen = false;
+  }
+
+  openAdvanced(): void {
+    this.advancedOpen = true;
+  }
+
+  closeAdvanced(): void {
+    this.advancedOpen = false;
+  }
+
   closeSettings(): void {
     this.settingsOpen = false;
   }
@@ -231,6 +277,11 @@ class UiStore {
     this.viewer = null;
     this.agentPromptTarget = null;
     this.startAgentTarget = null;
+    this.pluginsOpen = false;
+    this.integrationsOpen = false;
+    this.serverOpen = false;
+    this.consoleOpen = false;
+    this.advancedOpen = false;
   }
 
   notify(text: string, kind: ToastMessage['kind'] = 'info'): void {

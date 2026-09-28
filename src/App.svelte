@@ -10,6 +10,11 @@
   import { noticeSound } from './lib/agents/noticeSound';
   import StartAgentDialog from './features/agents/StartAgentDialog.svelte';
   import CommandPalette from './features/palette/CommandPalette.svelte';
+  import AdvancedDialog from './features/advanced/AdvancedDialog.svelte';
+  import ApiConsole from './features/console/ApiConsole.svelte';
+  import IntegrationsDialog from './features/integrations/IntegrationsDialog.svelte';
+  import PluginsDialog from './features/plugins/PluginsDialog.svelte';
+  import ServerDialog from './features/server/ServerDialog.svelte';
   import SessionsDialog from './features/sessions/SessionsDialog.svelte';
   import SettingsDialog from './features/settings/SettingsDialog.svelte';
   import Sidebar from './features/sidebar/Sidebar.svelte';
@@ -228,6 +233,11 @@
         ui.sessionsOpen ||
         ui.settingsOpen ||
         ui.worktreesOpen ||
+        ui.pluginsOpen ||
+        ui.integrationsOpen ||
+        ui.serverOpen ||
+        ui.consoleOpen ||
+        ui.advancedOpen ||
         ui.prefixActive;
       if (somethingOpen) {
         event.preventDefault();
@@ -237,6 +247,11 @@
         else if (ui.sessionsOpen) ui.closeSessions();
         else if (ui.settingsOpen) ui.closeSettings();
         else if (ui.worktreesOpen) ui.closeWorktrees();
+        else if (ui.pluginsOpen) ui.closePlugins();
+        else if (ui.integrationsOpen) ui.closeIntegrations();
+        else if (ui.serverOpen) ui.closeServer();
+        else if (ui.consoleOpen) ui.closeConsole();
+        else if (ui.advancedOpen) ui.closeAdvanced();
         else if (ui.contextMenu) ui.closeContextMenu();
         else ui.closePalette();
       }
@@ -362,5 +377,10 @@
 <SessionsDialog />
 <SettingsDialog />
 <WorktreesDialog />
+<PluginsDialog />
+<IntegrationsDialog />
+<ServerDialog />
+<ApiConsole />
+<AdvancedDialog />
 <ContextMenu />
 <ToastHost />
