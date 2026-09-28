@@ -19,7 +19,7 @@
     "rust:fmt": "cargo fmt --all",
     "rust:lint": "cargo clippy --workspace --all-targets -- -D warnings",
     "rust:test": "cargo test --workspace",
-    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test && pnpm rust:lint && pnpm rust:test"
+    "verify": "pnpm format:check && pnpm lint && pnpm check && pnpm test && pnpm schema:check && pnpm rust:lint && pnpm rust:test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
