@@ -28,7 +28,9 @@ src/
   App.svelte            composición del shell, efecto del árbol y manejador de teclado
   app.css               glass, layout del shell, botones, overlays
   lib/
-    herdr/              contrato con el backend: client, errors, actions, types(.gen), methods.gen
+    herdr/              contrato con el backend: client, errors, actions, types(.gen), methods.gen,
+                        f4.ts (client de F4: 22 wrappers) y coverage.ts (clasificación de los
+                        90 métodos como curated:<feature> o console, T4.7)
     stores/             session (runas + reconciliación), layout (árbol), ui (efímero), settings
     terminal/           frames.ts (decoder/FrameWriter), pool.ts, TerminalView, TerminalScrollbar
     layout/             tree.ts (geometría y vecinos) + SplitTree.svelte + presets.ts (T3.3)
@@ -46,8 +48,11 @@ src/
                         apply.ts (tema efectivo + variables CSS), F3/T3.7
   features/             titlebar, sidebar, tabs, panes, statusbar, sessions, settings
                         (SettingsDialog.svelte + KeymapEditor.svelte, F3/T3.5-T3.6), worktrees
-                        (WorktreesDialog.svelte, T3.4)
-tests/e2e/              Playwright + mockIPC (arnés en src/lib/testing/harness.ts) — 21 specs
+                        (WorktreesDialog.svelte, T3.4), y los cinco diálogos de F4: plugins
+                        (PluginsDialog.svelte, T4.1), integrations (IntegrationsDialog.svelte,
+                        T4.2), server (ServerDialog.svelte, T4.3-T4.4), console
+                        (ApiConsole.svelte, T4.5) y advanced (AdvancedDialog.svelte, T4.6)
+tests/e2e/              Playwright + mockIPC (arnés en src/lib/testing/harness.ts) — 22 specs
 tests/fixtures/         default-config.toml (`herdr --default-config`)
 ```
 
@@ -61,7 +66,7 @@ con `full`, los frames anteriores en cola se descartan.
 |---|---|---|
 | `session.svelte.ts` | snapshot crudo (`$state.raw`), colecciones reconciliadas, foco, conexión, versión/protocolo, latencia p50, `revision`, `connectionEpoch` | el snapshot se reemplaza entero en cada evento; las colecciones se reconcilian **en sitio** (`reconcileById`) para que nada se remonte |
 | `layout.svelte.ts` | árbol del tab visible (`layout.export`), `zoomed`, `revision` | `schedule()` no lee runas: se llama desde un `$effect` y Svelte corta con `effect_update_depth_exceeded` si un efecto lee y escribe el mismo estado |
-| `ui.svelte.ts` | qué está abierto (paleta, cheatsheet, contexto, sesiones, **ajustes**, **worktrees**), el **modo redimensionar** (`resizeMode`, T3.1), foco local, toasts y promesas de confirmación/prompt | un solo `ConfirmDialog`/`PromptDialog` montado; `{#key}` lo recrea en cada petición. `resizeMode` cuenta como «algo abierto» para el manejador global: mientras está, las flechas redimensionan y no llegan a la terminal |
+| `ui.svelte.ts` | qué está abierto (paleta, cheatsheet, contexto, sesiones, **ajustes**, **worktrees**, y los cinco diálogos de F4**: plugins, integraciones, servidor, consola y avanzado), el **modo redimensionar** (`resizeMode`, T3.1), foco local, toasts y promesas de confirmación/prompt | un solo `ConfirmDialog`/`PromptDialog` montado; `{#key}` lo recrea en cada petición. `resizeMode` cuenta como «algo abierto» para el manejador global: mientras está, las flechas redimensionan y no llegan a la terminal. Los cinco diálogos de F4 se cierran también con `Esc` desde `App.svelte`, en cascada, y comparten esa misma regla de «algo abierto» |
 | `settings.svelte.ts` | preferencias (ancho de sidebar, `collapsed_mode`, posición de la tab bar, `pane_borders/gaps`, `mouse_scroll_lines`, `webgl_max_panes`, LRU, `copy_on_select`, sincronizar foco, **`layout_presets`** y **`search_lines`**, T3.3/T3.9) **y `configEntries`** (las entradas de `config.toml`, que alimentan el keymap en T3.6) | **ya no usa `localStorage`** (F3/T3.5): al arrancar, `init()` pide `config_read` + `gui_settings_read` y aplica los valores efectivos de `config.toml` más las claves exclusivas de la GUI; si un command falta, se sigue con los defaults. `set()` decide el destino: clave de herdr → `config_write` (una clave por escritura), clave GUI → `settings.json` con debounce de 400 ms. `applyConfigEntries()` reaplica la config tras guardar en el formulario; los fallos de persistencia salen por `onPersistError` (toast), no por excepción |
 | `git/status.svelte.ts` | rama y nº de cambios sucios por espacio (T3.10) | no es un store del snapshot: se refresca **atado a la revisión** con un tope de 3 s por espacio y sin peticiones solapadas; si el command `git_status` no está, `infoOf()` devuelve `null` y la sidebar no pinta tokens |
 
@@ -545,6 +550,91 @@ fallar. Cada fila muestra etiqueta, rama, ruta y banderas (`bare`, `detached`, `
   `git_detached_sin_rama_y_sin_cambios`). Del lado de cliente no hay test: el store se ejercita
   solo en vivo.
 
+## 6octies. F4 en la UI: plugins, integraciones, servidor, consola API y avanzado (T4.1-T4.7)
+
+Los cinco diálogos son siblings: `features/<x>/<X>Dialog.svelte`, estado propio en
+`ui.svelte.ts` (`pluginsOpen`, `integrationsOpen`, `serverOpen`, `consoleOpen`, `advancedOpen`),
+entrada en la paleta bajo el grupo `system`, cierre con `Esc` y montaje en `App.svelte`. El
+cliente compartido es `lib/herdr/f4.ts` (22 wrappers sobre `optionalCommand`), y `client.ts`
+exporta ahora `optionalCommand` y añade `callRaw()`: una capa sobre `call()` que **no** valida
+el resultado, porque en estas superficies interesa ver la respuesta cruda aunque sea un error de
+negocio.
+
+### (a) Plugins (T4.1)
+
+Lista con versión, estado, origen, avisos, acciones y panes por plugin; activar y desactivar;
+**desvincular con confirmación**; **vincular una carpeta local** (selector de directorios del
+plugin `dialog`); **instalar desde GitHub con vista previa** (`plugin_install_preview` devuelve
+el `preview_token` que después envía `plugin_install`, con confirmación); **invocar acciones con
+contexto**; **leer logs en el visor** (`ui.openViewer`, y por eso `TextViewer` sube a
+`level={30}` en T4.8 para que el visor quede por encima del diálogo que lo abre); abrir, enfocar
+y cerrar **panes de plugin con fallback `popup` → `zoomed`**; y abrir la carpeta de configuración.
+
+**Desviación (bitácora):** el *focus* y el cierre de un pane de plugin usan **el último pane
+abierto desde el diálogo**, no un id guardado por pane. Con varios panes de plugin abiertos desde
+el mismo diálogo, la operación se aplica al último creado.
+
+### (b) Integraciones (T4.2)
+
+`integration_status` da por target el **estado, la versión y la ruta de instalación**; instalar y
+desinstalar piden confirmación previa. Sin desviaciones.
+
+### (c) Servidor, update y canal (T4.3, T4.4)
+
+Estado en una llamada a `server_status`, que devuelve las dos vías —el **CLI**
+(`herdr status --json`, con su `cli.client`/`cli.server`) y la **sesión viva** (`live` con
+versión, protocolo y capacidades, más `live_error` si no engancha)—, manifiestos de agentes con
+recarga, recarga de config y **detener el servidor con doble confirmación**. T4.4 añade **update y
+canal** (`herdr update`, `herdr update --handoff`, `herdr channel show`,
+`herdr channel set stable|preview`) con la salida en el visor.
+
+La lista blanca del CLI pasa de 9 a 15 formas, todas con **argv exacto**: lo que no está
+literalmente en la lista no se ejecuta. Para el alcance de seguridad, ver §7 en `docs/03`.
+
+### (d) Consola API (T4.5)
+
+La superficie que faltaba desde que el backend exponía el catálogo. `api_catalog` da los
+**90 métodos** con sus params, y la consola construye el formulario **desde el schema**
+(`string`, `bool`, `int`, `enum`, `array` y objeto), muestra la respuesta en el visor, guarda
+**historial** de llamadas y ofrece un **visor de eventos en vivo** con los 24 tipos globales.
+
+Los eventos llegan por un `Channel` de Tauri que alimenta el command `events_watch`
+(`commands/api.rs`), que a su vez usa `open_event_subscription()` del core
+(`crates/herdr-core/src/events.rs`) y se registra en `lib.rs` (ver `docs/03`).
+
+**Desviación (bitácora):** al apagar el visor **se suelta el callback** y el backend corta la
+suscripción **cuando `on_evt.send()` falla** (`break` del bucle), no por un comando de cierre
+explícito. Es decir, el cierre depende de que falle el envío.
+
+### (e) Avanzado (T4.6)
+
+Lo que no tiene menú: vista de agentes de herdr (`agent.view.set/clear`), **metadata de pane y
+workspace**, agentes reportados (`report_agent` y su variante de sesión), `release`,
+`clear_authority`, `process_info`, título de ventana, **gráficos kitty** (set/clear/info), cierre
+de popup, **`live_handoff` con doble confirmación**, una **notificación de prueba**
+(`notification_show` con `test: true`, por eso no pregunta nada) y **copiar el skill de agente**
+al portapapeles, que sale de `herdr --skill` por la lista blanca del CLI y no de un command de
+RPC. Va por `callRaw()`, la misma vía que la consola pero con botones para los flujos
+comunes en vez del formulario genérico.
+
+`graphics.set` pide un **PNG en base64 con `image_width`/`image_height` fijos a 16×16**: es el
+único tamaño que ofrece el formulario, no un límite del API.
+
+### (f) Cobertura de métodos (T4.7)
+
+`lib/herdr/coverage.ts` clasifica los **90 métodos** de `methods.gen.ts` como
+`curated:<feature>` (tiene superficie propia; se indica cuál) o `console` (se cubre desde la
+consola). Reparto actual: **82 curados en 13 rutas** (`advanced`, `agents`, `console`,
+`integrations`, `panes`, `plugins`, `presets`, `server`, `session`, `sidebar`, `tabs`,
+`titlebar`, `worktrees`) y **8 solo de consola**. `coverage.test.ts` falla si el schema añade un
+método sin clasificar **o** si la tabla conserva métodos que ya no existen, y `schema:check` está
+dentro de `pnpm verify`: entre los dos, la GUI no se puede quedar atrás del protocolo sin romper
+el build.
+
+**Desviación (bitácora):** `events.wait` queda como `console` aunque `events.subscribe` sea
+`curated:console`. Los dos se siguen cubriendo desde la consola, así que la asimetría es solo de
+clasificación, pero conviene saber que existe antes de usarla como criterio.
+
 ## 7. Huecos del contrato §5 encontrados
 
 1. `session_current` no está en el §5 y la UI lo usa para el nombre de la sesión: hoy cae a
@@ -842,12 +932,13 @@ pnpm build              dist/assets/index-*.js 498,32 kB min (136,76 kB gzip) + 
 ```
 
 Ese bloque es la foto del cierre de F1 y así se queda. Los números **de hoy**, medidos en esta
-máquina con `pnpm test` y contando `tests/e2e/`: **388 tests unit en 45 archivos** y **21 specs
-e2e**. Lo que se ha sumado desde el cierre de F1, tarea a tarea: los 5 de
-`lib/settings/settings.test.ts` (codegen de T3.5), los 13 de `lib/settings/map.test.ts` (puente
-`config.toml` ↔ ajustes), los 7 de T3.6 en `lib/keys/{config,parse}.test.ts`, los 9 de
+máquina con `pnpm test` y contando `tests/e2e/`: **392 tests unit en 46 archivos**, **22 specs
+e2e** y **126 pruebas e2e en verde**. Lo que se ha sumado desde el cierre de F1, tarea a tarea: los
+5 de `lib/settings/settings.test.ts` (codegen de T3.5), los 13 de `lib/settings/map.test.ts`
+(puente `config.toml` ↔ ajustes), los 7 de T3.6 en `lib/keys/{config,parse}.test.ts`, los 9 de
 `lib/theme/theme.test.ts` (T3.7), los de `lib/layout/presets.test.ts` y
-`lib/keys/customCommands.test.ts` (T3.3/T3.8) y los de `PaneFrame.test.ts` (T3.1).
+`lib/keys/customCommands.test.ts` (T3.3/T3.8), los de `PaneFrame.test.ts` (T3.1) y los **4 de
+`lib/herdr/coverage.test.ts`** (T4.7, la clasificación de los 90 métodos).
 Los specs nuevos son `f3.spec.ts` (preset de layout, modo redimensionar, mover panel y
 worktrees) y `settings.spec.ts` (guardar en `config.toml` y la pestaña de atajos con su reset);
 el arnés acepta ya `guiSettings` y `configEntries` iniciales. La lista es: `shell`, `shell-f1`,
@@ -870,10 +961,12 @@ Mediciones de la corrida de F1:
 | Escritura real | — | `pane.split` 29,2 ms → 1→2 paneles; `pane.close` 819 ms → vuelve a 1 | `f1-probe.py` (sandbox queda limpio) |
 | Bundle/webgl | WebGL en ≤ 8 panes | WebGL en los primeros 8 paneles visibles; LRU de 12 instancias | e2e `layout.spec.ts` + `pool.ts` |
 
-## 9. Pendiente / deuda para F2–F3
+## 9. Pendiente / deuda para F2–F4
 
-- **Consola API** (F3/T4.5): solo existe el catálogo por RPC (`api_catalog`, ver `docs/03`); falta
-  la UI. La **paleta de acciones** (F2) ya no es un stub declarado: `features/palette/CommandPalette.svelte`
+- **Consola API** (F4/T4.5): **cerrada** — `features/console/ApiConsole.svelte` sobre
+  `api_catalog`, con formulario desde el schema, historial y eventos en vivo (§6octies d). La
+  **paleta de acciones** (F2) tampoco es un stub declarado:
+  `features/palette/CommandPalette.svelte`
   con `lib/palette/{commands,fuzzy}.ts` (commit `e4bfaa1`) hace fuzzy sin acentos, agrupa por tipo
   y navega con ↑↓/Enter.
 - **Modo navegar** (F3): el keymap ya clasifica sus atajos (`navigate`) y el editor de T3.6
@@ -901,13 +994,26 @@ Mediciones de la corrida de F1:
 - **Presets, worktrees, comandos personalizados, scrollback y git** (F3/T3.3, T3.4, T3.8-T3.10):
   implementados en cliente (§6septies c-g) y con commands de backend ya registrados. Pendiente
   la verificación **en vivo** de cada uno contra un herdr real (aquí todo se ha medido con el
-  arnés y los 388 tests), el e2e del borrado de worktree con su doble aviso, el **cierre
+  arnés y los 392 tests), el e2e del borrado de worktree con su doble aviso, el **cierre
   automático del panel de un comando `pane`/`popup`** (hoy no hay canal de eventos en la UI que
   avise de `pane_exited`, §6septies e), **tests propios de la salida de panel** —buscar, editar
   el scrollback y esperar solo se cubren indirectamente por el recuento del menú (§6septies f)—,
   **el watcher de `.git/HEAD` y `.git/index`** que el plan pedía para el estado git, sustituido
   por el refresco atado al snapshot con tope de 3 s (§6septies g), y decidir si
   `run_shell_command` —que sale de la superlista a propósito— se queda así.
+- **F4 (T4.1-T4.8)**: las cinco superficies están hechas y con e2e (§6octies). Pendiente:
+  - **Verificación en vivo** de los cinco diálogos contra un herdr real, como con los de F3: aquí
+    todo está medido con el arnés y los tests.
+  - **Cierre limpio de la suscripción de eventos** de la consola: hoy depende de que falle el
+    envío (§6octies d), no de un cierre explícito.
+  - **E2e de la consola con el catálogo real de 90 métodos**: la prueba usa un catálogo mockeado
+    de 2, así que «los 90 son seleccionables» solo lo fija `coverage.test.ts`.
+  - **Focus/cierre de panes de plugin por id** en lugar del último pane abierto (§6octies a).
+  - **`graphics.set` con otros tamaños**: el formulario fija 16×16; si el API admite más, la
+    superficie no lo alcanza (§6octies e).
+  - **Un helper único de «acción destructiva»**: detener el servidor, desvincular un plugin,
+    desinstalar una integración, borrar un worktree y el `live_handoff` resuelven el doble
+    `ui.confirm` por su cuenta. Con cinco casos a mano, el próximo se olvidará.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
 - **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del

@@ -263,12 +263,22 @@ el snapshot (`purge_non_respawnable` limpia panes inexistentes y cierres pedidos
   El argv se compara **elemento a elemento** (sin shell, sin `cmd /c`, sin redirecciones)
   contra `commands::cli_run::WHITELIST`; cualquier diferencia se rechaza con `ApiError`
   antes de crear el proceso. Los spawns llevan `CREATE_NO_WINDOW` (guardarraíl R8).
-- Lista blanca actual (8 entradas, pensada para F2–F4):
-  `herdr agent start --help`, `herdr status --json`, `herdr --default-config`,
-  `herdr config check`, `herdr integration status`, `herdr plugin config-dir`,
+- Lista blanca actual (**15 entradas**):
+  `herdr agent start --help`, `herdr status --json`, `herdr --default-config`, `herdr --skill`,
+  `herdr config check`, `herdr config reset-keys`, `herdr integration status`,
+  `herdr plugin config-dir`, `herdr update`, `herdr update --handoff`, `herdr channel show`,
+  `herdr channel set stable`, `herdr channel set preview`,
   `git branch --format=%(refname:short)`, `git status --porcelain=v2 --branch`.
-  Añadir una entrada es añadir una fila: es la vía **única** por la que la GUI lee la
-  CLI, para no repetir el `cmd /c` con strings de usuario que prohíbe el §7 del plan.
+  T4.4 añadió las cinco de update y canal (de 10 a 15); `herdr --skill` y `config reset-keys`
+  venían de fases anteriores. Añadir una entrada es añadir una fila: es la vía **única** por la
+  que la GUI lee la CLI, para no repetir el `cmd /c` con strings de usuario que prohíbe el §7 del
+  plan.
+- **Alcance de seguridad**: con `herdr update` y `herdr channel set` en la lista, la GUI puede
+  cambiar de canal y reescribir el binario de herdr. Es una decisión consciente, no un descuido:
+  el argv es exacto (no hay wildcard), así que lo único que se puede ejecutar es lo de arriba, y
+  `herdr channel set nightly` o `herdr update --extra` se rechazan. Junto a la excepción ya
+  documentada de `run_shell_command` (T3.8), son las dos rutas por las que la GUI ejecuta procesos
+  que no son de solo lectura.
 - `agent_kinds { refresh?: bool } -> AgentKinds { kinds, reason, cached }`:
   parsea los `possible values` de `herdr agent start --help`, con cache en memoria y TTL
   corto. Si la ayuda no trae la lista, devuelve `kinds: []` **con `reason`**, nunca un
@@ -508,6 +518,34 @@ command que no habla con el server: no usa `RpcClient`.
   `PluginInvocationContext` y de `PopupSize` (`anyOf` int | `"80%"`), `env` como `map<string>`,
   los 14 grupos con métodos, caché devolviendo el mismo `Arc` y error tipado de schema
   inexistente).
+
+## Visor de eventos de la consola: `events_watch` (T4.5)
+
+`events_watch(types, on_evt)` es un command de Tauri, no del protocolo: no aparece en el schema y
+no lo ve `api_catalog`. Es lo que alimenta el visor de eventos en vivo de la consola API.
+
+- `types: Vec<String>` no vacío (vacío → `ApiError { code: "invalid_params" }`); el pipe se saca de
+  `state.current().client.pipe()`, no del parámetro: el command no acepta que se le pase otro.
+- Delega en `herdr_core::events::open_event_subscription(pipe, types)`, que construye
+  `{"type": t}` por cada tipo pedido y reutiliza `open_subscription`, la misma vía que
+  `open_pane_subscription`: una **conexión S propia**, `events.subscribe` y streaming hasta EOF o
+  `events_lost`. Devuelve `PaneSubscription { rx, close }` (el tipo es el de las suscripciones
+  pane-scoped porque comparten la misma estructura; el nombre es lo único heredado).
+- El reenvío vive en una tarea `spawn`: cada evento se serializa a una línea JSON y se manda por
+  el `Channel<InvokeResponseBody>` del frontend. La tarea **sostiene `close`**, así que la conexión
+  cae cuando cae la tarea.
+- **Ciclo de vida**: hay `close` (oneshot) y el bucle corta con `break` cuando `on_evt.send()`
+  falla, o sea cuando el frontend suelta el canal. No hay un command de cierre explícito: si el
+  frontend cierra el visor sin que el canal falle primero, la tarea sigue viva hasta el siguiente
+  evento. Es la desviación anotada en `docs/04` §6octies d, y lo natural para el patrón
+  make-before-break es exponer `PaneSubscription::close()`.
+- `GLOBAL_EVENT_TYPES: [&str; 24]` es la lista de tipos globales que ofrece la consola; el visor
+  envía los que elija el usuario, no los 24.
+- **Tests**: la lógica de resuscripción ya la cubren `events_lost_triggers_resubscribe` y
+  `cada_evento_refresca_el_snapshot`; `open_event_subscription` no tiene test propio porque no
+  añade lógica al `open_subscription` ya cubierto, y el command necesita un `Channel` de Tauri que
+  el arnés de Rust no monta. La cobertura de la UI está en `tests/e2e/f4.spec.ts` (catálogo
+  mockeado, no los 90 métodos).
 
 ## Tests: la puerta por defecto y los tests de sandbox
 

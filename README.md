@@ -42,12 +42,22 @@ de terminales para agentes de código, con estética glassmorphism sobre Mica.
 - **Estado git** por espacio: rama y número de cambios sin limpiar en la barra lateral.
 - **Bandeja y overlay** de la barra de tareas, con iconos propios: blanco en la barra de tareas
   y negro en la bandeja.
+- **Plugins**: lista con estado, activar y desactivar, desvincular, vincular una carpeta local,
+  instalar desde GitHub con vista previa, acciones con contexto, logs y panes.
+- **Integraciones**: estado, versión y ruta de cada una, con instalación y desinstalación bajo
+  confirmación.
+- **Servidor**: estado por CLI y por sesión viva, manifiestos de agentes, recarga de configuración,
+  detener con doble confirmación, y **update y canal** desde la lista blanca del CLI.
+- **Consola API**: los 90 métodos del catálogo con formulario generado desde el schema,
+  respuesta en el visor, historial y **24 tipos de evento en vivo**.
+- **Avanzado**: metadata de pane y workspace, agentes reportados, título de ventana, gráficos
+  kitty, cierre de popup, traspaso en vivo, notificación de prueba y skill del agente.
 - **Backend** de configuración, worktrees, plugins, integraciones, estado del servidor y
   catálogo de métodos para la consola API, con `pnpm schema:check` vigilando que el schema
-  commiteado no derive del que trae el herdr instalado.
+  commiteado no derive del que trae el herdr instalado. Los 90 métodos están clasificados
+  (`curated:<feature>` o `console`) y un test falla si el schema añade uno sin clasificar.
 
-Lo que todavía no está: el modo navegar de atajos, la consola API, el gestor de plugins y el
-resto de superficies de F4, y el pulido de F5.
+Lo que todavía no está: el modo navegar de atajos y el pulido de F5.
 
 ## Arquitectura
 
@@ -118,8 +128,8 @@ Remove-Item Env:\RECORD_FIXTURES                           # re-graba schema/fix
   pestañas y espacios, formulario de configuración, editor de atajos, temas en vivo, presets de
   layout, worktrees, comandos personalizados, scrollback y estado git; falta el modo navegar de
   atajos
-- [~] F4 — plugins, integraciones, estado del servidor y catálogo de la consola API por RPC;
-  faltan sus superficies de UI
+- [x] F4 — plugins, integraciones, estado del servidor, update y canal, consola API con los 90
+      métodos y eventos en vivo, panel avanzado, y cobertura de métodos vigilada por test
 - [ ] F5 — pulido, rendimiento y distribución
 
 ## Licencia
