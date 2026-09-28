@@ -524,10 +524,26 @@ fallar. Cada fila muestra etiqueta, rama, ruta y banderas (`bare`, `detached`, `
 
 - Backend: `git_status(cwd)` parsea `git status --porcelain=v2 --branch` por lista blanca (con
   `run_whitelisted_in`, variante nueva con directorio de trabajo) y devuelve
-  `{ branch, dirty, ahead, behind }`; sin watcher de archivos.
+  `{ branch, dirty, ahead, behind }`; `cwd` vacío es `invalid_params` y una salida con exit ≠ 0 es
+  `cli_failed`. `parse_git_status()` es función pura: cuenta las líneas no comentario como cambios
+  sucios y saca rama, `ahead` y `behind` de las cabeceras `# branch.head` (ignorando
+  `(detached)`) y `# branch.ab`.
 - Frontend: `lib/git/status.svelte.ts` lo refresca **atado a las revisiones del snapshot**, con
-  tope de una vez cada 3 s por espacio y sin peticiones solapadas. La sidebar pinta la rama y un
-  contador de cambios sucios. Si el command falta, los tokens no aparecen.
+  tope de una vez cada 3 s por espacio y sin peticiones solapadas. `App.svelte` arma la lista con
+  el `cwd` del pane del espacio y, si no hay pane, con `workspace.worktree.checkout_path`, y
+  cambia el `cwd` registrado fuerza el refresco aunque no se hayan pasado los 3 s. La sidebar
+  pinta la rama (`workspace-branch`) y el contador de cambios sucios (`workspace-dirty`); no
+  muestra `ahead`/`behind`, que llegan en el command pero no se pintan. Si el command falta, los
+  tokens no aparecen.
+- **Desviación del plan — sin watcher de `.git`**: el plan pedía un watcher sobre `.git/HEAD` y
+  `.git/index` (notify); aquí no hay ninguno. La señal es el refresco del snapshot, que es lo
+  único que llega a la UI sin canal de eventos, y el tope de 3 s evita castigar al servidor con
+  un `git status` por evento. Coste: un `git status` fuera de la app (un `git commit` en otra
+  terminal) no se ve hasta que llega la siguiente revisión del snapshot. Con watcher, esto se
+  sustituye; mientras tanto es el comportamiento conocido.
+- Tests: los 2 del parser en Rust (`parsea_git_status_v2`,
+  `git_detached_sin_rama_y_sin_cambios`). Del lado de cliente no hay test: el store se ejercita
+  solo en vivo.
 
 ## 7. Huecos del contrato §5 encontrados
 
@@ -888,8 +904,10 @@ Mediciones de la corrida de F1:
   arnés y los 388 tests), el e2e del borrado de worktree con su doble aviso, el **cierre
   automático del panel de un comando `pane`/`popup`** (hoy no hay canal de eventos en la UI que
   avise de `pane_exited`, §6septies e), **tests propios de la salida de panel** —buscar, editar
-  el scrollback y esperar solo se cubren indirectamente por el recuento del menú (§6septies f)—, y
-  decidir si `run_shell_command` —que sale de la superlista a propósito— se queda así.
+  el scrollback y esperar solo se cubren indirectamente por el recuento del menú (§6septies f)—,
+  **el watcher de `.git/HEAD` y `.git/index`** que el plan pedía para el estado git, sustituido
+  por el refresco atado al snapshot con tope de 3 s (§6septies g), y decidir si
+  `run_shell_command` —que sale de la superlista a propósito— se queda así.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
 - **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del
