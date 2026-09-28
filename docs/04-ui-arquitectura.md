@@ -52,7 +52,7 @@ con `full`, los frames anteriores en cola se descartan.
 | `session.svelte.ts` | snapshot crudo (`$state.raw`), colecciones reconciliadas, foco, conexión, versión/protocolo, latencia p50, `revision`, `connectionEpoch` | el snapshot se reemplaza entero en cada evento; las colecciones se reconcilian **en sitio** (`reconcileById`) para que nada se remonte |
 | `layout.svelte.ts` | árbol del tab visible (`layout.export`), `zoomed`, `revision` | `schedule()` no lee runas: se llama desde un `$effect` y Svelte corta con `effect_update_depth_exceeded` si un efecto lee y escribe el mismo estado |
 | `ui.svelte.ts` | qué está abierto (paleta, cheatsheet, contexto, sesiones), foco local, toasts y promesas de confirmación/prompt | un solo `ConfirmDialog`/`PromptDialog` montado; `{#key}` lo recrea con cada petición |
-| `settings.svelte.ts` | preferencias (ancho de sidebar, `collapsed_mode`, posición de la tab bar, `pane_borders/gaps`, `mouse_scroll_lines`, `webgl_max_panes`, LRU, `copy_on_select`, sincronizar foco…) | por defecto salen de `herdr --default-config`; se persisten en `localStorage` y en F3 se leerán de `config.toml` + `settings.json` |
+| `settings.svelte.ts` | preferencias (ancho de sidebar, `collapsed_mode`, posición de la tab bar, `pane_borders/gaps`, `mouse_scroll_lines`, `webgl_max_panes`, LRU, `copy_on_select`, sincronizar foco…) | por defecto salen de `herdr --default-config`; se persisten en `localStorage` (`STORAGE_KEY = 'herdr-desk.settings'`) y **siguen en `localStorage`**: el backend de configuración ya expone `config_default`/`config_read`/`config_write`/`config_reset_keys` (ver `docs/03`), pero no hay formulario que lo cablee (T3.5) |
 
 `reconcileById(current, next, key, assign)` conserva la identidad de los objetos que siguen
 existiendo (mutando sus campos), añade los nuevos y descarta los que ya no están; devuelve
@@ -501,6 +501,9 @@ latido. Con el canal del store funcionando, el catch-up no hace peticiones
 tests de regresión incluidos). El latido de catch-up del frontend deja de ser
 necesario y se retira en la tanda siguiente; el store queda como única fuente de
 verdad y el ping de salud se mantiene solo para detectar la caída del server.
+Ya se retiró: commit `a27facb` (el catch-up y su test `session-refresh.test.ts`
+desaparecieron; ahora es `session-heartbeat.test.ts` quien comprueba que el latido
+hace **cero** llamadas a `session.snapshot`).
 
 ## 6quater. Panel de agentes y estados (F2a / T2.1, T2.4)
 
@@ -567,6 +570,12 @@ pnpm build              dist/assets/index-*.js 498,32 kB min (136,76 kB gzip) + 
                         → dentro del presupuesto (§4: ≤ 600 KB con xterm)
 ```
 
+Ese bloque es la foto del cierre de F1 y así se queda. Los números **de hoy**, medidos en esta
+máquina con `pnpm test` y contando `tests/e2e/`: **344 tests unit en 38 archivos** y **19 specs
+e2e** (`shell`, `shell-f1`, `terminal`, `terminal-stale`, `focus`, `layout`, `split-drag`,
+`actions`, `keys`, `palette`, `sessions`, `session-switch`, `reconnect`, `font-menu`,
+`navigation`, `agents`, `agent-state`, `agent-actions`, `agent-notices`).
+
 Bundle tras añadir el acordeón y los presets (no cableados al shell, así que no entran en el
 grafo inicial): `pnpm build` sigue en 493 kB min. `pnpm-lock.yaml` sin cambios: **cero
 dependencias nuevas**.
@@ -584,19 +593,21 @@ Mediciones de la corrida de F1:
 
 ## 9. Pendiente / deuda para F2–F3
 
-- **Paleta de acciones** (F2) y **consola** (F3): hoy la paleta es un stub declarado.
+- **Consola API** (F3/T4.5): solo existe el catálogo por RPC (`api_catalog`, ver `docs/03`); falta
+  la UI. La **paleta de acciones** (F2) ya no es un stub declarado: `features/palette/CommandPalette.svelte`
+  con `lib/palette/{commands,fuzzy}.ts` (commit `e4bfaa1`) hace fuzzy sin acentos, agrupa por tipo
+  y navega con ↑↓/Enter.
 - **Modo navegar** (F3): el keymap ya clasifica sus atajos; falta el modo y el `Hint`.
-- **Arrastrar divisores** (T3.1) y **drag & drop de pestañas/paneles** (T3.2).
-- **Config real** (F3): `settings.svelte.ts` usa `localStorage`; falta leer `config.toml`
-  (`config_read`) y el codegen de settings (`scripts/gen-settings.mjs`).
+- **Arrastrar divisores** (T3.1): cerrado (`48eab4d`, e2e `split-drag.spec.ts`). Sigue pendiente
+  el **drag & drop de pestañas/paneles** (T3.2).
+- **Config real** (F3): el backend ya está (`config_default`/`config_read`/`config_write`/
+  `config_reset_keys`, documentados en `docs/03`); en la UI `settings.svelte.ts` sigue en
+  `localStorage` porque el formulario y el codegen de settings (T3.5) todavía no lo cablean.
 - **Respawn de bridges del backend**: hoy la UI se reengancha sola si el respawn no manda
   frames; si el backend lo asume, hay que quitar el timer (o dejarlo como red de seguridad).
-- **Kick del store por evento (backend, no tocado en esta ronda)**: `events::run_with` sólo
-  hace `kick.notify_one()` al cerrarse la conexión de eventos, así que el store no se refresca
-  durante la operación normal y el canal `store_subscribe` queda mudo (ver §7quater(f)). La UI
-  lo mitiga con el catch-up del latido y con un refresco tras cada acción, pero el arreglo de
-  raíz es de una línea en `crates/herdr-core/src/events.rs` o en el consumidor de `ev_rx` de
-  `lib.rs` (un kick por evento; `Notify` coalesce). Queda para el frente de backend.
+- **Kick del store por evento (backend)**: cerrado en `e303f55` (ver §7quater(f)) y el catch-up del
+  frontend se retiró en `a27facb`: el latido solo hace ping de salud y
+  `session-heartbeat.test.ts` comprueba que **ni una** llamada a `session.snapshot`. Ya no es deuda.
 - **Clics en vivo con la ventana tapada**: si el usuario tiene otra ventana encima, el GUI no
   puede ganar el foco y la verificación en vivo de botones no es posible (los clics irían a la
   ventana de encima). Los scripts de verificación abortan en ese caso.
