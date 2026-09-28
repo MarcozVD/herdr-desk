@@ -3,9 +3,10 @@
 GUI de escritorio (Windows 11) para [herdr](https://github.com/herdrdev/herdr), el multiplexor
 de terminales para agentes de código, con estética glassmorphism sobre Mica.
 
-> **En desarrollo.** No es una release: la app funciona a diario, pero la interfaz todavía está
-> en construcción y el surfaces cambia entre commits. Requiere herdr 0.8.0-preview
-> (protocol 19) y Windows 11.
+> **En desarrollo.** F0–F5 están cerradas y `pnpm verify` + `pnpm e2e` pasan, pero la app
+> todavía no está firmada ni verificada en una jornada real fuera de esta máquina: el
+> instalador y el lanzador de abajo los tiene que probar el usuario. Requiere herdr
+> 0.8.0-preview (protocol 19) y Windows 11.
 
 ## Qué hay
 
@@ -57,21 +58,42 @@ de terminales para agentes de código, con estética glassmorphism sobre Mica.
   commiteado no derive del que trae el herdr instalado. Los 90 métodos están clasificados
   (`curated:<feature>` o `console`) y un test falla si el schema añade uno sin clasificar.
 
-Lo que todavía no está: el modo navegar de atajos y el pulido de F5.
+Lo que todavía no está: el modo navegar de atajos (F3) y la auto-actualización (T5.5, omitida a
+falta de decisión; hoy se actualiza reinstalando el instalador encima).
 
-## Arquitectura
+## Instalación
 
-- `crates/herdr-core` — Rust puro (sin UI): transporte por named pipe (NDJSON, 1 request por
-  conexión), suscripción de eventos (conexión L global + conexión S por pane), snapshot
-  coalescido y pool de bridges de terminal (`herdr terminal session control`).
-- `src-tauri` — capa fina de Tauri 2: commands + channels, frames binarios y JSON crudo,
-  gestión de sesiones (conectar/iniciar/detener/borrar) y reconexión con respawn de bridges.
-- `src/` — SPA en Svelte 5 con xterm.js WebGL, Mica de Windows 11 y glass en CSS.
+Hay dos caminos.
 
-Detalles en [`docs/03-arquitectura.md`](docs/03-arquitectura.md) (backend) y
-[`docs/04-ui-arquitectura.md`](docs/04-ui-arquitectura.md) (UI).
+### Instalador (release)
 
-## Desarrollo
+`pnpm tauri build` produce el instalador NSIS en
+`target/release/bundle/nsis/herdr-desk_0.1.0_x64-setup.exe` (3,51 MB). Se instala **sin
+administrador**: `installMode: currentUser` lo deja en `%LOCALAPPDATA%\herdr-desk` y no pide
+UAC. Los ajustes de la GUI siguen en `%APPDATA%\herdr-desk\settings.json`.
+
+```powershell
+pnpm tauri build
+& target\release\bundle\nsis\herdr-desk_0.1.0_x64-setup.exe
+```
+
+- **Comprobar cuál corre**: `Get-Process herdr-desk | Select-Object Path` debe dar
+  `C:\Users\<usuario>\AppData\Local\herdr-desk\herdr-desk.exe`. Si da `target\release\…` es la
+  copia de desarrollo, no la instalada.
+- **Desinstalar**: Configuración > Aplicaciones > herdr-desk, o
+  `%LOCALAPPDATA%\herdr-desk\uninstall.exe`. Sin permisos de administrador.
+- **Actualizar**: reinstalar el `.exe` nuevo encima.
+
+Al lanzar la copia instalada no hay `HERDR_DESK_SESSION` en el entorno: la app resuelve sola la
+sesión `default` (o la primera que devuelva el CLI) con `herdr session list --json`, y solo
+aborta si el CLI no responde. Para apuntarla a otra sesión:
+
+```powershell
+$env:HERDR_DESK_SESSION = "herdr-desk-dev"
+& "$env:LOCALAPPDATA\herdr-desk\herdr-desk.exe"
+```
+
+### Desarrollo
 
 Requisitos: Rust 1.97 (ver `rust-toolchain.toml`), Node 22, pnpm 10, herdr 0.8.0-preview
 (protocol 19) en PATH.
@@ -91,6 +113,90 @@ $env:HERDR_DESK_SESSION = "herdr-desk-dev"
 pnpm tauri dev
 powershell -File scripts\sandbox.ps1 stop         # al terminar
 ```
+
+### Lanzarlo desde herdr
+
+Un comando personalizado en `[keys]` de `config.toml` abre la GUI sobre la sesión que ya
+tenías en la TUI, porque herdr exporta `HERDR_DESK_SESSION` a los comandos `shell`:
+
+```toml
+[[keys.command]]
+key = "prefix+alt+d"
+type = "shell"
+command = "herdr-desk"
+```
+
+En Windows herdr ejecuta los comandos `type = "shell"` en `cmd`, así que `herdr-desk` tiene que
+estar en el `PATH`. El instalador **no** lo añade: o se agrega
+`%LOCALAPPDATA%\herdr-desk` al PATH del usuario, o se usa la ruta absoluta:
+
+```toml
+command = "\"%LOCALAPPDATA%\\herdr-desk\\herdr-desk.exe\""
+```
+
+## Atajos principales
+
+El prefijo es `Ctrl+B` (los valores por defecto son los de herdr y se pueden cambiar por
+completo en `[keys]` de `config.toml`, con el editor de atajos de `prefix+s`).
+
+| Atajo                             | Acción                                          |
+| --------------------------------- | ----------------------------------------------- |
+| `Ctrl+Shift+P`                    | paleta de acciones                              |
+| `Ctrl+Shift+C` / `Ctrl+Shift+V`   | copiar/pegar de la terminal                     |
+| `prefix+?`                        | cheatsheet con todos los atajos activos         |
+| `prefix+s`                        | ajustes: configuración, atajos, temas y cristal |
+| `prefix+c` / `prefix+shift+x`     | nueva pestaña / cerrar pestaña                  |
+| `prefix+n` / `prefix+p`           | pestaña siguiente / anterior                    |
+| `prefix+1..9`                     | ir a la pestaña N                               |
+| `prefix+w` / `prefix+shift+n`     | selector de espacios / nuevo espacio            |
+| `prefix+v` / `prefix+minus`       | dividir panel a la derecha / abajo              |
+| `prefix+h j k l`                  | enfocar panel izquierda/abajo/arriba/derecha    |
+| `prefix+tab` / `prefix+shift+tab` | siguiente / anterior panel                      |
+| `prefix+z`                        | zoom del panel                                  |
+| `prefix+x`                        | cerrar panel                                    |
+| `prefix+r`                        | modo redimensionar con las flechas              |
+| `prefix+b`                        | plegar la sidebar                               |
+| `prefix+e`                        | editar el scrollback del panel                  |
+| `prefix+q`                        | soltar el panel (detach)                        |
+| `prefix+g` / `prefix+shift+g`     | ir a un espacio / nuevo worktree                |
+
+## Límites conocidos
+
+- **Sin auto-actualización** (T5.5 omitida): no hay `tauri-plugin-updater` ni claves de firma.
+  Actualizar es reinstalar el instalador.
+- **Sin firmar**: el ejecutable y el instalador no llevan certificado, así que Windows SmartScreen
+  avisa la primera vez.
+- **Modo navegar de atajos pendiente** (F3): el keymap clasifica ya el ámbito `navigate`, pero no
+  existe el modo ni su `Hint`.
+- **CPU en reposo** con la ventana visible: 0,42–1,04 % (la meta de la §4 del plan era ≤ 0,5 %).
+  Es el suelo del compositor de WebView2 con ventana transparente y capas de cristal; el cursor de
+  la terminal ya no parpadea para no empeorarlo.
+- **RAM** ≈ 200 MB con una terminal visible (177,8 MB sin paneles). El presupuesto se cumple
+  justo.
+- **Temas claros de herdr**: algunas paletas (p. ej. `solarized-light`, `catppuccin-latte` en su
+  `--text-dim`) no llegan a contraste AA sobre el cristal, ni con la capa opaca. El piso de
+  opacidad garantiza los tokens de respaldo de la GUI, no cualquier paleta.
+- **Contraste en tema claro**: a partir del nivel de cristal ~7 (surface) el deslizador deja de
+  cambiar la opacidad en claro; es el precio de cumplir AA contra un fondo negro.
+- **Eco, evento→UI, cambio de pestaña y flood** no se remedieron en F5: los valores son los de F0/F1.
+- **Cierre automático de los paneles que abre un comando `pane`/`popup`**: hoy hay que cerrarlos a
+  mano (no hay canal de eventos que avise de `pane_exited` en la UI).
+- **La jornada real fuera de esta máquina** (instalar, usar un día entero sin TUI) la tiene que
+  validar el usuario: no es verificable desde el agente.
+
+## Arquitectura
+
+- `crates/herdr-core` — Rust puro (sin UI): transporte por named pipe (NDJSON, 1 request por
+  conexión), suscripción de eventos (conexión L global + conexión S por pane), snapshot
+  coalescido y pool de bridges de terminal (`herdr terminal session control`).
+- `src-tauri` — capa fina de Tauri 2: commands + channels, frames binarios y JSON crudo,
+  gestión de sesiones (conectar/iniciar/detener/borrar) y reconexión con respawn de bridges.
+- `src/` — SPA en Svelte 5 con xterm.js WebGL, Mica de Windows 11 y glass en CSS.
+
+Detalles en [`docs/03-arquitectura.md`](docs/03-arquitectura.md) (backend) y
+[`docs/04-ui-arquitectura.md`](docs/04-ui-arquitectura.md) (UI).
+
+## Desarrollo
 
 ### Scripts
 
@@ -130,7 +236,9 @@ Remove-Item Env:\RECORD_FIXTURES                           # re-graba schema/fix
   atajos
 - [x] F4 — plugins, integraciones, estado del servidor, update y canal, consola API con los 90
       métodos y eventos en vivo, panel avanzado, y cobertura de métodos vigilada por test
-- [ ] F5 — pulido, rendimiento y distribución
+- [x] F5 — pulido, accesibilidad y contraste medido, diálogos cargados bajo demanda, memoria del
+      WebView2, instalador NSIS sin administrador y lanzador desde herdr; queda fuera la
+      auto-actualización (T5.5)
 
 ## Licencia
 
