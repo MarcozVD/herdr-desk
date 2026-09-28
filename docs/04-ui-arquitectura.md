@@ -409,9 +409,16 @@ estaban (ver `docs/03`); aquí está cómo los llama la UI y qué se degrada cua
 
 ### (b) Reordenar pestañas y espacios por arrastre (T3.2)
 
-`moveTabTo`/`moveWorkspaceTo` envían el **índice destino absoluto** (`tab.move` y el equivalente
-de workspace). El drop lo calcula `TabBar.svelte`/`Sidebar.svelte` sobre la posición del puntero,
-no por exchanging de objetos: el store sigue siendo la autoridad.
+El arrastre es HTML5 puro: la fila/tab es `draggable`, guarda su id en `dataTransfer` con tipo
+MIME propio (`application/x-herdr-tab`, `application/x-herdr-workspace`) y en un `$state` local
+(`dragId`/`dropId`, que además pintan el destino). En el `drop` se cancela el evento y se manda
+`moveTabTo`/`moveWorkspaceTo` con el **índice absoluto del elemento sobre el que se ha soltado**
+(`tab.move` y el equivalente de workspace), resolvido con `findIndex` sobre la colección viva: no
+se calcula la posición del puntero ni se intercambian objetos, el store sigue siendo la
+autoridad. Si no hay origen o el origen es el propio destino, no se hace nada.
+**Hueco de verificación**: el reordenado no tiene e2e propio. `f3.spec.ts` cubre el swap y el
+move de paneles, no el arrastre de pestañas o espacios; el reorder está probado solo por
+inspección del código.
 
 ### (c) Presets de layout (T3.3)
 
@@ -798,7 +805,8 @@ Mediciones de la corrida de F1:
   muestra el ámbito de cada fila; falta el modo y el `Hint`.
 - **Paneles y pestañas** (T3.1, T3.2): cerrados (§6septies a/b) — modo redimensionar con flechas
   y chip, intercambio por arrastre, mover panel a 3 destinos y reordenar pestañas/espacios.
-  El divisor por arrastre venía de `48eab4d` (`split-drag.spec.ts`).
+  El divisor por arrastre venía de `48eab4d` (`split-drag.spec.ts`). Pendiente: e2e del
+  reordenado de pestañas y espacios, que hoy solo se cubre por inspección.
 - **Config real** (F3): cerrada la primera mitad. Backend (`config_default`/`config_read`/
   `config_write`/`config_reset_keys` y `gui_settings_read`/`gui_settings_write`, en `docs/03`),
   codegen (`pnpm gen` → `src/lib/settings/settings.gen.ts`, 22 secciones / 120 claves, con el
