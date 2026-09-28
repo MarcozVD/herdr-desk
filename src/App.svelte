@@ -10,15 +10,8 @@
   import { noticeSound } from './lib/agents/noticeSound';
   import StartAgentDialog from './features/agents/StartAgentDialog.svelte';
   import CommandPalette from './features/palette/CommandPalette.svelte';
-  import AdvancedDialog from './features/advanced/AdvancedDialog.svelte';
-  import ApiConsole from './features/console/ApiConsole.svelte';
-  import IntegrationsDialog from './features/integrations/IntegrationsDialog.svelte';
-  import PluginsDialog from './features/plugins/PluginsDialog.svelte';
-  import ServerDialog from './features/server/ServerDialog.svelte';
   import SessionsDialog from './features/sessions/SessionsDialog.svelte';
-  import SettingsDialog from './features/settings/SettingsDialog.svelte';
   import Sidebar from './features/sidebar/Sidebar.svelte';
-  import WorktreesDialog from './features/worktrees/WorktreesDialog.svelte';
   import StatusBar from './features/statusbar/StatusBar.svelte';
   import TabBar from './features/tabs/TabBar.svelte';
   import ReconnectBanner from './features/titlebar/ReconnectBanner.svelte';
@@ -379,12 +372,45 @@
   <WorkspaceDialog />
 {/key}
 <SessionsDialog />
-<SettingsDialog />
-<WorktreesDialog />
-<PluginsDialog />
-<IntegrationsDialog />
-<ServerDialog />
-<ApiConsole />
-<AdvancedDialog />
+
+<!-- T5.2 — Diálogos pesados en chunks propios (lazy): no entran en el JS inicial
+     (settings.gen, formularios, consola…). El import() se cachea: reabrir es
+     instantáneo; la primera apertura muestra el chunk mientras llega. -->
+{#if ui.settingsOpen}
+  {#await import('./features/settings/SettingsDialog.svelte') then { default: SettingsDialog }}
+    <SettingsDialog />
+  {/await}
+{/if}
+{#if ui.worktreesOpen}
+  {#await import('./features/worktrees/WorktreesDialog.svelte') then { default: WorktreesDialog }}
+    <WorktreesDialog />
+  {/await}
+{/if}
+{#if ui.pluginsOpen}
+  {#await import('./features/plugins/PluginsDialog.svelte') then { default: PluginsDialog }}
+    <PluginsDialog />
+  {/await}
+{/if}
+{#if ui.integrationsOpen}
+  {#await import('./features/integrations/IntegrationsDialog.svelte') then { default: IntegrationsDialog }}
+    <IntegrationsDialog />
+  {/await}
+{/if}
+{#if ui.serverOpen}
+  {#await import('./features/server/ServerDialog.svelte') then { default: ServerDialog }}
+    <ServerDialog />
+  {/await}
+{/if}
+{#if ui.consoleOpen}
+  {#await import('./features/console/ApiConsole.svelte') then { default: ApiConsole }}
+    <ApiConsole />
+  {/await}
+{/if}
+{#if ui.advancedOpen}
+  {#await import('./features/advanced/AdvancedDialog.svelte') then { default: AdvancedDialog }}
+    <AdvancedDialog />
+  {/await}
+{/if}
+
 <ContextMenu />
 <ToastHost />

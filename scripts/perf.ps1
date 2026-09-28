@@ -8,13 +8,6 @@ $ErrorActionPreference = 'Stop'
 Get-ChildItem Env: | Where-Object { $_.Name -like 'HERDR_*' } | ForEach-Object { Remove-Item -Path ("Env:" + $_.Name) }
 $env:HERDR_DESK_SESSION = $Session
 
-$exePath = (Resolve-Path $Exe).Path
-Get-Process herdr-desk -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.Id -Force; Start-Sleep -Milliseconds 500 }
-
-$log = Join-Path $env:TEMP "herdr-desk-perf-$PID.log"
-$err = Join-Path $env:TEMP "herdr-desk-perf-$PID.err.log"
-Remove-Item $log, $err -ErrorAction SilentlyContinue
-
 function Get-TreeIds([int]$RootId) {
   $ids = [System.Collections.Generic.HashSet[int]]::new()
   [void]$ids.Add($RootId)
@@ -29,6 +22,21 @@ function Get-TreeIds([int]$RootId) {
   }
   return @($ids)
 }
+
+$exePath = (Resolve-Path $Exe).Path
+# T5.2: matar el arbol entero (exe + WebView2), no solo el exe. Si un PID se
+# reusa, los msedgewebview2 huerfanos del arranque anterior entrarian en la
+# medida (medido: +650 MB fantasma y CPU alta en una corrida).
+foreach ($proc in @(Get-Process herdr-desk -ErrorAction SilentlyContinue)) {
+  foreach ($id in @(Get-TreeIds $proc.Id)) {
+    Stop-Process -Id $id -Force -ErrorAction SilentlyContinue
+  }
+}
+Start-Sleep -Milliseconds 700
+
+$log = Join-Path $env:TEMP "herdr-desk-perf-$PID.log"
+$err = Join-Path $env:TEMP "herdr-desk-perf-$PID.err.log"
+Remove-Item $log, $err -ErrorAction SilentlyContinue
 
 $boot = [System.Diagnostics.Stopwatch]::StartNew()
 $p = Start-Process -FilePath $exePath -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Hidden
@@ -48,8 +56,11 @@ try {
   if (-not $readyLine) { throw "timeout sin ready en $TimeoutSec s" }
   $bootMs = $boot.ElapsedMilliseconds
 
-  # 2) esperar 5 s y sumar memoria privada del arbol (exe + WebView2)
-  Start-Sleep -Seconds 5
+  # 2) esperar a que WebView2 asiente y sumar memoria privada del arbol (exe + WebView2).
+  # T5.2: 5 s medía a WebView2 a mitad de liberar las reservas del primer render.
+  # Curva medida con 1 terminal visible: 10 s => ~209 MB, 30 s => ~199 MB, 60 s => ~192 MB.
+  # «En reposo» es el tramo estable: 30 s. Mismo motivo para el muestreo de CPU.
+  Start-Sleep -Seconds 30
   $ids = Get-TreeIds $p.Id
   $tree = Get-Process -Id $ids -ErrorAction SilentlyContinue
   $ramMB = [math]::Round((($tree | Measure-Object -Property PrivateMemorySize64 -Sum).Sum / 1MB), 1)

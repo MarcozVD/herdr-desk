@@ -87,9 +87,15 @@ vi.mock('../herdr/client', () => ({
     if (paneId && call) call.frame(frameWith(screenByPane.get(paneId) ?? ''));
   }),
   terminalScroll: vi.fn(async () => undefined),
+  // El store de ajustes importa estos commands: se mockean como «backend ausente».
+  configRead: vi.fn(async () => ({ ok: false, kind: 'missing' })),
+  configWrite: vi.fn(async () => ({ ok: false, kind: 'missing' })),
+  guiSettingsRead: vi.fn(async () => ({ ok: false, kind: 'missing' })),
+  guiSettingsWrite: vi.fn(async () => ({ ok: false, kind: 'missing' })),
 }));
 
 const { pool } = await import('./pool');
+const { settings } = await import('../stores/settings.svelte');
 
 function host(): HTMLDivElement {
   const element = document.createElement('div');
@@ -141,25 +147,45 @@ afterEach(() => {
 });
 
 describe('ocultar un panel = soltar su bridge y destruir su vista', () => {
-  it('desmontar destruye el xterm y SUELTA el bridge, sin cerrarlo', async () => {
+  it('desmontar destruye el xterm y aplaza el release hasta la gracia (T5.2)', async () => {
     const view = mount('w1:p1');
     const disposeSpy = vi.spyOn(view.terminal, 'dispose');
     await pool.open('w1:p1', 80, 24, 1);
+    openCalls[0]?.frame(frameWith('vivo')); // desarma el watchdog de 1,5 s
     const entry = pool.entry('w1:p1');
     const bridge = entry?.bridgeId ?? null;
     expect(bridge).not.toBeNull();
 
     pool.hide('w1:p1');
 
-    expect(disposeSpy).toHaveBeenCalled(); // la vista muere
+    expect(disposeSpy).toHaveBeenCalled(); // la vista muere ya
     expect(entry?.view).toBeNull();
-    expect(releaseCalls).toEqual([bridge]); // el bridge se suelta
+    expect(releaseCalls).toEqual([]); // dentro de la gracia el bridge sigue vivo
+    expect(entry?.bridgeId).toBe(bridge);
+    expect(entry?.needsRepaint).toBe(true);
     expect(closeCalls).toEqual([]); // y NO se cierra (cerrarlo mataría el panel)
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(releaseCalls).toEqual([bridge]); // pasada la gracia, se suelta
     expect(entry?.bridgeId).toBeNull();
     expect(entry?.state).toBe('idle'); // saneado: no finge un bridge que no tiene
   });
 
-  it('al volver, la vista es NUEVA y el bridge se reengancha (viewport completo)', async () => {
+  it('con bridge_grace_ms=0 el release es inmediato (comportamiento antiguo)', async () => {
+    settings.set('bridge_grace_ms', 0);
+    mount('w1:p1');
+    await pool.open('w1:p1', 80, 24, 1);
+    const bridge = pool.entry('w1:p1')?.bridgeId ?? null;
+
+    pool.hide('w1:p1');
+
+    expect(releaseCalls).toEqual([bridge]);
+    expect(pool.entry('w1:p1')?.bridgeId).toBeNull();
+    settings.set('bridge_grace_ms', 3000);
+  });
+
+  it('al volver dentro de la gracia se reusa el bridge y se repinta la vista nueva', async () => {
     const first = mount('w1:p1');
     const firstTerminal = first.terminal;
     await pool.open('w1:p1', 80, 24, 1);
@@ -170,7 +196,29 @@ describe('ocultar un panel = soltar su bridge y destruir su vista', () => {
     expect(second.terminal).not.toBe(firstTerminal); // instancia nueva
     await pool.open('w1:p1', 80, 24, 1);
 
-    expect(openCalls).toHaveLength(2); // reenganche real (sin early return)
+    expect(openCalls).toHaveLength(1); // sin reenganche: el bridge sobrevivió
+    expect(pool.entry('w1:p1')?.bridgeId).toBe(openCalls[0]?.bridgeId);
+    expect(pool.entry('w1:p1')?.state).toBe('open');
+    // Repintado forzado con el truco del resize (ida y vuelta).
+    expect(resizeCalls.length).toBeGreaterThanOrEqual(2);
+    expect(closeCalls).toEqual([]);
+  });
+
+  it('si no vuelve dentro de la gracia, el bridge se suelta y el reenganche es real', async () => {
+    mount('w1:p1');
+    await pool.open('w1:p1', 80, 24, 1);
+    openCalls[0]?.frame(frameWith('vivo')); // desarma el watchdog de 1,5 s
+    expect(openCalls).toHaveLength(1);
+
+    pool.hide('w1:p1');
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(releaseCalls).toHaveLength(1);
+
+    const second = mount('w1:p1');
+    await pool.open('w1:p1', 80, 24, 1);
+
+    expect(second.terminal).toBeDefined();
+    expect(openCalls).toHaveLength(2);
     expect(openCalls[1]?.bridgeId).not.toBe(openCalls[0]?.bridgeId);
     expect(pool.entry('w1:p1')?.state).toBe('open');
     expect(closeCalls).toEqual([]);
@@ -195,16 +243,16 @@ describe('ocultar un panel = soltar su bridge y destruir su vista', () => {
     await vi.advanceTimersByTimeAsync(30);
     expect(bufferText(first.terminal)).toContain('marca-de-buffer');
 
-    // Cambio de pestaña: se desmonta la vista y se suelta el bridge.
+    // Cambio de pestaña: se desmonta la vista y el bridge espera la gracia.
     pool.hide('w1:p1');
-    // Vuelta: vista nueva + reenganche con bridge nuevo y viewport completo.
+    // Vuelta dentro de la gracia: vista nueva + repintado del bridge vivo.
     const second = mount('w1:p1');
     await pool.open('w1:p1', 80, 24, 1);
-    openCalls[1]?.frame(frameWith(screenByPane.get('w1:p1') ?? ''));
     await vi.advanceTimersByTimeAsync(30);
 
     expect(bufferText(second.terminal)).toContain('marca-de-buffer');
     expect(closeCalls).toEqual([]);
+    expect(releaseCalls).toEqual([]);
   });
 
   it('si el backend aún reutiliza el bridge, el panel se repinta igual', async () => {

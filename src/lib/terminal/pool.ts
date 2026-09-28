@@ -5,9 +5,10 @@
 // aplica la gracia de 3 s al cerrar. Este pool decide, en el lado UI:
 //
 //   - qué panes tienen bridge: TODOS los que existen en la sesión. Ocultar un
-//     panel (cambiar de pestaña, cambiar de espacio) NO cierra su bridge: solo
-//     se suelta su instancia al LRU (`hide`). El bridge se cierra cuando el
-//     panel desaparece de la sesión (`sync`) o al cambiar de sesión.
+//     panel (cambiar de pestaña, cambiar de espacio) destruye su VISTA y suelta
+//     el bridge al vencer `bridge_grace_ms` (3 s, T5.2): volver dentro de la
+//     gracia reusa el bridge y pide el viewport completo. El bridge se cierra
+//     cuando el panel desaparece de la sesión (`sync`) o al cambiar de sesión.
 //   - las instancias de xterm en LRU (máx. `terminal_lru_max`, 12 por defecto)
 //     para volver a un tab sin parpadeo;
 //   - WebGL como máximo en `webgl_max_panes` panes (8 por defecto); el resto usa
@@ -85,6 +86,11 @@ export interface TerminalEntry {
   watchdog: ReturnType<typeof setTimeout> | null;
   /** El panel está a la vista (los ocultos conservan su bridge). */
   visible: boolean;
+  /**
+   * T5.2 — El bridge sobrevivió a un `hide` dentro de la gracia: al volver hay
+   * vista nueva sin contenido, así que `show` pide el repintado completo.
+   */
+  needsRepaint: boolean;
   /** Bridge soltado con `terminal_release`
    *  (si el backend aún no lo soporta, vuelve a aparecer al reenganchar). */
   releasedBridgeId: number | null;
@@ -176,6 +182,8 @@ export class TerminalPool {
   #openWebgl = 0;
   /** Reenganches programados tras una caída (pane → timer). */
   #reopenTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** T5.2 — Sueltas de bridge aplazadas por la gracia de `hide` (pane → timer). */
+  #hideTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   subscribe(listener: PoolEvents): () => void {
     this.#listeners.add(listener);
@@ -251,6 +259,7 @@ export class TerminalPool {
       lastRows: 24,
       watchdog: null,
       visible: true,
+      needsRepaint: false,
       releasedBridgeId: null,
       sentOpen: 0,
       sentResize: 0,
@@ -376,7 +385,10 @@ export class TerminalPool {
       // La familia la resuelve `lib/terminal/font.ts` (backend o fallback local):
       // xterm NO resuelve `var(--font-mono)`, se quedaba en la mono del WebView2.
       ...terminalOptions(),
-      cursorBlink: true,
+      // T5.2 — Sin parpadeo: cada parpadeo recompone la ventana transparente con
+      // sus capas de backdrop-filter y medía ~4 % de CPU en reposo con 1 terminal
+      // visible (la meta de la §4 es ≤ 0,5 %). El cursor queda fijo.
+      cursorBlink: false,
       cursorStyle: 'bar',
       convertEol: false,
       scrollOnUserInput: false,
@@ -453,7 +465,14 @@ export class TerminalPool {
   async open(paneId: string, cols: number, rows: number, epoch: number): Promise<TerminalEntry> {
     const entry = this.ensure(paneId);
     this.#sanitize(entry);
-    if (entry.state === 'open' && entry.bridgeId !== null && entry.epoch === epoch) return entry;
+    if (entry.state === 'open' && entry.bridgeId !== null && entry.epoch === epoch) {
+      // Bridge vivo tras la gracia del hide: la vista nueva necesita repintado.
+      if (entry.needsRepaint) {
+        entry.needsRepaint = false;
+        this.#forceRepaint(entry);
+      }
+      return entry;
+    }
 
     entry.state = 'opening';
     entry.errorText = '';
@@ -511,9 +530,35 @@ export class TerminalPool {
     if (!entry) return;
     entry.visible = false;
     this.#destroyView(entry);
-    this.detach(paneId);
     this.#touch(paneId);
+    this.#clearHideGrace(paneId);
+    // T5.2 — Gracia de `bridge_grace_ms` (3 s por defecto): cambiar de pestaña y
+    // volver no suelta el bridge (ni renegocia attach); si el panel no vuelve,
+    // se suelta como antes. La vista xterm muere YA (es del componente).
+    const grace = Math.max(0, settings.values.bridge_grace_ms);
+    if (entry.bridgeId === null || grace === 0) {
+      this.detach(paneId);
+      this.#evictIfNeeded();
+      return;
+    }
+    entry.needsRepaint = true;
+    this.#hideTimers.set(
+      paneId,
+      setTimeout(() => {
+        this.#hideTimers.delete(paneId);
+        this.detach(paneId);
+        this.#evictIfNeeded();
+      }, grace),
+    );
     this.#evictIfNeeded();
+  }
+
+  #clearHideGrace(paneId: string): void {
+    const timer = this.#hideTimers.get(paneId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.#hideTimers.delete(paneId);
+    }
   }
 
   /**
@@ -522,8 +567,10 @@ export class TerminalPool {
    * verdad (sin early return) y el server manda el viewport entero.
    */
   detach(paneId: string): void {
+    this.#clearHideGrace(paneId);
     const entry = this.#entries.get(paneId);
     if (!entry || entry.bridgeId === null) return;
+    entry.needsRepaint = false;
     const bridgeId = entry.bridgeId;
     entry.bridgeId = null;
     entry.releasedBridgeId = bridgeId;
@@ -561,6 +608,13 @@ export class TerminalPool {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
     entry.visible = true;
+    this.#clearHideGrace(paneId);
+    // El bridge sobrevivió a la gracia: la vista es nueva y está vacía, así que
+    // se le pide el viewport completo con el truco del resize (una sola vez).
+    if (entry.needsRepaint && entry.bridgeId !== null) {
+      entry.needsRepaint = false;
+      this.#forceRepaint(entry);
+    }
     this.#touch(paneId);
     void this.attachWebgl(entry);
   }
@@ -608,6 +662,7 @@ export class TerminalPool {
     const entry = this.#entries.get(paneId);
     if (!entry) return;
     this.#clearReopen(paneId);
+    this.#clearHideGrace(paneId);
     if (entry.bridgeId !== null) {
       entry.sentClose += 1;
       void terminalClose(entry.bridgeId).catch(() => undefined);
