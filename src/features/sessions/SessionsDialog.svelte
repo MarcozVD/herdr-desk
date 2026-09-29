@@ -79,6 +79,10 @@
     // Cambio de sesión completo: se descarta el estado de la anterior (panes,
     // árbol, terminales y bridges, foco local) y el store reconecta.
     await flows.switchSession(target.name);
+    // C1 — compatibilidad del server destino: el resultado la trae; si el command
+    // es viejo y no la trae, se pide aparte para el banner.
+    if (connected.value?.compat) session.setCompat(connected.value.compat);
+    else await session.refreshCompat();
     ui.notify(`${es.app.session}: ${target.name}`, 'info');
     ui.closeSessions();
   }

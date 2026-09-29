@@ -23,7 +23,7 @@ import { findPane, neighborPane } from '../layout/tree';
 import { isLayoutNode, sanitizePresetName, withoutPreset } from '../layout/presets';
 import type { CustomCommand } from '../keys/customCommands';
 import { openPath } from '@tauri-apps/plugin-opener';
-import { runShellCommand, writeScratchFile } from '../herdr/client';
+import { runShellCommand, sessionRestart, writeScratchFile } from '../herdr/client';
 import { session } from '../stores/session.svelte';
 import { visible } from '../stores/visible.svelte';
 import { settings } from '../stores/settings.svelte';
@@ -77,11 +77,27 @@ function defaultLabel(kind: 'workspace' | 'tab'): string {
   return `tab-${next}`;
 }
 
+/**
+ * Directorio con el que nace una terminal nueva (pestaña, panel o espacio): el del
+ * PANEL QUE SE ESTÁ VIENDO. Antes se cogía el del panel enfocado por el servidor
+ * (`session.focusedPane`), que puede estar en otro espacio: al mirar el espacio 2
+ * con el foco del servidor aún en el 1, la terminal nueva salía en la ruta del
+ * espacio 1 y parecía que «no era del sitio». Sin panel visible se cae al del
+ * servidor (`null` deja que herdr decida).
+ */
+function inheritedCwd(): string | null {
+  const visiblePaneId = visible.actionPaneId;
+  const visibleCwd = visiblePaneId
+    ? session.panes.find((pane) => pane.pane_id === visiblePaneId)?.cwd
+    : null;
+  return visibleCwd ?? session.focusedPane?.cwd ?? null;
+}
+
 export const flows = {
   /* ---- Espacios ---- */
 
   async createWorkspace(): Promise<void> {
-    const current = session.focusedPane?.cwd ?? '';
+    const current = inheritedCwd() ?? '';
     const form = await ui.workspaceForm({
       title: es.workspace.create,
       cwdValue: current,
@@ -228,7 +244,7 @@ export const flows = {
     try {
       await tabApi.create({
         workspace_id: workspaceId,
-        cwd: session.panes.find((pane) => pane.pane_id === visible.paneId)?.cwd ?? null,
+        cwd: inheritedCwd(),
         label,
         focus: true,
       });
@@ -319,7 +335,7 @@ export const flows = {
         direction,
         target_pane_id: target,
         workspace_id: target ? null : session.focusedWorkspaceId,
-        cwd: session.focusedPane?.cwd ?? null,
+        cwd: inheritedCwd(),
         focus: true,
       });
     } catch (raw) {
@@ -628,6 +644,37 @@ export const flows = {
     if (!error) return;
     const soft = error.code === 'missing_command' || error.code === 'no_session';
     ui.notify(errorText(error), soft ? 'warn' : 'error');
+  },
+
+  /**
+   * C1 — Reinicia la sesión activa: mata los procesos de sus paneles y arranca
+   * un server nuevo del cliente instalado. El diálogo de confirmación vive en
+   * quien llama (banner); aquí `confirm: true` porque esa confirmación ya pasó.
+   */
+  async restartSession(): Promise<void> {
+    const name = session.sessionName;
+    if (!name) return;
+    const accepted = await ui.confirm({
+      title: es.connection.compatRestartTitle,
+      message: es.connection.compatRestartConfirm.replace('{session}', name),
+      confirmLabel: es.connection.compatRestart,
+      danger: true,
+    });
+    if (!accepted) return;
+    const result = await sessionRestart(name, true);
+    if (!result.ok) {
+      if (result.kind === 'missing') {
+        ui.notify(es.connection.unavailable.replace('{command}', 'session_restart'), 'warn');
+        return;
+      }
+      session.reportSessionError(result.error);
+      ui.notify(errorText(result.error), 'error');
+      return;
+    }
+    // Server nuevo: re-suscribir el store y reabrir los bridges contra él.
+    await this.switchSession(name);
+    session.setCompat(result.value);
+    ui.notify(es.connection.compatRestarted.replace('{session}', name), 'info');
   },
 
   /**

@@ -25,6 +25,14 @@ export const es = {
     chooseSession: 'Elegir sesión',
     sessionLabel: 'sesión {name}',
     noSession: 'sin sesión',
+    // C1 — server incompatible (protocolo privado viejo): banner persistente.
+    compatBanner:
+      'El servidor de la sesión {session} es herdr {server} (protocolo {protocol}) y el cliente {client}: reinicia la sesión para usar las terminales.',
+    compatRestart: 'Reiniciar sesión',
+    compatRestartTitle: 'Reiniciar sesión',
+    compatRestartConfirm:
+      '¿Reiniciar la sesión {session}? Se matan los procesos de TODOS sus paneles.',
+    compatRestarted: 'Sesión {session} reiniciada; terminales listas.',
   },
   titlebar: {
     palette: 'Buscar…',
@@ -525,6 +533,8 @@ export const es = {
     clipboardUnavailable: 'El portapapeles no está disponible en esta sesión.',
     staleReopening: 'El bridge no manda frames: reabriendo el canal…',
     staleBridgeFailed: 'El bridge no manda frames (canal muerto); lo reabrí {n} veces.',
+    serverIncompatible:
+      'El servidor de la sesión usa un protocolo incompatible con este cliente: reinicia la sesión para usar las terminales.',
   },
   agents: {
     focus: 'Enfocar agente',

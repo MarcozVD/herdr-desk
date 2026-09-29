@@ -14,6 +14,7 @@
   import Sidebar from './features/sidebar/Sidebar.svelte';
   import StatusBar from './features/statusbar/StatusBar.svelte';
   import TabBar from './features/tabs/TabBar.svelte';
+  import CompatBanner from './features/titlebar/CompatBanner.svelte';
   import ReconnectBanner from './features/titlebar/ReconnectBanner.svelte';
   import Titlebar from './features/titlebar/Titlebar.svelte';
   import { blockedCount } from './lib/agents/agentPanel';
@@ -329,6 +330,7 @@
 <div class="shell">
   <Titlebar />
   <ReconnectBanner />
+  <CompatBanner />
 
   <main class="body" data-sidebar={sidebarMode}>
     <Sidebar />

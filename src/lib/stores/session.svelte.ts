@@ -12,6 +12,7 @@ import {
   call,
   latencyP50,
   latencySamples,
+  sessionCompat,
   sessionCurrent,
   sessionStart,
   storeSubscribe,
@@ -25,6 +26,7 @@ import type {
   ConnectionState,
   PaneInfo,
   PaneLayoutSnapshot,
+  ServerCompat,
   SessionSnapshot,
   StoreMessage,
   TabInfo,
@@ -72,6 +74,13 @@ class SessionStore {
   version = $state<string | null>(null);
   protocol = $state<number | null>(null);
   sessionName = $state<string | null>(null);
+  /**
+   * C1 — Compatibilidad cliente/servidor de la sesión activa. Si el protocolo
+   * privado no casa, el banner persistente ofrece reiniciar; el pool no reintenta
+   * bridges (`server_incompatible`).
+   */
+  compat = $state<ServerCompat | null>(null);
+  compatIncompatible = $derived(this.compat?.private_protocol_compatible === false);
   /** Sube con cada snapshot aplicado. */
   revision = $state(0);
   /** p50 de las últimas llamadas RPC. */
@@ -136,6 +145,18 @@ class SessionStore {
     }
     await this.connect();
     await this.ping();
+    await this.refreshCompat();
+  }
+
+  /** Guarda la compatibilidad de la sesión activa (viene de connect/restart). */
+  setCompat(compat: ServerCompat | null): void {
+    this.compat = compat;
+  }
+
+  /** C1 — Pide la compatibilidad de la sesión activa (fuente: `session_compat`). */
+  async refreshCompat(): Promise<void> {
+    const result = await sessionCompat(this.sessionName);
+    if (result.ok && result.value) this.compat = result.value;
   }
 
   /**
@@ -455,6 +476,7 @@ class SessionStore {
     this.startServerFailed = false;
     this.version = null;
     this.protocol = null;
+    this.compat = null;
     this.focusedWorkspaceId = null;
     this.focusedTabId = null;
     this.focusedPaneId = null;

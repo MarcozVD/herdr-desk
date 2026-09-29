@@ -34,9 +34,12 @@ async fn server_status_cli_y_ping_real() {
         assert!(report.cli_error.is_some(), "sin cli ni error: {report:?}");
     }
 
-    // ping vivo contra el server de la sesion sandbox (protocolo 19)
+    // ping vivo contra el server de la sesion sandbox. El protocolo no se fija:
+    // herdr lo sube entre versiones (19 con 0.8.0-preview, 22 con 0.9.1-preview)
+    // y el contrato que importa aqui es que el ping responda con un protocolo
+    // valido y una version.
     let live = report.live.expect("server sandbox vivo");
-    assert_eq!(live.protocol, 19);
+    assert!(live.protocol > 0, "protocolo invalido: {}", live.protocol);
     assert!(!live.version.is_empty());
 }
 

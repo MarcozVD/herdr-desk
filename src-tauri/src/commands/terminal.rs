@@ -20,6 +20,10 @@ pub const CLOSE_TAKEN_OVER: &str = "taken_over";
 pub const CLOSE_RELEASED: &str = "released";
 pub const CLOSE_PANE_CLOSED: &str = "pane_closed";
 pub const CLOSE_SERVER_DOWN: &str = "server_down";
+/// C1 — El server vive pero su protocolo privado es incompatible con el cliente:
+/// motivo estable (coincide con el code del ApiError) que el pool pinta como
+/// error SIN reintentos. No es una caida: no se respawnea.
+pub const CLOSE_SERVER_INCOMPATIBLE: &str = "server_incompatible";
 pub const CLOSE_UNKNOWN_PREFIX: &str = "unknown:";
 
 /// Normaliza el motivo crudo del server / del bridge a los motivos estables.
@@ -43,6 +47,31 @@ pub fn normalize_close_reason(server_reason: Option<&str>) -> String {
                 format!("{CLOSE_UNKNOWN_PREFIX}{r}")
             }
         }
+    }
+}
+
+/// C1 — El bridge escupe «herdr: lost connection to server: server closed
+/// connection» cuando el server viejo rechaza el control por protocolo privado.
+pub fn is_lost_connection(line: &str) -> bool {
+    line.to_ascii_lowercase()
+        .contains("lost connection to server")
+}
+
+/// C1 — Error claro (con versiones) para terminal_open cuando la compat cacheada
+/// dice que el server de `session` es incompatible.
+pub fn incompatible_api_error(session: &str, compat: &herdr_core::cli::ServerCompat) -> ApiError {
+    ApiError {
+        code: CLOSE_SERVER_INCOMPATIBLE.to_string(),
+        message: compat.incompatible_message(session),
+    }
+}
+
+/// C1 — Puerta común: Err si la sesión está cacheada como incompatible. La usan
+/// `terminal_open` (para no spawnear un bridge condenado) y los tests.
+pub fn compatibility_gate(state: &AppState, session: &str) -> Result<(), ApiError> {
+    match state.cached_compat(session) {
+        Some(compat) if compat.incompatible() => Err(incompatible_api_error(session, &compat)),
+        _ => Ok(()),
     }
 }
 
@@ -110,7 +139,17 @@ pub async fn bridge_read_task(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<BridgeEvent>,
     on_frame: Channel<InvokeResponseBody>,
 ) {
+    // C1: si el server rechaza el bridge por protocolo privado viejo, su stderr lo
+    // dice antes de morir. Con la compat cacheada en contra, el cierre se marca
+    // `server_incompatible` (error, no caida): ni respawn ni watchdog.
+    let mut lost_connection = false;
     while let Some(event) = rx.recv().await {
+        if let BridgeEvent::Stderr(line) = &event {
+            if is_lost_connection(line) {
+                lost_connection = true;
+            }
+            continue;
+        }
         // si la entrada ya esta muerta (cierre ya notificado), no enviar nada mas
         {
             let alive = state
@@ -125,6 +164,7 @@ pub async fn bridge_read_task(
                 continue;
             }
         }
+        let incompatible = lost_connection && state.session_incompatible();
         let (payload, close_reason): (Vec<u8>, Option<String>) = match &event {
             BridgeEvent::Frame {
                 seq,
@@ -136,10 +176,18 @@ pub async fn bridge_read_task(
                 herdr_core::frame::encode_frame(*seq, *width, *height, *full, bytes),
                 None,
             ),
-            BridgeEvent::Closed(reason) => (
-                herdr_core::frame::encode_closed(&normalize_close_reason(Some(reason))),
-                Some(normalize_close_reason(Some(reason))),
-            ),
+            BridgeEvent::Closed(reason) => {
+                let normalized = if incompatible {
+                    CLOSE_SERVER_INCOMPATIBLE.to_string()
+                } else {
+                    normalize_close_reason(Some(reason))
+                };
+                (
+                    herdr_core::frame::encode_closed(&normalized),
+                    Some(normalized),
+                )
+            }
+            BridgeEvent::Stderr(_) => continue,
         };
         if let BridgeEvent::Frame { width, height, .. } = event {
             // recordamos el último tamaño para el respawn
@@ -168,13 +216,19 @@ pub async fn bridge_read_task(
             break;
         }
     }
-    // EOF sin terminal.closed: caida real (server_down)
+    // EOF sin terminal.closed: caida real (server_down)… salvo que el stderr
+    // del bridge delate incompatibilidad de protocolo (C1).
+    let reason = if lost_connection && state.session_incompatible() {
+        CLOSE_SERVER_INCOMPATIBLE
+    } else {
+        CLOSE_SERVER_DOWN
+    };
     let already_notified = {
         let mut reg = state.bridges.lock().unwrap();
         match reg.bridges.get_mut(&bridge_id) {
             Some(e) if e.alive => {
                 e.alive = false;
-                e.dead_reason = Some(CLOSE_SERVER_DOWN.to_string());
+                e.dead_reason = Some(reason.to_string());
                 e.closing_since = None;
                 false
             }
@@ -184,7 +238,7 @@ pub async fn bridge_read_task(
     if !already_notified {
         // el canal del frontend recibe el motivo estable aunque el stream muera
         let _ = on_frame.send(InvokeResponseBody::Raw(herdr_core::frame::encode_closed(
-            CLOSE_SERVER_DOWN,
+            reason,
         )));
     }
 }
@@ -199,6 +253,9 @@ pub async fn terminal_open(
 ) -> Result<u32, ApiError> {
     let state = state.inner().clone();
     let session = state.current().session.clone();
+    // C1 — puerta rapida: si la compat cacheada de la sesion dice incompatible,
+    // ni se spawna el bridge (que moriria) ni se entra en bucle de reintentos.
+    compatibility_gate(&state, &session)?;
     let exe = herdr_core::paths::find_herdr_exe(None).ok_or_else(|| ApiError {
         code: "cli_failed".to_string(),
         message: "no se encontro el ejecutable herdr".to_string(),
@@ -437,6 +494,72 @@ mod tests {
     }
 
     #[test]
+    fn lost_connection_se_detecta_en_stderr() {
+        assert!(is_lost_connection(
+            "herdr: lost connection to server: server closed connection"
+        ));
+        assert!(is_lost_connection("LOST CONNECTION TO SERVER"));
+        assert!(!is_lost_connection("bridge stderr: otra cosa"));
+        assert_ne!(CLOSE_SERVER_INCOMPATIBLE, CLOSE_SERVER_DOWN);
+    }
+
+    fn state_with_compat(compat: Option<herdr_core::cli::ServerCompat>) -> AppState {
+        let state = AppState::new(crate::state::Runtime {
+            session: "dev".to_string(),
+            client: Arc::new(herdr_core::RpcClient::new("pipe-compat".to_string())),
+            store: Arc::new(herdr_core::Store::new()),
+        });
+        if let Some(value) = compat {
+            state.set_compat("dev", value);
+        }
+        state
+    }
+
+    #[test]
+    fn compatibility_gate_bloquea_solo_incompatible() {
+        // sin cache: no bloquea (la puerta no inventa incompatibilidades)
+        assert!(compatibility_gate(&state_with_compat(None), "dev").is_ok());
+
+        let compatible = herdr_core::cli::ServerCompat {
+            running: true,
+            private_protocol_compatible: Some(true),
+            ..Default::default()
+        };
+        assert!(compatibility_gate(&state_with_compat(Some(compatible)), "dev").is_ok());
+
+        let incompatible = herdr_core::cli::ServerCompat {
+            running: true,
+            server_version: Some("0.8.0-preview".to_string()),
+            client_version: Some("0.9.1-preview".to_string()),
+            private_protocol_compatible: Some(false),
+            server_protocol: Some(19),
+            client_protocol: Some(22),
+            ..Default::default()
+        };
+        let error = compatibility_gate(&state_with_compat(Some(incompatible)), "dev")
+            .expect_err("incompatible bloquea");
+        assert_eq!(error.code, "server_incompatible");
+        assert!(error.message.contains("0.8.0-preview"), "{}", error.message);
+    }
+
+    #[test]
+    fn incompatible_api_error_lleva_versiones() {
+        let compat = herdr_core::cli::ServerCompat {
+            running: true,
+            server_version: Some("0.8.0-preview".to_string()),
+            client_version: Some("0.9.1-preview".to_string()),
+            private_protocol_compatible: Some(false),
+            server_protocol: Some(19),
+            client_protocol: Some(22),
+            ..Default::default()
+        };
+        let error = incompatible_api_error("herdr-desk-dev", &compat);
+        assert_eq!(error.code, "server_incompatible");
+        assert!(error.message.contains("0.8.0-preview"), "{}", error.message);
+        assert!(error.message.contains("0.9.1-preview"), "{}", error.message);
+    }
+
+    #[test]
     fn release_en_registro_vacio_es_none() {
         use crate::state::BridgeRegistry;
         let mut reg = BridgeRegistry::new();
@@ -471,6 +594,55 @@ mod release_registry_tests {
             25,
         );
         (reg, id)
+    }
+
+    /// C1 — con la sesión cacheada como incompatible, el respawn no toca nada:
+    /// los muertos por caída quedan marcados `server_incompatible` (fuera del
+    /// circuito de respawn) y no se busca ni el exe.
+    #[test]
+    fn respawn_bridges_no_respawnea_si_la_sesion_es_incompatible() {
+        use herdr_core::cli::ServerCompat;
+
+        let mut reg = BridgeRegistry::new();
+        let id = reg.insert(
+            herdr_core::terminal::bridge_noop(),
+            "pane-r".to_string(),
+            Channel::new(|_| Ok(())),
+            80,
+            25,
+        );
+        {
+            let entry = reg.bridges.get_mut(&id).unwrap();
+            entry.alive = false;
+            entry.dead_reason = Some(CLOSE_SERVER_DOWN.to_string());
+        }
+        let state = Arc::new(crate::state::AppState::new(crate::state::Runtime {
+            session: "dev".to_string(),
+            client: Arc::new(herdr_core::RpcClient::new("pipe-respawn".to_string())),
+            store: Arc::new(herdr_core::Store::new()),
+        }));
+        *state.bridges.lock().unwrap() = reg;
+        state.set_compat(
+            "dev",
+            ServerCompat {
+                running: true,
+                private_protocol_compatible: Some(false),
+                ..Default::default()
+            },
+        );
+
+        let runtime = state.current();
+        crate::respawn_bridges(&state, &runtime, &["pane-r".to_string()]);
+
+        let reg = state.bridges.lock().unwrap();
+        let entry = reg.bridges.get(&id).unwrap();
+        assert!(!entry.alive);
+        assert_eq!(
+            entry.dead_reason.as_deref(),
+            Some(CLOSE_SERVER_INCOMPATIBLE),
+            "el muerto queda fuera del circuito de respawn"
+        );
+        assert!(!entry.respawnable());
     }
 
     #[test]

@@ -255,10 +255,7 @@ use std::time::Duration;
 fn handle_menu_event(app: &AppHandle, id: &str) {
     let state = app.state::<std::sync::Arc<AppState>>();
     if id == ID_SHOW {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
+        crate::window::focus_main(app);
         return;
     }
     if id == ID_QUIT {
@@ -322,12 +319,7 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 .call("agent.focus", &serde_json::json!({"target": target}))
                 .await
             {
-                Ok(_) => {
-                    if let Some(window) = app2.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
+                Ok(_) => crate::window::focus_main(&app2),
                 Err(err) => tracing::warn!("agent.focus desde tray fallo: {}", err.message()),
             }
             drop(app2);
