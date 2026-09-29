@@ -288,6 +288,12 @@ mod tests {
                 Some(BridgeEvent::Closed(reason)) => {
                     assert_eq!(reason, "detached");
                 }
+                // stderr no pasa por aquí: `parse_frame_line` lee stdout, y el
+                // stderr lo emite su propia tarea (C1). Que aparezca en la
+                // fixture de stdout seria un bug de enrutado.
+                Some(BridgeEvent::Stderr(message)) => {
+                    panic!("linea de fixture con stderr: {message}");
+                }
                 None => panic!("linea de fixture no-parseable"),
             }
         }
