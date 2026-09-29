@@ -2,7 +2,40 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versión semántica.
 
-## [0.1.0] - sin publicar
+## [0.1.1] - 2026-09-28
+
+Parche de la GUI de terminal y del arranque contra servidores más nuevos.
+
+### Corregido
+
+- **Portapapeles de la terminal**: `Ctrl+V` salía como `^V` y no pegaba nada, y `Ctrl+C` con texto
+  seleccionado mataba el proceso en vez de copiar. Las dos teclas pasan por el portapapeles del
+  sistema; `Ctrl+C` sin selección sigue siendo SIGINT.
+- **Repintado al cambiar de espacio**: al volver a un espacio, la terminal se pintaba con la rejilla
+  de la vista anterior (`#forceRepaint` pedía el full con `lastCols/lastRows` viejos): la terminal
+  quedaba sin llenar el marco y las gráficas de los agentes salían deformadas. La vista registra su
+  tamaño real antes de `show`/`open` y `syncSize` compara contra la rejilla del servidor.
+- **Directorio de las terminales nuevas**: `tab.create`, `pane.split` y `workspace.create` heredaban
+  el `cwd` del panel enfocado por el servidor, que puede estar en otro espacio. Ahora heredan el del
+  panel que se está viendo.
+- **Rueda en los TUI**: los agentes TUI (opencode, claude) sin scrollback recibían la secuencia SGR
+  de los botones 64/65 en la celda del puntero.
+- **Sidebar y barra de scroll**: la sidebar ya no se desborda al aparecer su barra vertical, y la
+  barra propia de xterm se oculta (el scrollback vive en el servidor).
+
+### Añadido
+
+- **Servidor incompatible**: al arrancar contra un backend más nuevo que el de la GUI, el título lo
+  avisa con un banner persistente y hay un botón para reiniciar la sesión. `server_incompatible`
+  deja el panel en error, sin watchdog ni reenganche. `herdr-core` acepta `server_status --json`
+  (con respaldo en texto) y propaga `BridgeEvent::Stderr`.
+
+### Verificación
+
+`pnpm verify` en verde (format:check, lint, `svelte-check`, 439 tests unit, `schema:check`, clippy
+con `-D warnings`, `cargo test --workspace`) sobre 52 archivos de test.
+
+## [0.1.0] - 2026-09-28
 
 Primera versión completa de `herdr-desk`: GUI de escritorio (Windows 11) para
 [herdr](https://github.com/herdrdev/herdr), el multiplexor de terminales para agentes de código.
