@@ -99,6 +99,9 @@ export interface TerminalEntry {
   sentResize: number;
   sentRelease: number;
   sentClose: number;
+  /** Tamaño pedido al server y aún no pintado (resize sin reflujo local). */
+  pendingSize: { cols: number; rows: number } | null;
+  pendingTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface PoolEvents {
@@ -134,12 +137,22 @@ export const FRAME_WATCHDOG_MS = 1500;
  */
 export const STALE_REOPEN_DELAY_MS = 3600;
 
+/** Plazo para que llegue el `full` de un resize antes de aplicarlo en local. */
+export const DEFERRED_RESIZE_MS = 250;
+
 /** Reintentos de reapertura antes de contarlo como error real. */
 export const MAX_STALE_REOPENS = 2;
 
 /** Motivos de cierre que significan «se cayó el servidor». */
 const OUTAGE_REASON =
   /server is shut|shutting down|error de transporte|os error|connection refused/i;
+
+/**
+ * C1 — El server rechazó el bridge por protocolo privado incompatible (server
+ * viejo). No es una caída transitoria: error definitivo, sin watchdog ni
+ * reaperturas; el banner ofrece reiniciar la sesión.
+ */
+export const SERVER_INCOMPATIBLE_REASON = 'server_incompatible';
 
 export interface PoolOptions {
   write: (bytes: Uint8Array) => void;
@@ -265,6 +278,8 @@ export class TerminalPool {
       sentResize: 0,
       sentRelease: 0,
       sentClose: 0,
+      pendingSize: null,
+      pendingTimer: null,
     };
 
     entry.onFrame = (buffer: ArrayBuffer) => {
@@ -283,6 +298,17 @@ export class TerminalPool {
       if (frame.closed) {
         const reason = decodeCloseReason(frame);
         entry.closeReason = reason;
+        if (reason === SERVER_INCOMPATIBLE_REASON) {
+          // C1: error definitivo, no caída. Sin respawn del backend (el bridge ya
+          // nace muerto) y sin watchdog/reapertura desde la UI.
+          entry.bridgeId = null;
+          entry.state = 'error';
+          entry.errorText = es.terminal.serverIncompatible;
+          this.#clearWatchdog(entry.paneId);
+          this.#clearReopen(entry.paneId);
+          this.#notifyState(entry);
+          return;
+        }
         if (OUTAGE_REASON.test(reason)) {
           // El backend respawnea reusando el mismo bridge_id y el mismo Channel,
           // así que NO se suelta el bridge: el panel queda «reconectando» y los
@@ -308,7 +334,9 @@ export class TerminalPool {
       }
       // Sin vista montada no hay dónde pintar: el contenido volverá entero en el
       // repintado que pide el siguiente montaje (lo manda el servidor).
-      entry.view?.writer.push(frame.bytes, frame.full);
+      const view = entry.view;
+      if (view && frame.full) this.#adoptFrameSize(entry, frame.width, frame.height);
+      view?.writer.push(frame.bytes, frame.full);
       for (const listener of this.#listeners) listener.onFrame?.(entry);
     };
 
@@ -506,8 +534,12 @@ export class TerminalPool {
         this.#forceRepaint(entry);
       }
     } catch (raw) {
+      // C1: `server_incompatible` es terminal: error con el mensaje del backend
+      // (versiones incluidas) y sin watchdog ni reapertura.
       entry.errorText = parseApiError(raw).message;
       entry.state = 'error';
+      this.#clearWatchdog(entry.paneId);
+      this.#clearReopen(entry.paneId);
       this.#notifyState(entry);
     }
     return entry;
@@ -669,6 +701,7 @@ export class TerminalPool {
       entry.bridgeId = null;
     }
     if (entry.watchdog) clearTimeout(entry.watchdog);
+    if (entry.pendingTimer !== null) clearTimeout(entry.pendingTimer);
     this.#destroyView(entry);
     this.#entries.delete(paneId);
     this.#lru = this.#lru.filter((id) => id !== paneId);
@@ -692,6 +725,69 @@ export class TerminalPool {
     const entry = this.#entries.get(paneId);
     if (!entry || entry.bridgeId === null) return;
     void terminalInputBytes(entry.bridgeId, binaryStringToBase64(data)).catch(() => undefined);
+  }
+
+  /**
+   * Tamaño actual de la vista, ANTES de `show`/`open`: el repintado forzado usa
+   * `lastCols/lastRows` y, si no se actualizan, el server pinta con la rejilla
+   * vieja. Si el bridge está vivo y el tamaño cambió, se le avisa (resize).
+   */
+  setSize(paneId: string, cols: number, rows: number): void {
+    const entry = this.#entries.get(paneId);
+    if (!entry || cols <= 0 || rows <= 0) return;
+    const nextCols = Math.max(20, cols);
+    const nextRows = Math.max(5, rows);
+    if (nextCols === entry.lastCols && nextRows === entry.lastRows) return;
+    if (entry.bridgeId !== null && !entry.needsRepaint) {
+      this.resize(paneId, nextCols, nextRows);
+      return;
+    }
+    entry.lastCols = nextCols;
+    entry.lastRows = nextRows;
+  }
+
+  /**
+   * Resize sin reflujo local: se pide el tamaño al server y xterm cambia de
+   * rejilla cuando llega el `full` con ese tamaño (`#adoptFrameSize`), así el
+   * contenido viejo nunca se reordena a la rejilla nueva (evita el temblor). Si
+   * el full no llega en `DEFERRED_RESIZE_MS`, se aplica en local igualmente.
+   */
+  resizeDeferred(paneId: string, cols: number, rows: number): void {
+    const entry = this.#entries.get(paneId);
+    if (!entry || entry.bridgeId === null || !entry.view) return;
+    entry.pendingSize = { cols, rows };
+    this.resize(paneId, cols, rows);
+    if (entry.pendingTimer !== null) clearTimeout(entry.pendingTimer);
+    entry.pendingTimer = setTimeout(() => {
+      entry.pendingTimer = null;
+      const pending = entry.pendingSize;
+      entry.pendingSize = null;
+      const view = entry.view;
+      if (!pending || !view) return;
+      if (view.terminal.cols !== pending.cols || view.terminal.rows !== pending.rows) {
+        view.terminal.resize(pending.cols, pending.rows);
+      }
+    }, DEFERRED_RESIZE_MS);
+  }
+
+  /** Un `full` trae el tamaño del server: xterm adopta ESA rejilla antes de pintar. */
+  #adoptFrameSize(entry: TerminalEntry, width: number, height: number): void {
+    const view = entry.view;
+    if (!view || width <= 0 || height <= 0) return;
+    const pending = entry.pendingSize;
+    // Solo se adopta el tamaño pedido: un full viejo (de antes del resize) no
+    // debe devolver la terminal a la rejilla anterior.
+    if (pending && (pending.cols !== width || pending.rows !== height)) return;
+    if (pending) {
+      entry.pendingSize = null;
+      if (entry.pendingTimer !== null) {
+        clearTimeout(entry.pendingTimer);
+        entry.pendingTimer = null;
+      }
+      if (view.terminal.cols !== width || view.terminal.rows !== height) {
+        view.terminal.resize(width, height);
+      }
+    }
   }
 
   resize(paneId: string, cols: number, rows: number): void {

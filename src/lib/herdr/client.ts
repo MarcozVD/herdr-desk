@@ -18,7 +18,13 @@ import type {
   ResponseTypeName,
 } from './methods.gen';
 import type * as Api from './types.gen';
-import type { ConnectionState, SessionInfo, StoreMessage } from './types';
+import type {
+  ConnectionState,
+  ServerCompat,
+  SessionConnected,
+  SessionInfo,
+  StoreMessage,
+} from './types';
 import type {
   ConfigChange,
   ConfigDefaultPayload,
@@ -227,8 +233,25 @@ export async function sessionCurrent(): Promise<CommandOutcome<string>> {
   return optionalCommand<string>('session_current');
 }
 
-export async function sessionConnect(name: string): Promise<CommandOutcome<null>> {
-  return optionalCommand<null>('session_connect', { name });
+export async function sessionConnect(name: string): Promise<CommandOutcome<SessionConnected>> {
+  return optionalCommand<SessionConnected>('session_connect', { name });
+}
+
+/** C1 — Compatibilidad cliente/servidor de una sesión (la activa si no hay nombre). */
+export async function sessionCompat(name?: string | null): Promise<CommandOutcome<ServerCompat>> {
+  return optionalCommand<ServerCompat>('session_compat', { name: name ?? null });
+}
+
+/**
+ * C1 — Reinicia una sesión (stop + start) y devuelve su compatibilidad nueva.
+ * `confirm` es obligatorio en el backend para `default`: el reinicio mata los
+ * procesos de todos los paneles de la sesión.
+ */
+export async function sessionRestart(
+  name: string,
+  confirm: boolean,
+): Promise<CommandOutcome<ServerCompat>> {
+  return optionalCommand<ServerCompat>('session_restart', { name, confirm });
 }
 
 export async function sessionStart(name: string): Promise<CommandOutcome<null>> {

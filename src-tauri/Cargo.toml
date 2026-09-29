@@ -22,6 +22,8 @@ tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
+# B2: segunda instancia -> foco en la ventana existente (registrar SIEMPRE primero)
+tauri-plugin-single-instance = "2"
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
 # Misma versión que usa Tauri 2.11 (comparte el tipo COM con `with_webview`).

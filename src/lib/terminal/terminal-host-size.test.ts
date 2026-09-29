@@ -39,6 +39,17 @@ function declaration(body: string, property: string): string {
   return match?.[1]?.trim() ?? '';
 }
 
+/** Bloque que empieza en `header` (con sangría de dos espacios) hasta su llave. */
+function blockOf(source: string, header: string, needle?: string): string {
+  for (let start = source.indexOf(header); start >= 0; start = source.indexOf(header, start + 1)) {
+    const end = source.indexOf('\n  }', start);
+    expect(end, `no se encontró el cierre de \`${header}\``).toBeGreaterThan(start);
+    const block = source.slice(start, end);
+    if (needle === undefined || block.includes(needle)) return block;
+  }
+  throw new Error(`no se encontró el bloque \`${header}\` con \`${needle ?? ''}\``);
+}
+
 describe('el host de la terminal ocupa el 100×100 del cuerpo del marco', () => {
   const host = ruleBody(appCss, '.terminal-host');
 
@@ -76,5 +87,41 @@ describe('el host de la terminal ocupa el 100×100 del cuerpo del marco', () => 
 
   it('el host es contenedor flex para alinear la terminal con su barra de scroll', () => {
     expect(declaration(host, 'display')).toBe('flex');
+  });
+});
+
+describe('al cambiar de espacio la vista se repinta con el tamaño REAL del contenedor', () => {
+  // Causa raíz: `#forceRepaint` pide al servidor un full con `lastCols/lastRows`, y
+  // esa rejilla era la de la vista ANTERIOR (el otro espacio). Al volver a este
+  // espacio, el panel se pintaba a la rejilla vieja: la gráfica de opencode salía
+  // deformada y la terminal no llegaba a llenar el marco. El arreglo es registrar
+  // el tamaño de la vista nueva (`pool.setSize`) ANTES de `show`/`open`.
+  const effect = blockOf(terminalView, '$effect(() => {', 'pool.setSize(');
+
+  it('el tamaño se registra antes de mostrar y de abrir el bridge', () => {
+    const setSize = effect.indexOf('pool.setSize(');
+    const show = effect.indexOf('pool.show(');
+    const open = effect.indexOf('pool.open(');
+    expect(setSize, 'la vista debe registrar su tamaño con pool.setSize').toBeGreaterThanOrEqual(0);
+    expect(setSize).toBeLessThan(show);
+    expect(show).toBeLessThan(open);
+  });
+
+  it('el open va con el tamaño de la VISTA, no con la rejilla vieja del pool', () => {
+    expect(effect).toMatch(
+      /pool\.open\(\s*paneId,\s*view\.terminal\.cols,\s*view\.terminal\.rows,\s*epoch\s*\)/,
+    );
+  });
+
+  it('el ajuste compara contra la rejilla del SERVIDOR, no contra la vista anterior', () => {
+    const sync = blockOf(terminalView, 'function syncSize(): void {');
+    expect(sync).toMatch(/cols !== entry\.lastCols \|\| rows !== entry\.lastRows/);
+    expect(sync).toMatch(/pool\.resize\(paneId, cols, rows\)/);
+  });
+
+  it('con bridge vivo no redimensiona xterm antes del full del server (sin temblor)', () => {
+    const sync = blockOf(terminalView, 'function syncSize(): void {');
+    expect(sync).toMatch(/proposeDimensions\(\)/);
+    expect(sync).toMatch(/pool\.resizeDeferred\(paneId, cols, rows\)/);
   });
 });

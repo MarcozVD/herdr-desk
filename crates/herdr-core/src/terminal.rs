@@ -18,6 +18,10 @@ pub enum BridgeEvent {
         bytes: Vec<u8>,
     },
     Closed(String),
+    /// C1 — Linea de stderr del bridge (p. ej. «lost connection to server»).
+    /// Permite clasificar el cierre como incompatibilidad de protocolo en vez
+    /// de caida transitoria.
+    Stderr(String),
 }
 
 #[derive(Debug)]
@@ -90,6 +94,7 @@ pub fn spawn_bridge(
         .ok_or_else(|| std::io::Error::other("bridge sin stdin"))?;
 
     // stdout → BridgeEvent
+    let stderr_tx = event_tx.clone();
     tokio::spawn(async move {
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
@@ -119,7 +124,7 @@ pub fn spawn_bridge(
         }
     });
 
-    // stderr → log
+    // stderr → log + evento (C1: la GUI clasifica «lost connection to server»)
     tokio::spawn(async move {
         let mut reader = BufReader::new(stderr);
         let mut line = String::new();
@@ -128,7 +133,11 @@ pub fn spawn_bridge(
             match reader.read_line(&mut line).await {
                 Ok(0) | Err(_) => return,
                 Ok(_) => {
-                    tracing::warn!("bridge stderr: {}", line.trim_end());
+                    let text = line.trim_end().to_string();
+                    tracing::warn!("bridge stderr: {text}");
+                    if stderr_tx.send(BridgeEvent::Stderr(text)).is_err() {
+                        return;
+                    }
                 }
             }
         }
@@ -278,6 +287,12 @@ mod tests {
                 }
                 Some(BridgeEvent::Closed(reason)) => {
                     assert_eq!(reason, "detached");
+                }
+                // stderr no pasa por aquí: `parse_frame_line` lee stdout, y el
+                // stderr lo emite su propia tarea (C1). Que aparezca en la
+                // fixture de stdout seria un bug de enrutado.
+                Some(BridgeEvent::Stderr(message)) => {
+                    panic!("linea de fixture con stderr: {message}");
                 }
                 None => panic!("linea de fixture no-parseable"),
             }

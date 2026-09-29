@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::{Channel, InvokeResponseBody};
 
 use herdr_core::Store;
+use herdr_core::cli::ServerCompat;
 use herdr_core::terminal::Bridge;
 
 /// Sesión activa: se reemplaza entera al conectar a otra sesión (session_connect).
@@ -23,6 +24,17 @@ pub struct AppState {
     pub store_subs: Mutex<StoreSubs>,
     /// Estado del tray (sesiones + agentes), actualizado por el frontend y los eventos.
     pub tray: Mutex<crate::tray::TrayState>,
+    /// C1 — Última compatibilidad cliente/servidor conocida de una sesión.
+    /// La escribe el arranque, `session_compat`, `session_connect` y
+    /// `session_restart`; la leen `terminal_open`, el cierre de bridges y el
+    /// respawn para no reintentar contra un server de protocolo privado viejo.
+    pub compat: Mutex<Option<CachedCompat>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedCompat {
+    pub session: String,
+    pub compat: ServerCompat,
 }
 
 /// Registro de la suscripcion al store vigente.
@@ -62,11 +74,38 @@ impl AppState {
             event_channels: Mutex::new(Vec::new()),
             store_subs: Mutex::new(StoreSubs::new()),
             tray: Mutex::new(crate::tray::TrayState::default()),
+            compat: Mutex::new(None),
         }
     }
 
     pub fn current(&self) -> Arc<Runtime> {
         self.runtime.read().unwrap().clone()
+    }
+
+    /// Guarda la compatibilidad de `session` (la descartan los tests al no
+    /// existir sesión real: aquí solo se cachea lo que ya respondió el CLI).
+    pub fn set_compat(&self, session: &str, compat: ServerCompat) {
+        *self.compat.lock().unwrap() = Some(CachedCompat {
+            session: session.to_string(),
+            compat,
+        });
+    }
+
+    /// Compatibilidad cacheada SOLO si es de la sesión pedida.
+    pub fn cached_compat(&self, session: &str) -> Option<ServerCompat> {
+        self.compat
+            .lock()
+            .unwrap()
+            .as_ref()
+            .filter(|cached| cached.session == session)
+            .map(|cached| cached.compat.clone())
+    }
+
+    /// ¿La sesión activa está cacheada como incompatible?
+    pub fn session_incompatible(&self) -> bool {
+        let session = self.current().session.clone();
+        self.cached_compat(&session)
+            .is_some_and(|compat| compat.incompatible())
     }
 
     /// Cambia de sesion: cierra el store viejo (refresher y suscripciones mueren),
@@ -85,6 +124,8 @@ impl AppState {
         *self.runtime.write().unwrap() = Arc::new(runtime);
         // cancela la suscripcion al store vieja (si el frontend no re-suscribio aun)
         self.store_subs.lock().unwrap().rotate();
+        // la compatibilidad es de la sesion: la nueva se resuelve al conectar
+        *self.compat.lock().unwrap() = None;
     }
 
     pub fn subscribe_events(&self, channel: Channel<InvokeResponseBody>) {
@@ -252,5 +293,55 @@ mod managed_state_tests {
             }
         }
         assert!(malos.is_empty(), "State<AppState> sin Arc en: {malos:?}");
+    }
+}
+
+#[cfg(test)]
+mod compat_cache_tests {
+    use super::*;
+
+    fn state_with(session: &str) -> AppState {
+        AppState::new(Runtime {
+            session: session.to_string(),
+            client: Arc::new(herdr_core::RpcClient::new("pipe-test".to_string())),
+            store: Arc::new(Store::new()),
+        })
+    }
+
+    fn compat(incompatible: bool) -> ServerCompat {
+        ServerCompat {
+            running: true,
+            private_protocol_compatible: Some(!incompatible),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn cache_solo_vale_para_su_sesion() {
+        let state = state_with("dev");
+        state.set_compat("dev", compat(true));
+        assert!(state.cached_compat("dev").is_some());
+        assert!(state.cached_compat("otra").is_none());
+        assert!(state.session_incompatible());
+    }
+
+    #[test]
+    fn swap_olvida_la_compatibilidad() {
+        let state = state_with("dev");
+        state.set_compat("dev", compat(true));
+        state.swap(Runtime {
+            session: "nueva".to_string(),
+            client: Arc::new(herdr_core::RpcClient::new("pipe-nueva".to_string())),
+            store: Arc::new(Store::new()),
+        });
+        assert!(state.cached_compat("dev").is_none());
+        assert!(!state.session_incompatible());
+    }
+
+    #[test]
+    fn compatible_no_marca_incompatible() {
+        let state = state_with("dev");
+        state.set_compat("dev", compat(false));
+        assert!(!state.session_incompatible());
     }
 }

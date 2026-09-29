@@ -3,7 +3,14 @@
 
 import { expect, test } from '@playwright/test';
 
-import { bootApp, pasteIntoTerminal, pushFrame, recordedCalls, terminalText } from './harness';
+import {
+  bootApp,
+  pasteIntoTerminal,
+  pushFrame,
+  readSnapshotFixture,
+  recordedCalls,
+  terminalText,
+} from './harness';
 
 test('la terminal pinta los frames ANSI del bridge', async ({ page }) => {
   await bootApp(page);
@@ -89,7 +96,10 @@ test('resize: la ventana redimensiona la terminal y avisa al bridge', async ({ p
 });
 
 test('la rueda pide el scroll a herdr (el scrollback vive en el server)', async ({ page }) => {
-  await bootApp(page);
+  // Panel sin agente (shell): el scrollback lo lleva herdr.
+  const snapshot = readSnapshotFixture() as { panes: Array<Record<string, unknown>> };
+  for (const pane of snapshot.panes) if (pane.pane_id === 'w1:p1') pane.agent = null;
+  await bootApp(page, { snapshot });
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
 
   await page.getByTestId('terminal-host').hover();
@@ -101,6 +111,25 @@ test('la rueda pide el scroll a herdr (el scrollback vive en el server)', async 
   const scrolls = await recordedCalls(page, 'terminal_scroll');
   expect(scrolls[0]?.direction).toBe('up');
   expect(scrolls[0]?.lines).toBe(3);
+});
+
+test('en un agente TUI sin scrollback la rueda va a la app (scroll de opencode)', async ({
+  page,
+}) => {
+  // w1:p1 del fixture tiene agente (hd-bot) y `max_offset_from_bottom: 0`: la
+  // rueda se manda como SGR de ratón a la app, no como scroll de herdr.
+  await bootApp(page);
+  await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
+
+  await page.getByTestId('terminal-host').hover();
+  await page.mouse.wheel(0, -240);
+
+  await expect
+    .poll(async () =>
+      (await recordedCalls(page, 'terminal_input')).map((args) => String(args.data)).join(''),
+    )
+    .toContain('\x1b[<64;');
+  expect(await recordedCalls(page, 'terminal_scroll')).toEqual([]);
 });
 
 test('un terminal.closed muestra el motivo, sin botón manual', async ({ page }) => {

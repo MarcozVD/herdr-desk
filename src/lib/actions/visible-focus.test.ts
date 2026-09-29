@@ -58,6 +58,7 @@ function snapshot(): SessionSnapshot {
     workspaceId: string,
     tabId: string,
     focused = false,
+    cwd = 'C:/tmp',
   ): Record<string, unknown> => ({
     pane_id: paneId,
     terminal_id: `term_${paneId}`,
@@ -68,7 +69,7 @@ function snapshot(): SessionSnapshot {
     revision: 0,
     title: paneId,
     terminal_title_stripped: paneId,
-    cwd: 'C:/tmp',
+    cwd,
     label: null,
     tokens: {},
     git_branch: null,
@@ -128,10 +129,10 @@ function snapshot(): SessionSnapshot {
     ],
     tabs: [tab('w1:t1', 'w1', 1, 1), tab('w1:t2', 'w1', 2, 1), tab('w2:t1', 'w2', 1, 2)],
     panes: [
-      pane('w1:p1', 'w1', 'w1:t1', true),
-      pane('w1:p2', 'w1', 'w1:t2'),
-      pane('w2:p1', 'w2', 'w2:t1'),
-      pane('w2:p2', 'w2', 'w2:t1'),
+      pane('w1:p1', 'w1', 'w1:t1', true, 'C:/workspace-uno'),
+      pane('w1:p2', 'w1', 'w1:t2', false, 'C:/workspace-uno/p2'),
+      pane('w2:p1', 'w2', 'w2:t1', false, 'C:/workspace-dos'),
+      pane('w2:p2', 'w2', 'w2:t1', false, 'C:/workspace-dos/p2'),
     ],
     layouts: [
       { tab_id: 'w1:t1', zoomed: false, panes: [{ pane_id: 'w1:p1' }] },
@@ -195,5 +196,77 @@ describe('BUG 3 — pestañas nuevas y navegación sobre el espacio visible', ()
     ui.focusWorkspaceLocally('w2');
     await flows.switchTabNumber(1);
     expect(calls.find((call) => call.method === 'tab.focus')?.params).toEqual({ tab_id: 'w2:t1' });
+  });
+});
+
+describe('BUG 4 — el cwd de una terminal nueva es el del espacio VISIBLE', () => {
+  // El servidor sigue enfocando w1:p1 (`C:/workspace-uno`) mientras la GUI muestra
+  // w2: todo lo que nace debe heredar la ruta de lo que se está viendo.
+  it('la pestaña nueva hereda el cwd del panel visible, no el enfocado por el servidor', async () => {
+    ui.focusWorkspaceLocally('w2');
+    settings.values.prompt_new_tab_name = false;
+    await flows.newTab();
+    const create = calls.find((call) => call.method === 'tab.create');
+    expect(create?.params).toMatchObject({ workspace_id: 'w2', cwd: 'C:/workspace-dos' });
+  });
+
+  it('el panel divided hereda el cwd del panel visible', async () => {
+    ui.focusWorkspaceLocally('w2');
+    await flows.splitPane('right');
+    const split = calls.find((call) => call.method === 'pane.split');
+    expect(split?.params).toMatchObject({ cwd: 'C:/workspace-dos' });
+  });
+
+  it('el panel divided con objetivo explícito también hereda el cwd visible', async () => {
+    ui.focusWorkspaceLocally('w2');
+    await flows.splitPane('down', 'w2:p2');
+    const split = calls.find((call) => call.method === 'pane.split');
+    expect(split?.params).toMatchObject({ target_pane_id: 'w2:p2', cwd: 'C:/workspace-dos' });
+  });
+
+  it('el espacio nuevo se crea con el cwd del panel visible', async () => {
+    ui.focusWorkspaceLocally('w2');
+    settings.values.prompt_new_workspace_name = false;
+    const form = vi.spyOn(ui, 'workspaceForm').mockResolvedValue({ label: 'nuevo', cwd: '' });
+    try {
+      await flows.createWorkspace();
+      // `mockRestore` limpia las llamadas: hay que mirar antes.
+      expect(form).toHaveBeenCalledWith(expect.objectContaining({ cwdValue: 'C:/workspace-dos' }));
+    } finally {
+      form.mockRestore();
+    }
+    // El formulario vacío deja `null`: herdr decide (no se inventa una ruta).
+    const create = calls.find((call) => call.method === 'workspace.create');
+    expect(create?.params).toMatchObject({ cwd: null });
+  });
+
+  it('el cwd del panel visible manda también sin foco local de panel', async () => {
+    // Sin `localFocusedPaneId` visible.paneId cae al del servidor, pero en la
+    // pestaña que se está viendo: la ruta heredada es la de ese panel.
+    ui.focusWorkspaceLocally('w2');
+    settings.values.prompt_new_tab_name = false;
+    await flows.newTab();
+    expect(calls.find((call) => call.method === 'tab.create')?.params).toMatchObject({
+      cwd: 'C:/workspace-dos',
+    });
+  });
+
+  it('sin panel visible se cae al cwd del panel enfocado por el servidor', async () => {
+    ui.resetSessionState();
+    session.applySnapshot({
+      ...snapshot(),
+      panes: [
+        {
+          ...(snapshot().panes as unknown as Array<Record<string, unknown>>)[0],
+          tab_id: 'w1:t9', // panel enfocado fuera de la pestaña visible
+        },
+      ],
+      layouts: [],
+    } as unknown as SessionSnapshot);
+    settings.values.prompt_new_tab_name = false;
+    await flows.newTab();
+    expect(calls.find((call) => call.method === 'tab.create')?.params).toMatchObject({
+      cwd: 'C:/workspace-uno',
+    });
   });
 });

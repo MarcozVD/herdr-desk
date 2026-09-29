@@ -271,7 +271,10 @@ export function installHarness(): void {
   const calls: RecordedCall[] = [];
   const storeChannels = new Map<string, Channel<unknown>>();
   /** bridgeId → { paneId, channel } de los bridges abiertos. */
-  const bridges = new Map<number, { paneId: string; channel: Channel<unknown> }>();
+  const bridges = new Map<
+    number,
+    { paneId: string; channel: Channel<unknown>; cols?: number; rows?: number }
+  >();
   /**
    * Texto que el «servidor» tiene pintado en cada panel. Como el herdr real, se
    * reenvía ENTERO (`full`) al enganchar un bridge nuevo o al hacer resize: es lo
@@ -304,12 +307,12 @@ export function installHarness(): void {
   }
 
   /** Frame `full` con el texto que el server tiene pintado en ese panel. */
-  function serverFrame(paneId: string): ArrayBuffer {
+  function serverFrame(paneId: string, cols = 80, rows = 24): ArrayBuffer {
     frameSeq += 1;
     return buildFrame({
       seq: frameSeq,
-      width: 80,
-      height: 24,
+      width: cols,
+      height: rows,
       full: true,
       closed: false,
       payload: new TextEncoder().encode(screens.get(paneId) ?? ''),
@@ -455,7 +458,9 @@ export function installHarness(): void {
         const bridgeId = Number(payload.bridgeId);
         const bridge = bridges.get(bridgeId);
         if (bridge && !deadBridges.has(bridgeId)) {
-          queueMicrotask(() => deliver(bridge.channel, serverFrame(bridge.paneId)));
+          const cols = Number(payload.cols) || 80;
+          const rows = Number(payload.rows) || 24;
+          queueMicrotask(() => deliver(bridge.channel, serverFrame(bridge.paneId, cols, rows)));
         }
         return null;
       }

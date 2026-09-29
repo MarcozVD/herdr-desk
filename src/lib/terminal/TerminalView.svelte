@@ -17,7 +17,6 @@
   import { ui } from '../stores/ui.svelte';
   import { pool } from './pool';
   import type { BridgeState, TerminalEntry, TerminalViewState } from './pool';
-  import TerminalScrollbar from './TerminalScrollbar.svelte';
 
   interface Props {
     paneId: string;
@@ -33,15 +32,15 @@
   let closeReason = $state('');
   let errorText = $state('');
 
-  const scroll = $derived(session.panes.find((pane) => pane.pane_id === paneId)?.scroll ?? null);
+  const pane = $derived(session.panes.find((item) => item.pane_id === paneId) ?? null);
 
   // Fuera de la reactividad: entrada del pool, vista actual y handles.
   let entry: TerminalEntry | null = null;
   let view: TerminalViewState | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastSize = { cols: 0, rows: 0 };
   let frameTotal = 0;
+  let settleFrame: number | null = null;
 
   function syncFromEntry(source: TerminalEntry): void {
     bridgeState = source.state;
@@ -76,7 +75,11 @@
     if (!entry) return;
     try {
       const text = await readText();
-      if (text && text.length > 0) pool.send(paneId, text);
+      if (!text || text.length === 0) return;
+      // `paste` de xterm aplica bracketed paste si la app lo pidió y normaliza
+      // los saltos de línea; el resultado sale por onData → pool.send.
+      if (view) view.terminal.paste(text);
+      else pool.send(paneId, text);
     } catch {
       ui.notify(es.terminal.clipboardUnavailable, 'warn');
     }
@@ -95,19 +98,73 @@
     }
   }
 
+  /**
+   * Ajusta xterm al contenedor y avisa al bridge si el tamaño difiere del que
+   * tiene el SERVIDOR (`entry.lastCols/lastRows`), no del de la vista anterior:
+   * una vista nueva nace con el tamaño bueno y, comparando con ella, el resize
+   * nunca salía y el panel quedaba pintado a medias (hasta mover el divisor).
+   */
+  function syncSize(): void {
+    if (!entry || !view) return;
+    // Con bridge vivo NO se redimensiona xterm aquí: se pide el tamaño al server
+    // y xterm cambia de rejilla justo antes de pintar el `full` que llega con
+    // ese tamaño (pool.ts). Redimensionar antes reordenaba el contenido viejo y
+    // al llegar el full se repintaba otra vez: las terminales «temblaban» al
+    // abrir/cerrar la barra lateral.
+    if (entry.bridgeId === null || entry.state !== 'open') {
+      applyFit();
+      return;
+    }
+    if (!host || host.clientWidth === 0 || host.clientHeight === 0) return;
+    const proposed = view.fit.proposeDimensions();
+    if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return;
+    const cols = Math.max(1, proposed.cols);
+    const rows = Math.max(1, proposed.rows);
+    if (cols === view.terminal.cols && rows === view.terminal.rows) {
+      if (cols !== entry.lastCols || rows !== entry.lastRows) pool.resize(paneId, cols, rows);
+      return;
+    }
+    pool.resizeDeferred(paneId, cols, rows);
+  }
+
   function scheduleFit(): void {
     if (resizeTimer !== null) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       resizeTimer = null;
-      if (!entry || !view) return;
-      const previous = { cols: view.terminal.cols, rows: view.terminal.rows };
-      applyFit();
-      if (entry.bridgeId === null) return;
-      if (view.terminal.cols === previous.cols && view.terminal.rows === previous.rows) return;
-      if (view.terminal.cols === lastSize.cols && view.terminal.rows === lastSize.rows) return;
-      lastSize = { cols: view.terminal.cols, rows: view.terminal.rows };
-      pool.resize(paneId, view.terminal.cols, view.terminal.rows);
+      syncSize();
     }, 60);
+  }
+
+  /** Reajuste tras asentarse el layout (dos frames) y cuando cargan las fuentes. */
+  function settleSize(): void {
+    if (settleFrame !== null) cancelAnimationFrame(settleFrame);
+    settleFrame = requestAnimationFrame(() => {
+      settleFrame = requestAnimationFrame(() => {
+        settleFrame = null;
+        syncSize();
+      });
+    });
+  }
+
+  /** Secuencia SGR de rueda del ratón (botones 64/65) en la celda del puntero. */
+  function wheelSequence(event: WheelEvent, up: boolean): string {
+    const terminal = view?.terminal;
+    let col = 1;
+    let row = 1;
+    if (terminal && host) {
+      const rect = host.getBoundingClientRect();
+      const cellW = rect.width / Math.max(1, terminal.cols);
+      const cellH = rect.height / Math.max(1, terminal.rows);
+      col = Math.min(
+        terminal.cols,
+        Math.max(1, Math.floor((event.clientX - rect.left) / cellW) + 1),
+      );
+      row = Math.min(
+        terminal.rows,
+        Math.max(1, Math.floor((event.clientY - rect.top) / cellH) + 1),
+      );
+    }
+    return `\x1b[<${up ? 64 : 65};${col};${row}M`;
   }
 
   // T2.7 — El foco de teclado sigue al panel enfocado: al saltar a un panel
@@ -183,21 +240,57 @@
     );
 
     // La rueda no hace scroll local (scrollback: 0): se pide a herdr.
+    // Si la app del panel pidió ratón (xterm vio el modo DEC) la rueda va a la
+    // app como siempre. Con un agente TUI (opencode, claude…) sin scrollback en
+    // el server, los modos DEC no llegan a un controller tardío, así que se le
+    // manda la rueda SGR a mano: era el «no puedo hacer scroll en opencode».
     view.terminal.attachCustomWheelEventHandler((event) => {
+      const terminal = view?.terminal;
+      if (terminal && terminal.modes.mouseTrackingMode !== 'none') return true;
+      const up = event.deltaY < 0;
       const lines = Math.max(1, Math.round(settings.values.mouse_scroll_lines));
-      pool.scroll(paneId, event.deltaY < 0 ? 'up' : 'down', lines);
+      const current = pane;
+      const hasScrollback = (current?.scroll?.max_offset_from_bottom ?? 0) > 0;
+      const agentTui = Boolean(current?.agent) || terminal?.buffer.active.type === 'alternate';
+      if (agentTui && !hasScrollback) {
+        event.preventDefault();
+        pool.send(paneId, wheelSequence(event, up).repeat(Math.min(lines, 5)));
+        return false;
+      }
+      pool.scroll(paneId, up ? 'up' : 'down', lines);
       return false;
+    });
+
+    // Ctrl+V pega el portapapeles (sin esto xterm mandaba ^V y no pegaba nada);
+    // Ctrl+C con selección copia, sin selección sigue siendo SIGINT.
+    view.terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown' || !event.ctrlKey || event.altKey || event.metaKey) return true;
+      const key = event.key.toLowerCase();
+      if (key === 'v' && !event.shiftKey) {
+        event.preventDefault();
+        void pasteFromClipboard();
+        return false;
+      }
+      if (key === 'c' && !event.shiftKey && view?.terminal.hasSelection()) {
+        event.preventDefault();
+        void copySelection();
+        view.terminal.clearSelection();
+        return false;
+      }
+      return true;
     });
 
     window.addEventListener('herdr-desk:terminal', onTerminalEvent);
     resizeObserver = new ResizeObserver(() => scheduleFit());
     resizeObserver.observe(host);
+    void document.fonts?.ready.then(() => settleSize());
     ready = true;
 
     return () => {
       window.removeEventListener('herdr-desk:terminal', onTerminalEvent);
       unsubscribe();
       if (resizeTimer !== null) clearTimeout(resizeTimer);
+      if (settleFrame !== null) cancelAnimationFrame(settleFrame);
       resizeObserver?.disconnect();
       unregisterTestTerminal(paneId);
       // El pool destruye la VISTA (instancia de xterm, writer y addons: xterm no
@@ -222,7 +315,13 @@
       pool.hide(paneId);
       return;
     }
+    // Primero el tamaño real del contenedor: `show` y `open` repintan con él (con
+    // el tamaño viejo el server pintaba a otra rejilla: gráfica de opencode rota
+    // y terminal sin llenar el panel al cambiar de espacio).
+    applyFit();
+    pool.setSize(paneId, view.terminal.cols, view.terminal.rows);
     pool.show(paneId);
+    settleSize();
     // Sin server no se insiste: se espera al reintento (evita spam de open), y
     // si el panel está «reconectando» el respawn del backend ya reusa su bridge.
     if (!connected && entry.state !== 'idle') return;
@@ -251,10 +350,6 @@
   }}
 >
   <div bind:this={host} class="terminal-surface"></div>
-  <TerminalScrollbar
-    {scroll}
-    onscroll={(direction, lines) => pool.scroll(paneId, direction, lines)}
-  />
 
   {#if bridgeState === 'opening'}
     <div class="terminal-overlay" data-testid="terminal-overlay" data-kind="opening">

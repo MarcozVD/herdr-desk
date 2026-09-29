@@ -5,7 +5,7 @@ use serde_json::Value;
 use tauri::State;
 
 use crate::state::{AppState, Runtime};
-use herdr_core::cli::{self, CliSessionList};
+use herdr_core::cli::{self, CliSessionList, ServerCompat};
 use herdr_core::{ApiError, RpcClient, Store};
 
 #[tauri::command]
@@ -22,18 +22,9 @@ pub async fn session_current(
     Ok(state.current().session.clone())
 }
 
-#[tauri::command]
-pub async fn session_start(name: String) -> Result<(), ApiError> {
-    // sandbox guard: solo sesiones de desarrollo (D10); default se prohibe para start/stop
-    if name == "default" {
-        return Err(ApiError {
-            code: "invalid_params".to_string(),
-            message: "no se permite iniciar la sesion default desde la GUI".to_string(),
-        });
-    }
-    cli::start_server_detached(&name).map_err(|e| e.api())?;
-
-    // esperar a que quede running (15 s)
+/// Espera (15 s) a que la sesión quede `running`; comparten `session_start` y
+/// `session_restart`.
+async fn wait_running(name: &str) -> Result<(), ApiError> {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         if Instant::now() > deadline {
@@ -49,9 +40,85 @@ pub async fn session_start(name: String) -> Result<(), ApiError> {
     }
 }
 
+#[tauri::command]
+pub async fn session_start(name: String) -> Result<(), ApiError> {
+    // sandbox guard: solo sesiones de desarrollo (D10); default se prohibe para start/stop
+    if name == "default" {
+        return Err(ApiError {
+            code: "invalid_params".to_string(),
+            message: "no se permite iniciar la sesion default desde la GUI".to_string(),
+        });
+    }
+    cli::start_server_detached(&name).map_err(|e| e.api())?;
+    wait_running(&name).await
+}
+
+/// C1 — Compatibilidad cliente/servidor de una sesión (la activa si no se pasa
+/// nombre). La cachea para `terminal_open` y el respawn.
+#[tauri::command]
+pub async fn session_compat(
+    state: State<'_, Arc<AppState>>,
+    name: Option<String>,
+) -> Result<ServerCompat, ApiError> {
+    let name = match name {
+        Some(n) if !n.trim().is_empty() => n,
+        _ => state.current().session.clone(),
+    };
+    let compat = cli::server_status(&name).map_err(|e| e.api())?;
+    state.set_compat(&name, compat.clone());
+    Ok(compat)
+}
+
+/// C1 — Reinicia una sesión: stop (si corre) + arranque detached + espera
+/// `running`. MATA los procesos de todos sus paneles, por eso `default` exige
+/// `confirm: true` (el frontend lo pide en su diálogo de confirmación).
+#[tauri::command]
+pub async fn session_restart(
+    state: State<'_, Arc<AppState>>,
+    name: String,
+    confirm: bool,
+) -> Result<ServerCompat, ApiError> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(ApiError {
+            code: "invalid_params".to_string(),
+            message: "sesion vacia para reiniciar".to_string(),
+        });
+    }
+    if name == "default" && !confirm {
+        return Err(ApiError {
+            code: "invalid_params".to_string(),
+            message: "reiniciar la sesion default requiere confirmacion explicita (confirm: true)"
+                .to_string(),
+        });
+    }
+    let running = cli::session_list()
+        .map_err(|e| e.api())?
+        .sessions
+        .iter()
+        .any(|s| s.name == name && s.running);
+    if running {
+        let out = cli::stop_session(&name).map_err(|e| e.api())?;
+        if !out.ok() {
+            return Err(ApiError {
+                code: "cli_failed".to_string(),
+                message: format!("herdr session stop fallo: {}", out.stderr.trim()),
+            });
+        }
+    }
+    cli::start_server_detached(&name).map_err(|e| e.api())?;
+    wait_running(&name).await?;
+    let compat = cli::server_status(&name).map_err(|e| e.api())?;
+    state.set_compat(&name, compat.clone());
+    Ok(compat)
+}
+
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct SessionConnected {
     pub session: String,
+    /// C1 — Compatibilidad del server recién conectado (`None` si el CLI falló:
+    /// la conexión no se tumba por no poder leer el status).
+    pub compat: Option<ServerCompat>,
 }
 
 #[tauri::command]
@@ -109,6 +176,11 @@ pub async fn connect_session(
     let store2 = store.clone();
     tauri::async_runtime::spawn(store2.refresher_task(client2));
 
+    // C1: compatibilidad del server destino (la conexion no falla si el CLI no
+    // puede responder; la UI pedira `session_compat`). Debe leerse antes del
+    // swap, que limpia la cache, y guardarse despues.
+    let compat = cli::server_status(&name).ok();
+
     // swap coherente: cierra el store viejo (refresher + suscripciones mueren),
     // libera y purga TODOS los bridges de la sesion anterior
     state.swap(Runtime {
@@ -116,7 +188,13 @@ pub async fn connect_session(
         client,
         store,
     });
-    Ok(SessionConnected { session: name })
+    if let Some(value) = &compat {
+        state.set_compat(&name, value.clone());
+    }
+    Ok(SessionConnected {
+        session: name,
+        compat,
+    })
 }
 
 #[tauri::command]
