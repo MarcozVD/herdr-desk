@@ -19,6 +19,7 @@
 //      panel sin foco real saliera como activo y el clic no lo enfocara).
 //      Para las ACCIONES sí hay respaldo al primero del tab (`actionPaneId`).
 
+import { isKnownId } from './ids';
 import { session } from './session.svelte';
 import { ui } from './ui.svelte';
 
@@ -26,7 +27,15 @@ class VisibleFocus {
   /** Espacio que se está viendo en la GUI (el local solo si sigue existiendo). */
   workspaceId = $derived.by(() => {
     const local = ui.localFocusedWorkspaceId;
-    if (local && session.workspaces.some((item) => item.workspace_id === local)) return local;
+    if (
+      local &&
+      isKnownId(
+        local,
+        session.workspaces.map((item) => item.workspace_id),
+      )
+    ) {
+      return local;
+    }
     return session.focusedWorkspaceId;
   });
 
@@ -39,11 +48,12 @@ class VisibleFocus {
 
   tabId = $derived.by(() => {
     const local = ui.localFocusedTabId;
-    if (local && this.tabs.some((tab) => tab.tab_id === local)) return local;
+    const tabIds = this.tabs.map((tab) => tab.tab_id);
+    if (isKnownId(local, tabIds)) return local;
     const active = this.workspace?.active_tab_id;
-    if (active && this.tabs.some((tab) => tab.tab_id === active)) return active;
+    if (isKnownId(active ?? null, tabIds)) return active ?? null;
     const server = session.focusedTabId;
-    if (server && this.tabs.some((tab) => tab.tab_id === server)) return server;
+    if (isKnownId(server, tabIds)) return server;
     return this.tabs[0]?.tab_id ?? null;
   });
 
@@ -54,10 +64,11 @@ class VisibleFocus {
 
   /** Panel ENFOCADO (anillo del marco, «enfocar»): sin respaldo al primero. */
   paneId = $derived.by(() => {
+    const paneIds = this.panes.map((pane) => pane.pane_id);
     const local = ui.localFocusedPaneId;
-    if (local && this.panes.some((pane) => pane.pane_id === local)) return local;
+    if (isKnownId(local, paneIds)) return local;
     const server = session.focusedPaneId;
-    if (server && this.panes.some((pane) => pane.pane_id === server)) return server;
+    if (isKnownId(server, paneIds)) return server;
     return null;
   });
 

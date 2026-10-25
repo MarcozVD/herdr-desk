@@ -73,12 +73,16 @@ class LayoutStore {
    * en pantalla con su overlay— hasta el siguiente evento de la sesión.
    */
   #matchesSnapshot(tabId: string, tree: TreeNode | null): boolean {
-    const expected = session.layouts.find((layout) => layout.tab_id === tabId)?.panes;
-    if (!expected) return true; // sin referencia (tab recién creado) no se juzga
-    const want = expected
-      .map((pane) => pane.pane_id)
-      .sort()
-      .join('\u0000');
+    const reference = session.layouts.find((layout) => layout.tab_id === tabId);
+    // Punto 5 (BUG 6) — Si el snapshot no trae el layout del tab, se juzga contra
+    // los panes que el snapshot SÍ atribuye al tab (`session.panes`). Antes
+    // «sin referencia no se juzga» y un árbol desacoplado del snapshot podía no
+    // reintentarse nunca.
+    const expected = reference
+      ? reference.panes.map((pane) => pane.pane_id)
+      : session.panes.filter((pane) => pane.tab_id === tabId).map((pane) => pane.pane_id);
+    if (expected.length === 0) return true; // tab recién creado: no se juzga
+    const want = expected.sort().join('\u0000');
     const have = paneNodes(tree)
       .map((node) => node.paneId ?? '')
       .sort()
@@ -109,6 +113,9 @@ class LayoutStore {
       }
     } catch (raw) {
       this.error = parseApiError(raw).message;
+      // Punto 5 (BUG 6) — Un export fallido no debe dejar la clave «consumida»:
+      // así el `$effect` que pide la misma revisión puede reintentarlo.
+      this.#lastKey = '';
     } finally {
       this.#inFlight = false;
       if (retry) {

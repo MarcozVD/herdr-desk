@@ -54,15 +54,41 @@
   const tree = $derived(layout.zoomed ? zoomedTree(layout.tree, visiblePaneId) : layout.tree);
 
   // Si el SERVIDOR mueve el foco a otro tab (lo movió la TUI, no la GUI) se
-  // adopta: el foco local manda solo hasta que el server diga otra cosa.
+  // adopta: el foco local manda solo hasta que el server diga otra cosa. Punto 3
+  // (BUG 6): el seguimiento se rearma por sesión, para que un `reset()` (que pone
+  // `focusedTabId = null`) no deje `lastServerTab` con un id de la sesión anterior.
   let lastServerTab: string | null = null;
+  let lastServerTabSession: string | null = null;
   $effect(() => {
+    const name = session.sessionName;
     const serverTab = session.focusedTabId;
+    if (name !== lastServerTabSession) {
+      lastServerTabSession = name;
+      lastServerTab = serverTab;
+      return;
+    }
     if (serverTab === lastServerTab) return;
     const previous = lastServerTab;
     lastServerTab = serverTab;
     if (previous === null) return;
     if (serverTab !== null && serverTab !== ui.localFocusedTabId) ui.clearLocalTab();
+  });
+
+  // Punto 2 (BUG 6) — El recuerdo del último tab por espacio se poda con el
+  // snapshot: no puede quedar apuntando a un tab que ya no existe.
+  $effect(() => {
+    ui.pruneTabMemory(session.tabs.map((tab) => tab.tab_id));
+  });
+
+  // Punto 4 (BUG 6) — El foco LOCAL también se reconcilia con el snapshot: un
+  // pane/tab/espacio local que ya no existe se descarta (antes solo se descartaba
+  // de forma perezosa al consultarlo en `visible`).
+  $effect(() => {
+    const panes = session.panes.map((pane) => pane.pane_id);
+    const tabs = session.tabs.map((tab) => tab.tab_id);
+    const workspaces = session.workspaces.map((workspace) => workspace.workspace_id);
+    if (panes.length === 0 && tabs.length === 0 && workspaces.length === 0) return;
+    ui.reconcileLocalFocus({ panes, tabs, workspaces });
   });
 
   // Un panel que ya no existe en la sesión suelta su bridge: cerrar un panel SÍ
@@ -138,7 +164,7 @@
     noticeCenter.observe(
       session.agents,
       {
-        focusedPaneId: ui.localFocusedPaneId ?? session.focusedPaneId,
+        focusedPaneId: visible.paneId,
         windowFocused: document.hasFocus(),
       },
       revision,

@@ -20,6 +20,7 @@
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
   import { settings } from '../../lib/stores/settings.svelte';
+  import { visible } from '../../lib/stores/visible.svelte';
   import AgentDot from '../../lib/ui/AgentDot.svelte';
   import type { AgentInfo } from '../../lib/herdr/types';
 
@@ -151,7 +152,7 @@
               data-pane-id={agent.pane_id}
               data-status={agent.agent_status}
               data-agent={agent.agent ?? ''}
-              aria-current={agent.pane_id === session.focusedPaneId}
+              aria-current={agent.pane_id === visible.paneId}
               onclick={() => flows.focusAgent(agent.pane_id)}
               oncontextmenu={(event) => flows.openAgentMenu(event, agent.pane_id)}
               title={es.agents.rowHint}

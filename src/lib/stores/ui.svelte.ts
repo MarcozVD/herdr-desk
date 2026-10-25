@@ -2,6 +2,7 @@
 // contextuales. Las preferencias persistentes viven en settings.svelte.ts.
 
 import { es } from '../i18n/es';
+import { isKnownId, pickKnownId } from './ids';
 import { settings } from './settings.svelte';
 
 export interface ToastMessage {
@@ -227,6 +228,54 @@ class UiStore {
   }
 
   /**
+   * Punto 2 (BUG 6) — Olvida los tabs recordados que ya no existen en el
+   * snapshot. `tabByWorkspace` se escribe desde dos sitios y podía quedar
+   * apuntando a un id muerto hasta que alguien lo consumiera.
+   */
+  pruneTabMemory(validTabIds: readonly string[]): void {
+    if (validTabIds.length === 0) return; // sesión vacía/reconectando: no se borra
+    const known = new Set(validTabIds);
+    let changed = false;
+    const next: Record<string, string> = {};
+    for (const [workspaceId, tabId] of Object.entries(this.tabByWorkspace)) {
+      if (known.has(tabId)) next[workspaceId] = tabId;
+      else changed = true;
+    }
+    if (changed) this.tabByWorkspace = next;
+  }
+
+  /**
+   * Punto 4 (BUG 6) — Reconcilia el foco LOCAL con el snapshot: si el
+   * pane/tab/espacio local ya no existe, se descarta. Antes solo se descartaba
+   * de forma perezosa al consultarlo en `visible`.
+   */
+  reconcileLocalFocus(input: {
+    panes: readonly string[];
+    tabs: readonly string[];
+    workspaces: readonly string[];
+  }): void {
+    if (this.localFocusedPaneId && !isKnownId(this.localFocusedPaneId, input.panes)) {
+      this.localFocusedPaneId = null;
+    }
+    if (this.localFocusedTabId && !isKnownId(this.localFocusedTabId, input.tabs)) {
+      this.localFocusedTabId = null;
+    }
+    if (
+      this.localFocusedWorkspaceId &&
+      !isKnownId(this.localFocusedWorkspaceId, input.workspaces)
+    ) {
+      this.localFocusedWorkspaceId = null;
+    }
+    if (this.paneHistory.length > 0) {
+      const next = this.paneHistory.filter((id) => isKnownId(id, input.panes));
+      // Solo se reasigna si de verdad se cayó algo: si no, el `$effect` que
+      // llama aquí leería y escribiría `paneHistory` en bucle
+      // (`effect_update_depth_exceeded`).
+      if (next.length !== this.paneHistory.length) this.paneHistory = next;
+    }
+  }
+
+  /**
    * Panel y tab a los que apuntan las acciones de la GUI. Manda el foco local,
    * pero SOLO si ese id sigue existiendo de verdad: un id viejo (o un tab
    * guardado por error como panel) no puede silenciar la acción; en ese caso se
@@ -238,12 +287,14 @@ class UiStore {
     tabs: readonly string[];
     workspaces: readonly string[];
   }): { paneId: string | null; tabId: string | null; workspaceId: string | null } {
-    const pick = (local: string | null, known: readonly string[], fallback: string | null) =>
-      local !== null && known.includes(local) ? local : fallback;
     return {
-      paneId: pick(this.localFocusedPaneId, input.panes, input.server.paneId),
-      tabId: pick(this.localFocusedTabId, input.tabs, input.server.tabId),
-      workspaceId: pick(this.localFocusedWorkspaceId, input.workspaces, input.server.workspaceId),
+      paneId: pickKnownId(this.localFocusedPaneId, input.panes, input.server.paneId),
+      tabId: pickKnownId(this.localFocusedTabId, input.tabs, input.server.tabId),
+      workspaceId: pickKnownId(
+        this.localFocusedWorkspaceId,
+        input.workspaces,
+        input.server.workspaceId,
+      ),
     };
   }
 
@@ -273,10 +324,27 @@ class UiStore {
     this.paneHistory = [];
     this.tabByWorkspace = {};
     this.resizeMode = false;
+    this.prefixActive = false;
+    this.lastAction = null;
+    // Punto 6 (BUG 6) — El estado efímero también es de la sesión vieja: menús,
+    // toasts y diálogos con promesa pendiente. Las promesas se resuelven
+    // (false/null) para no dejar `await`s colgados esperando a la sesión nueva.
+    this.contextMenu = null;
+    this.resolveConfirm(false);
+    this.resolvePrompt(null);
+    this.resolveWorkspaceForm(null);
+    for (const timer of this.#toastTimers.values()) clearTimeout(timer);
+    this.#toastTimers.clear();
+    this.toasts = [];
     // Un visor o un diálogo abiertos apuntan a la sesión vieja: se cierran.
     this.viewer = null;
     this.agentPromptTarget = null;
     this.startAgentTarget = null;
+    this.paletteOpen = false;
+    this.helpOpen = false;
+    this.sessionsOpen = false;
+    this.settingsOpen = false;
+    this.worktreesOpen = false;
     this.pluginsOpen = false;
     this.integrationsOpen = false;
     this.serverOpen = false;

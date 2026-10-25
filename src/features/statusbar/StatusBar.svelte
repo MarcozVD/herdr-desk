@@ -4,8 +4,11 @@
   import { layout } from '../../lib/stores/layout.svelte';
   import { shortPath } from '../../lib/stores/snapshot';
   import { session } from '../../lib/stores/session.svelte';
+  import { visible } from '../../lib/stores/visible.svelte';
 
-  const pane = $derived(session.focusedPane);
+  // Punto 1 (BUG 6) — el panel activo de la statusbar es el MISMO que el del
+  // anillo de los paneles (`visible.paneId`), no el foco del servidor.
+  const pane = $derived(session.panes.find((item) => item.pane_id === visible.paneId) ?? null);
   const scroll = $derived(pane?.scroll ?? null);
   const scrollLabel = $derived(
     scroll
@@ -26,7 +29,7 @@
 <footer class="statusbar glass" data-testid="statusbar">
   <span class="statusbar__item" data-testid="status-pane">
     {es.statusbar.pane}
-    {session.focusedPaneId ?? '—'}
+    {visible.paneId ?? '—'}
   </span>
   <span class="statusbar__item" data-testid="status-cwd">
     {shortPath(pane?.cwd) || '—'}

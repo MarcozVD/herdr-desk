@@ -110,4 +110,57 @@ describe('export del árbol de paneles', () => {
     expect(layoutApi.export).toHaveBeenCalledTimes(1);
     expect(layout.paneCount).toBe(1);
   });
+
+  // Punto 5 (BUG 6) — Sin `layouts` en el snapshot, la referencia son los panes
+  // que el snapshot SÍ atribuye al tab.
+  it('sin layout de referencia juzga contra los panes del snapshot del tab', async () => {
+    session.applySnapshot({
+      ...snapshot(),
+      layouts: [],
+      panes: [
+        {
+          pane_id: 'w1:p1',
+          terminal_id: 't1',
+          workspace_id: 'w1',
+          tab_id: 'w1:t1',
+          focused: true,
+          agent_status: 'unknown',
+          revision: 0,
+        },
+        {
+          pane_id: 'w1:p2',
+          terminal_id: 't2',
+          workspace_id: 'w1',
+          tab_id: 'w1:t1',
+          focused: false,
+          agent_status: 'unknown',
+          revision: 0,
+        },
+      ],
+    } as unknown as SessionSnapshot);
+    vi.mocked(layoutApi.export).mockResolvedValueOnce(STALE).mockResolvedValueOnce(FRESH);
+
+    await layout.refreshNow('w1:t1');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    expect(layoutApi.export).toHaveBeenCalledTimes(2);
+    expect(layout.paneCount).toBe(2);
+  });
+
+  // Punto 5 (BUG 6) — Un export fallido no puede dejar la clave «consumida»:
+  // el mismo tab y revisión tienen que poder reprogramarse.
+  it('un export fallido no consume la clave de programación', async () => {
+    vi.mocked(layoutApi.export)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(FRESH);
+
+    await layout.refreshNow('w1:t1');
+    expect(layoutApi.export).toHaveBeenCalledTimes(1);
+
+    layout.schedule('w1:t1', session.revision, 1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(layoutApi.export).toHaveBeenCalledTimes(2);
+    expect(layout.paneCount).toBe(2);
+  });
 });

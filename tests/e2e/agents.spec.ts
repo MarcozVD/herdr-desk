@@ -4,7 +4,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { bootApp, readSnapshotFixture, recordedCalls } from './harness';
+import { bootApp, readLayoutFixture, readSnapshotFixture, recordedCalls } from './harness';
 
 /** Empuja un snapshot por el canal del store del arnés. */
 async function push(page: import('@playwright/test').Page, snapshot: unknown): Promise<void> {
@@ -141,4 +141,30 @@ test('el panel no se escapa del ancho de la sidebar y en compacto deja solo los 
   const row = page.getByTestId('agent-row').nth(0);
   await expect(row.locator('.agent-dot')).toBeVisible();
   await expect(row.locator('[data-token="agent"]')).toBeHidden();
+});
+
+test('BUG 6 · punto 1: el panel de agentes resalta el panel VISIBLE, no el del servidor', async ({
+  page,
+}) => {
+  await bootApp(page, { layoutTree: readLayoutFixture() });
+
+  const agentW1P1 = page.locator('[data-testid="agent-row"][data-pane-id="w1:p1"]');
+  await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p1"]')).toHaveAttribute(
+    'data-active',
+    'true',
+  );
+  await expect(agentW1P1).toHaveAttribute('aria-current', 'true');
+
+  // El foco LOCAL pasa a w1:p2; el foco del SERVIDOR sigue en w1:p1.
+  await page
+    .locator('[data-testid="pane-frame"][data-pane-id="w1:p2"]')
+    .getByTestId('pane-title')
+    .click();
+
+  await expect(page.locator('[data-testid="pane-frame"][data-pane-id="w1:p2"]')).toHaveAttribute(
+    'data-active',
+    'true',
+  );
+  await expect(agentW1P1).toHaveAttribute('aria-current', 'false');
+  await expect(page.getByTestId('status-pane')).toContainText('w1:p2');
 });
