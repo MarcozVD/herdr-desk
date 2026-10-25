@@ -543,6 +543,22 @@ mod tests {
     }
 
     #[test]
+    fn compatibility_gate_acepta_servidor_protocolo_22() {
+        // T1 — el server instalado habla protocolo 22; la puerta acepta cualquier
+        // protocolo mientras el server lo declare compatible (no fija una version).
+        let compatible = herdr_core::cli::ServerCompat {
+            running: true,
+            server_version: Some("0.9.1-preview".to_string()),
+            client_version: Some("0.9.1-preview".to_string()),
+            private_protocol_compatible: Some(true),
+            server_protocol: Some(22),
+            client_protocol: Some(22),
+            ..Default::default()
+        };
+        assert!(compatibility_gate(&state_with_compat(Some(compatible)), "dev").is_ok());
+    }
+
+    #[test]
     fn incompatible_api_error_lleva_versiones() {
         let compat = herdr_core::cli::ServerCompat {
             running: true,

@@ -60,7 +60,7 @@ test('la status bar muestra el panel, el scroll y la latencia del RPC', async ({
   await expect(page.getByTestId('status-pane')).toContainText('w1:p1');
   await expect(page.getByTestId('status-scroll')).toContainText('scroll');
   await expect(page.getByTestId('status-latency')).toContainText('ms');
-  await expect(page.getByTestId('status-version')).toContainText('protocolo 19');
+  await expect(page.getByTestId('status-version')).toContainText('protocolo 22');
 });
 
 test('el cheatsheet (help) lista los atajos configurados', async ({ page }) => {

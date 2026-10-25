@@ -74,7 +74,7 @@ test('servidor: estado, manifiestos, update, canal y stop con doble aviso', asyn
   await bootApp(page);
   await paletteRun(page, 'manifiestos');
   await expect(page.getByTestId('server-dialog')).toBeVisible();
-  await expect(page.getByTestId('server-live')).toContainText('0.8.0');
+  await expect(page.getByTestId('server-live')).toContainText('0.9.1');
   await expect(page.getByTestId('manifest-row')).toHaveCount(1);
 
   await page.getByTestId('server-reload-manifests').click();

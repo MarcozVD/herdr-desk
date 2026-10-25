@@ -180,36 +180,6 @@
     await run(es.advanced.windowTitleSet, 'client.window_title.set', { title });
   }
 
-  async function graphicsInfo(): Promise<void> {
-    const id = paneId();
-    if (!id) return;
-    await runViewer(es.advanced.graphicsInfo, 'pane.graphics.info', { pane_id: id });
-  }
-
-  async function graphicsSet(): Promise<void> {
-    const id = paneId();
-    if (!id) return;
-    const data = await ui.prompt({
-      title: es.advanced.graphicsSet,
-      label: 'PNG en base64',
-      submitLabel: es.dialog.accept,
-    });
-    if (data === null || data.trim().length === 0) return;
-    await run(es.advanced.graphicsSet, 'pane.graphics.set', {
-      pane_id: id,
-      format: 'png',
-      image_width: 16,
-      image_height: 16,
-      data_base64: data.trim(),
-    });
-  }
-
-  async function graphicsClear(): Promise<void> {
-    const id = paneId();
-    if (!id) return;
-    await run(es.advanced.graphicsClear, 'pane.graphics.clear', { pane_id: id });
-  }
-
   async function processInfo(): Promise<void> {
     const id = paneId();
     if (!id) return;
@@ -392,35 +362,8 @@
     </section>
 
     <section class="advanced__card">
-      <h3 class="advanced__title">{es.advanced.graphics}</h3>
+      <h3 class="advanced__title">{es.advanced.popups}</h3>
       <div class="advanced__actions">
-        <button
-          type="button"
-          class="btn btn--small"
-          data-testid="advanced-graphics-info"
-          disabled={busy}
-          onclick={() => void graphicsInfo()}
-        >
-          {es.advanced.graphicsInfo}
-        </button>
-        <button
-          type="button"
-          class="btn btn--small"
-          data-testid="advanced-graphics-set"
-          disabled={busy}
-          onclick={() => void graphicsSet()}
-        >
-          {es.advanced.graphicsSet}
-        </button>
-        <button
-          type="button"
-          class="btn btn--small"
-          data-testid="advanced-graphics-clear"
-          disabled={busy}
-          onclick={() => void graphicsClear()}
-        >
-          {es.advanced.graphicsClear}
-        </button>
         <button
           type="button"
           class="btn btn--small"

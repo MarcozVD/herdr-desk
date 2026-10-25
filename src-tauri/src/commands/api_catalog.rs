@@ -8,7 +8,7 @@ use herdr_core::error::ApiError;
 
 // ---------------------------------------------------------------------------
 // Catalogo de la consola API (T4.5): lee schema/herdr-api.schema.json (el
-// contrato real, protocolo 19) y lo normaliza para que la UI genere formularios
+// contrato real, protocolo 22) y lo normaliza para que la UI genere formularios
 // y visores sin conocer JSON Schema. Se cachea en memoria: el archivo solo se
 // parsea la primera vez (o con refresh=true).
 // ---------------------------------------------------------------------------
@@ -453,7 +453,7 @@ mod tests {
         let expected_total = raw["schemas"]["request"]["oneOf"].as_array().unwrap().len();
 
         let catalog = real_catalog();
-        assert_eq!(catalog.protocol, 19);
+        assert_eq!(catalog.protocol, 22);
         assert_eq!(catalog.total, expected_total);
         assert_eq!(catalog.methods.len(), catalog.total);
         // ordenado por nombre, sin duplicados
@@ -517,7 +517,7 @@ mod tests {
         assert_eq!(force.default, Some(json!(false)));
 
         let create = method(&catalog, "worktree.create");
-        assert_eq!(create.params.len(), 7);
+        assert_eq!(create.params.len(), 8);
         assert!(create.params.iter().all(|p| !p.required));
         assert_eq!(param(create, "focus").default, Some(json!(false)));
     }

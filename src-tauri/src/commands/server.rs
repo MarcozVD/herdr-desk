@@ -6,7 +6,7 @@ use herdr_core::error::ApiError;
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
-// Contrato (schema/herdr-api.schema.json, protocolo 19):
+// Contrato (schema/herdr-api.schema.json, protocolo 22):
 //   ping                          -> pong {type, version, protocol, capabilities?}
 //   server.agent_manifests {}     -> agent_manifest_status {type, manifests,
 //                                    last_check_unix?, last_result?}
@@ -304,10 +304,10 @@ mod tests {
         let report = parse_status_json(&raw).expect("parseo");
         let client = report.client.expect("client");
         assert!(!client.version.unwrap_or_default().is_empty());
-        assert_eq!(client.protocol, Some(19));
+        assert_eq!(client.protocol, Some(22));
         let server = report.server.expect("server");
         assert_eq!(server.running, Some(true));
-        assert_eq!(server.protocol, Some(19));
+        assert_eq!(server.protocol, Some(22));
         assert_eq!(server.compatible, Some(true));
         let caps = server.capabilities.expect("capabilities");
         assert!(caps.live_handoff.is_some());

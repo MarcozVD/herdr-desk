@@ -125,8 +125,8 @@ function defaultResponse(method: string, config: HarnessConfig, params?: unknown
     case 'ping':
       return {
         type: 'pong',
-        version: '0.8.0-preview.test',
-        protocol: 19,
+        version: '0.9.1-preview.test',
+        protocol: 22,
         capabilities: { live_handoff: false, detached_server_daemon: false },
       };
     case 'layout.export': {
@@ -709,22 +709,22 @@ export function installHarness(): void {
       case 'integration_install':
       case 'integration_uninstall':
         return { target: String(payload.target), messages: ['ok'] };
-      // F4/T4.3-T4.4 — servidor.
+      // F4/T4.3-T4.4 — servidor (mock alineado con herdr 0.9.1-preview/protocolo 22).
       case 'server_status':
         return {
           cli: {
             client: {
-              version: '0.8.0',
+              version: '0.9.1-preview',
               channel: 'preview',
-              protocol: 19,
+              protocol: 22,
               binary: 'C:/herdr.exe',
               session: 'herdr-desk-dev',
             },
             server: {
               status: 'running',
               running: true,
-              version: '0.8.0',
-              protocol: 19,
+              version: '0.9.1-preview',
+              protocol: 22,
               compatible: true,
               socket: 'C:/sock',
               session: 'herdr-desk-dev',
@@ -735,8 +735,8 @@ export function installHarness(): void {
           },
           cli_error: null,
           live: {
-            version: '0.8.0',
-            protocol: 19,
+            version: '0.9.1-preview',
+            protocol: 22,
             capabilities: { live_handoff: false, detached_server_daemon: true },
           },
           live_error: null,

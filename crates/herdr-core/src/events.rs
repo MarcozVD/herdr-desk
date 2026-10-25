@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use crate::error::HerdrError;
 use crate::model::EventEnvelope;
 
-/// The 24 global subscription types accepted by herdr 0.8.0-preview (protocol 19),
+/// The 24 global subscription types accepted by herdr 0.9.1-preview (protocol 22),
 /// verified against the running server. The 3 pane-scoped types
 /// (`pane.output_matched`, `pane.agent_status_changed`, `pane.scroll_changed`)
 /// require `pane_id` and are handled separately.

@@ -1,4 +1,4 @@
-// T4.7 — Cobertura de los 90 métodos del API.
+// T4.7 — Cobertura de los 102 métodos del API.
 //
 // Cada método de `methods.gen.ts` se clasifica aquí como:
 //   - `curated:<ruta UI>` — tiene una superficie propia en la GUI (se indica la
@@ -22,11 +22,20 @@ export const COVERAGE: Record<MethodName, Coverage> = {
   'server.live_handoff': 'curated:server',
   'server.agent_manifests': 'curated:server',
   'server.reload_agent_manifests': 'curated:server',
+  // --remote queda fuera de v1: el registro de la clave SSH solo se cubre por consola.
+  'server.ssh_agent.register': 'console',
   'notification.show': 'curated:advanced',
 
   // Cliente / ventana
   'client.window_title.set': 'curated:advanced',
   'client.window_title.clear': 'curated:advanced',
+  // Proyección del client shell (T4/F5): sin superficie propia en v1.
+  'client_shell.surface.set': 'console',
+  'command.invoke': 'console',
+
+  // Anuncios / novedades
+  'product_announcement.dismiss': 'console',
+  'release_notes.dismiss': 'console',
 
   // Sesión / store
   'session.snapshot': 'curated:session',
@@ -91,9 +100,17 @@ export const COVERAGE: Record<MethodName, Coverage> = {
   'pane.send_keys': 'curated:panes',
   'pane.send_input': 'curated:panes',
   'pane.read': 'curated:panes',
-  'pane.graphics.set': 'curated:advanced',
-  'pane.graphics.clear': 'curated:advanced',
-  'pane.graphics.info': 'curated:advanced',
+  // El editor nativo abre un pane de herdr (con editor del sistema); la GUI no lo
+  // muestra por defecto en Windows -> se vuelve al camino a mano de v0.1.2.
+  'pane.edit_scrollback': 'console',
+  'pane.clear': 'console',
+  'pane.scroll': 'console',
+  'pane.selection.read': 'console',
+  'pane.copy_motion': 'console',
+  'pane.copy_search': 'console',
+  'pane.input.set': 'console',
+  'pane.link.resolve': 'console',
+  'pane.link.activate': 'console',
   'pane.report_agent': 'curated:agents',
   'pane.report_agent_session': 'curated:advanced',
   'pane.report_metadata': 'curated:advanced',
@@ -113,6 +130,7 @@ export const COVERAGE: Record<MethodName, Coverage> = {
   'events.wait': 'console',
 
   // Integraciones
+  'integration.list': 'curated:integrations',
   'integration.install': 'curated:integrations',
   'integration.uninstall': 'curated:integrations',
 

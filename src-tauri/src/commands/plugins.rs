@@ -9,7 +9,7 @@ use herdr_core::error::ApiError;
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
-// Contrato plugin.* (schema/herdr-api.schema.json, protocolo 19):
+// Contrato plugin.* (schema/herdr-api.schema.json, protocolo 22):
 //   plugin.list    {plugin_id?}                  -> plugin_list {plugins}
 //   plugin.enable  {plugin_id}                   -> plugin_enabled {plugin}
 //   plugin.disable {plugin_id}                   -> plugin_disabled {plugin}

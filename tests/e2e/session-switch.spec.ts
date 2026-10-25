@@ -20,7 +20,7 @@ const ARBOL_NUEVO = { type: 'pane', pane_id: 'w9:p1' };
 
 const PREVIA = {
   version: '0.8.0-preview.test',
-  protocol: 19,
+  protocol: 22,
   focused_workspace_id: 'w1',
   focused_tab_id: 'w1:t1',
   focused_pane_id: 'w1:p1',

@@ -119,7 +119,7 @@ async fn t16_store_bootstrap_snapshot() {
         if &*raw != "{}" {
             let snap: SessionSnapshot =
                 serde_json::from_str(&raw).expect("snapshot inicial parsea");
-            assert_eq!(snap.protocol, 19);
+            assert_eq!(snap.protocol, 22);
             assert!(
                 !snap.workspaces.is_empty(),
                 "snapshot inicial sin workspaces"

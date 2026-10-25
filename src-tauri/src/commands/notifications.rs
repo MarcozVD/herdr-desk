@@ -7,7 +7,7 @@ use crate::toast_identity::{TOAST_AUMID, aumid_registered, find_icon_uri};
 // ---------------------------------------------------------------------------
 // Notificaciones nativas de Windows (T2.5): toasts del SO con la identidad
 // AUMID de toast_identity.rs (com.mvale.herdrdesk). El nombre del command
-// replica el metodo notification.show del protocolo 19, pero aqui es local:
+// replica el metodo notification.show del protocolo 22, pero aqui es local:
 // el server no manda notificaciones del SO por la GUI.
 // Contrato de degradación: si el registro no está disponible o el toast falla,
 // se responde Ok con delivered=false y el motivo (nunca Err), para que la UI

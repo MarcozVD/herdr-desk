@@ -1,26 +1,31 @@
 /* eslint-disable */
 /**
  * Métodos y respuestas del API de herdr — GENERADO por scripts/gen-types.mjs. NO EDITAR A MANO.
- * Origen: schema/herdr-api.schema.json (0.8.0-preview.2026-08-04-d78e3d3b5126 protocol=19)
+ * Origen: schema/herdr-api.schema.json (0.9.1-preview.2026-09-28-80c0c07250d2 protocol=22)
  * Regenerar: pnpm gen  (o: node scripts/gen-types.mjs)
- * 90 métodos · 57 tipos de respuesta
+ * 102 métodos · 63 tipos de respuesta
  * Los tipos referenciados viven en src/lib/herdr/types.gen.ts (se re-exportan aquí).
  */
 import type * as Api from './types.gen';
 
 export * from './types.gen';
 
-/** Params de cada uno de los 90 métodos del API. */
+/** Params de cada uno de los 102 métodos del API. */
 export interface MethodParams {
   ping: Api.PingParams;
   'server.stop': Api.EmptyParams;
   'server.live_handoff': Api.ServerLiveHandoffParams;
   'server.reload_config': Api.EmptyParams;
+  'server.ssh_agent.register': Api.ServerSshAgentRegisterParams;
   'server.agent_manifests': Api.EmptyParams;
   'server.reload_agent_manifests': Api.EmptyParams;
   'notification.show': Api.NotificationShowParams;
+  'product_announcement.dismiss': Api.ProductAnnouncementDismissParams;
+  'release_notes.dismiss': Api.ReleaseNotesDismissParams;
+  'command.invoke': Api.CommandInvokeParams;
   'client.window_title.set': Api.ClientWindowTitleSetParams;
   'client.window_title.clear': Api.EmptyParams;
+  'client_shell.surface.set': Api.ClientShellSurfaceSetParams;
   'session.snapshot': Api.EmptyParams;
   'workspace.create': Api.WorkspaceCreateParams;
   'workspace.list': Api.EmptyParams;
@@ -30,7 +35,7 @@ export interface MethodParams {
   'workspace.move': Api.WorkspaceMoveParams;
   'workspace.move_block': Api.WorkspaceMoveBlockParams;
   'workspace.report_metadata': Api.WorkspaceReportMetadataParams;
-  'workspace.close': Api.WorkspaceTarget;
+  'workspace.close': Api.WorkspaceCloseParams;
   'worktree.list': Api.WorktreeListParams;
   'worktree.create': Api.WorktreeCreateParams;
   'worktree.open': Api.WorktreeOpenParams;
@@ -67,18 +72,24 @@ export interface MethodParams {
   'pane.edges': Api.PaneEdgesParams;
   'pane.focus_direction': Api.PaneFocusDirectionParams;
   'pane.resize': Api.PaneResizeParams;
+  'pane.scroll': Api.PaneScrollParams;
+  'pane.clear': Api.PaneTarget;
+  'pane.edit_scrollback': Api.PaneTarget;
+  'pane.selection.read': Api.PaneSelectionReadParams;
+  'pane.copy_motion': Api.PaneCopyMotionParams;
+  'pane.copy_search': Api.PaneCopySearchParams;
   'pane.list': Api.PaneListParams;
   'pane.current': Api.PaneCurrentParams;
   'pane.get': Api.PaneTarget;
   'pane.focus': Api.PaneTarget;
+  'pane.input.set': Api.PaneInputSetParams;
+  'pane.link.activate': Api.PaneLinkActivateParams;
+  'pane.link.resolve': Api.PaneLinkActivateParams;
   'pane.rename': Api.PaneRenameParams;
   'pane.send_text': Api.PaneSendTextParams;
   'pane.send_keys': Api.PaneSendKeysParams;
   'pane.send_input': Api.PaneSendInputParams;
   'pane.read': Api.PaneReadParams;
-  'pane.graphics.set': Api.PaneGraphicsSetParams;
-  'pane.graphics.clear': Api.PaneGraphicsClearParams;
-  'pane.graphics.info': Api.PaneTarget;
   'pane.report_agent': Api.PaneReportAgentParams;
   'pane.report_agent_session': Api.PaneReportAgentSessionParams;
   'pane.report_metadata': Api.PaneReportMetadataParams;
@@ -89,6 +100,7 @@ export interface MethodParams {
   'events.subscribe': Api.EventsSubscribeParams;
   'events.wait': Api.EventsWaitParams;
   'pane.wait_for_output': Api.PaneWaitForOutputParams;
+  'integration.list': Api.EmptyParams;
   'integration.install': Api.IntegrationInstallParams;
   'integration.uninstall': Api.IntegrationUninstallParams;
   'plugin.link': Api.PluginLinkParams;
@@ -112,11 +124,16 @@ export const METHOD_NAMES = [
   'server.stop',
   'server.live_handoff',
   'server.reload_config',
+  'server.ssh_agent.register',
   'server.agent_manifests',
   'server.reload_agent_manifests',
   'notification.show',
+  'product_announcement.dismiss',
+  'release_notes.dismiss',
+  'command.invoke',
   'client.window_title.set',
   'client.window_title.clear',
+  'client_shell.surface.set',
   'session.snapshot',
   'workspace.create',
   'workspace.list',
@@ -163,18 +180,24 @@ export const METHOD_NAMES = [
   'pane.edges',
   'pane.focus_direction',
   'pane.resize',
+  'pane.scroll',
+  'pane.clear',
+  'pane.edit_scrollback',
+  'pane.selection.read',
+  'pane.copy_motion',
+  'pane.copy_search',
   'pane.list',
   'pane.current',
   'pane.get',
   'pane.focus',
+  'pane.input.set',
+  'pane.link.activate',
+  'pane.link.resolve',
   'pane.rename',
   'pane.send_text',
   'pane.send_keys',
   'pane.send_input',
   'pane.read',
-  'pane.graphics.set',
-  'pane.graphics.clear',
-  'pane.graphics.info',
   'pane.report_agent',
   'pane.report_agent_session',
   'pane.report_metadata',
@@ -185,6 +208,7 @@ export const METHOD_NAMES = [
   'events.subscribe',
   'events.wait',
   'pane.wait_for_output',
+  'integration.list',
   'integration.install',
   'integration.uninstall',
   'plugin.link',
@@ -235,13 +259,16 @@ export interface ResponseByType {
   pane_focus_direction: Api.ResponsePaneFocusDirection;
   pane_resize: Api.ResponsePaneResize;
   pane_read: Api.ResponsePaneRead;
-  pane_graphics_info: Api.ResponsePaneGraphicsInfo;
+  pane_selection: Api.ResponsePaneSelection;
+  pane_copy_motion: Api.ResponsePaneCopyMotion;
+  pane_copy_search: Api.ResponsePaneCopySearch;
   agent_explain: Api.ResponseAgentExplain;
   subscription_started: Api.ResponseSubscriptionStarted;
   wait_matched: Api.ResponseWaitMatched;
   output_matched: Api.ResponseOutputMatched;
   notification_show: Api.ResponseNotificationShow;
   client_window_title: Api.ResponseClientWindowTitle;
+  integration_list: Api.ResponseIntegrationList;
   integration_install: Api.ResponseIntegrationInstall;
   integration_uninstall: Api.ResponseIntegrationUninstall;
   agent_manifest_reload: Api.ResponseAgentManifestReload;
@@ -253,11 +280,14 @@ export interface ResponseByType {
   plugin_disabled: Api.ResponsePluginDisabled;
   plugin_action_list: Api.ResponsePluginActionList;
   plugin_action_invoked: Api.ResponsePluginActionInvoked;
+  pane_link_resolved: Api.ResponsePaneLinkResolved;
+  pane_link_activated: Api.ResponsePaneLinkActivated;
   plugin_log_list: Api.ResponsePluginLogList;
   plugin_pane_opened: Api.ResponsePluginPaneOpened;
   plugin_pane_focused: Api.ResponsePluginPaneFocused;
   plugin_pane_closed: Api.ResponsePluginPaneClosed;
   config_reload: Api.ResponseConfigReload;
+  client_shell_surface_set: Api.ResponseClientShellSurfaceSet;
   ok: Api.ResponseOk;
 }
 
@@ -298,13 +328,16 @@ export const RESPONSE_TYPE_NAMES = [
   'pane_focus_direction',
   'pane_resize',
   'pane_read',
-  'pane_graphics_info',
+  'pane_selection',
+  'pane_copy_motion',
+  'pane_copy_search',
   'agent_explain',
   'subscription_started',
   'wait_matched',
   'output_matched',
   'notification_show',
   'client_window_title',
+  'integration_list',
   'integration_install',
   'integration_uninstall',
   'agent_manifest_reload',
@@ -316,11 +349,14 @@ export const RESPONSE_TYPE_NAMES = [
   'plugin_disabled',
   'plugin_action_list',
   'plugin_action_invoked',
+  'pane_link_resolved',
+  'pane_link_activated',
   'plugin_log_list',
   'plugin_pane_opened',
   'plugin_pane_focused',
   'plugin_pane_closed',
   'config_reload',
+  'client_shell_surface_set',
   'ok',
 ] as const satisfies readonly ResponseTypeName[];
 
@@ -359,13 +395,16 @@ export type ResponseResult =
   | Api.ResponsePaneFocusDirection
   | Api.ResponsePaneResize
   | Api.ResponsePaneRead
-  | Api.ResponsePaneGraphicsInfo
+  | Api.ResponsePaneSelection
+  | Api.ResponsePaneCopyMotion
+  | Api.ResponsePaneCopySearch
   | Api.ResponseAgentExplain
   | Api.ResponseSubscriptionStarted
   | Api.ResponseWaitMatched
   | Api.ResponseOutputMatched
   | Api.ResponseNotificationShow
   | Api.ResponseClientWindowTitle
+  | Api.ResponseIntegrationList
   | Api.ResponseIntegrationInstall
   | Api.ResponseIntegrationUninstall
   | Api.ResponseAgentManifestReload
@@ -377,11 +416,14 @@ export type ResponseResult =
   | Api.ResponsePluginDisabled
   | Api.ResponsePluginActionList
   | Api.ResponsePluginActionInvoked
+  | Api.ResponsePaneLinkResolved
+  | Api.ResponsePaneLinkActivated
   | Api.ResponsePluginLogList
   | Api.ResponsePluginPaneOpened
   | Api.ResponsePluginPaneFocused
   | Api.ResponsePluginPaneClosed
   | Api.ResponseConfigReload
+  | Api.ResponseClientShellSurfaceSet
   | Api.ResponseOk;
 
 export type { Api };

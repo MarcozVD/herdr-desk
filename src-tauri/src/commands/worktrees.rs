@@ -7,7 +7,7 @@ use super::config;
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
-// Contrato worktree.* (schema/herdr-api.schema.json, protocolo 19)
+// Contrato worktree.* (schema/herdr-api.schema.json, protocolo 22)
 //   worktree.list   {cwd?, workspace_id?}                -> worktree_list
 //   worktree.create {workspace_id?, cwd?, branch?, base?, path?, label?, focus?}
 //                                                        -> worktree_created

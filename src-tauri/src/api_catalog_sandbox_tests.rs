@@ -15,7 +15,7 @@ async fn catalogo_en_sesion_sandbox() {
     let _sandbox = Sandbox::start();
 
     let first = build_catalog_cached(false).await.expect("catalogo");
-    assert_eq!(first.protocol, 19);
+    assert_eq!(first.protocol, 22);
     assert!(first.total >= 80, "total: {}", first.total);
     assert_eq!(first.methods.len(), first.total);
 

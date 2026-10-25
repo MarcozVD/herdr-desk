@@ -486,7 +486,7 @@ pub struct ConfigChange {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct ConfigReloadOutcome {
-    /// applied | partial | failed (contrato server.reload_config, protocolo 19).
+    /// applied | partial | failed (contrato server.reload_config, protocolo 22).
     pub status: String,
     pub diagnostics: Vec<String>,
     /// true si no había server al que recargar (la config aplica al arrancar).
@@ -679,7 +679,7 @@ fn atomic_write(path: &Path, text: &str) -> Result<(), ApiError> {
 }
 
 /// Recarga la config del server activo via RPC `server.reload_config`
-/// (contrato protocolo 19: params {} → {type:"config_reload", status, diagnostics}).
+/// (contrato protocolo 22: params {} → {type:"config_reload", status, diagnostics}).
 async fn reload_server(client: &herdr_core::RpcClient) -> ConfigReloadOutcome {
     match client
         .call("server.reload_config", &serde_json::json!({}))

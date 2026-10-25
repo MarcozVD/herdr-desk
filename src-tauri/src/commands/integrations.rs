@@ -6,7 +6,7 @@ use herdr_core::error::ApiError;
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
-// Contrato (schema/herdr-api.schema.json, protocolo 19):
+// Contrato (schema/herdr-api.schema.json, protocolo 22):
 //   integration.install   {target: IntegrationTarget} -> integration_install
 //                         {type, target, details: {messages: string[]}}
 //   integration.uninstall {target: IntegrationTarget} -> integration_uninstall

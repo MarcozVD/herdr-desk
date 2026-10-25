@@ -1,7 +1,7 @@
 /* eslint-disable */
 /**
  * Tipos del API de herdr — GENERADO por scripts/gen-types.mjs. NO EDITAR A MANO.
- * Origen: schema/herdr-api.schema.json (0.8.0-preview.2026-08-04-d78e3d3b5126 protocol=19)
+ * Origen: schema/herdr-api.schema.json (0.9.1-preview.2026-09-28-80c0c07250d2 protocol=22)
  * Regenerar: pnpm gen  (o: node scripts/gen-types.mjs)
  * Métodos y params: src/lib/herdr/methods.gen.ts
  */
@@ -429,6 +429,7 @@ export type OutputMatch =
 export type PluginActionContext = 'global' | 'workspace' | 'tab' | 'pane' | 'selection';
 export type PluginPlatform = 'linux' | 'macos' | 'windows';
 export type PopupSize = number | string;
+export type IntegrationState = 'not_installed' | 'current' | 'outdated';
 export type IntegrationTarget =
   | 'pi'
   | 'omp'
@@ -442,6 +443,7 @@ export type IntegrationTarget =
   | 'kilo'
   | 'hermes'
   | 'qodercli'
+  | 'qwen'
   | 'cursor'
   | 'mastracode'
   | 'antigravity_cli'
@@ -469,9 +471,21 @@ export type NotificationShowSound = 'none' | 'done' | 'request';
 export type NotificationShowReason =
   'shown' | 'disabled' | 'rate_limited' | 'no_foreground_client' | 'busy';
 export type PaneAgentState = 'idle' | 'working' | 'blocked' | 'unknown';
+export type PaneCopyMotion =
+  | 'line_end'
+  | 'first_non_blank'
+  | 'next_word_start'
+  | 'previous_word_start'
+  | 'next_word_end'
+  | 'next_big_word_start'
+  | 'previous_big_word_start'
+  | 'next_big_word_end'
+  | 'previous_paragraph'
+  | 'next_paragraph';
+export type PaneCopySearchDirection = 'forward' | 'backward';
 export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 export type PaneFocusDirectionReason = 'no_neighbor';
-export type PaneGraphicsFormat = 'png' | 'rgb' | 'rgba';
+export type PaneRightClickTarget = 'herdr' | 'pane';
 export type PaneMoveDestination =
   | {
       ratio?: number | null;
@@ -651,9 +665,24 @@ export type ResponseResult =
       type: 'pane_read';
     }
   | {
-      cell_height_px: number;
-      cell_width_px: number;
-      type: 'pane_graphics_info';
+      pane_id: string;
+      text: string;
+      type: 'pane_selection';
+    }
+  | {
+      content_revision: number;
+      cursor: PaneTextPoint;
+      pane_id: string;
+      type: 'pane_copy_motion';
+    }
+  | {
+      content_revision: number;
+      current?: number | null;
+      current_global?: number | null;
+      matches: PaneTextRange[];
+      pane_id: string;
+      total: number;
+      type: 'pane_copy_search';
     }
   | {
       explain: unknown;
@@ -682,6 +711,10 @@ export type ResponseResult =
       changed: boolean;
       reason: ClientWindowTitleReason;
       type: 'client_window_title';
+    }
+  | {
+      integrations: IntegrationInfo[];
+      type: 'integration_list';
     }
   | {
       details: IntegrationInstallResult;
@@ -735,6 +768,15 @@ export type ResponseResult =
       type: 'plugin_action_invoked';
     }
   | {
+      regions: PaneLinkRegion[];
+      type: 'pane_link_resolved';
+    }
+  | {
+      handled: boolean;
+      type: 'pane_link_activated';
+      url?: string | null;
+    }
+  | {
       logs: PluginCommandLogInfo[];
       type: 'plugin_log_list';
     }
@@ -754,6 +796,11 @@ export type ResponseResult =
       diagnostics: string[];
       status: ConfigReloadStatus;
       type: 'config_reload';
+    }
+  | {
+      active: boolean;
+      projection_revision: number;
+      type: 'client_shell_surface_set';
     }
   | {
       type: 'ok';
@@ -788,8 +835,10 @@ export interface HerdrApiSchema {
   AgentViewSortOrder?: AgentViewSortOrder;
   AgentViewValue?: AgentViewValue;
   AgentWaitParams?: AgentWaitParams;
+  ClientShellSurfaceSetParams?: ClientShellSurfaceSetParams;
   ClientWindowTitleReason?: ClientWindowTitleReason;
   ClientWindowTitleSetParams?: ClientWindowTitleSetParams;
+  CommandInvokeParams?: CommandInvokeParams;
   ConfigReloadStatus?: ConfigReloadStatus;
   EmptyParams?: EmptyParams;
   ErrorBody?: ErrorBody;
@@ -800,8 +849,10 @@ export interface HerdrApiSchema {
   EventsSubscribeParams?: EventsSubscribeParams;
   EventsWaitParams?: EventsWaitParams;
   InstalledPluginInfo?: InstalledPluginInfo;
+  IntegrationInfo?: IntegrationInfo;
   IntegrationInstallParams?: IntegrationInstallParams;
   IntegrationInstallResult?: IntegrationInstallResult;
+  IntegrationState?: IntegrationState;
   IntegrationTarget?: IntegrationTarget;
   IntegrationUninstallParams?: IntegrationUninstallParams;
   IntegrationUninstallResult?: IntegrationUninstallResult;
@@ -817,6 +868,10 @@ export interface HerdrApiSchema {
   PaneAgentState?: PaneAgentState;
   PaneAgentStatusChangedEvent?: PaneAgentStatusChangedEvent;
   PaneClearAgentAuthorityParams?: PaneClearAgentAuthorityParams;
+  PaneCopyMotion?: PaneCopyMotion;
+  PaneCopyMotionParams?: PaneCopyMotionParams;
+  PaneCopySearchDirection?: PaneCopySearchDirection;
+  PaneCopySearchParams?: PaneCopySearchParams;
   PaneCurrentParams?: PaneCurrentParams;
   PaneDirection?: PaneDirection;
   PaneEdgesParams?: PaneEdgesParams;
@@ -824,16 +879,15 @@ export interface HerdrApiSchema {
   PaneFocusDirectionParams?: PaneFocusDirectionParams;
   PaneFocusDirectionReason?: PaneFocusDirectionReason;
   PaneFocusDirectionResult?: PaneFocusDirectionResult;
-  PaneGraphicsClearParams?: PaneGraphicsClearParams;
-  PaneGraphicsFormat?: PaneGraphicsFormat;
-  PaneGraphicsPlacementParams?: PaneGraphicsPlacementParams;
-  PaneGraphicsSetParams?: PaneGraphicsSetParams;
   PaneInfo?: PaneInfo;
+  PaneInputSetParams?: PaneInputSetParams;
   PaneLayoutPane?: PaneLayoutPane;
   PaneLayoutParams?: PaneLayoutParams;
   PaneLayoutRect?: PaneLayoutRect;
   PaneLayoutSnapshot?: PaneLayoutSnapshot;
   PaneLayoutSplit?: PaneLayoutSplit;
+  PaneLinkActivateParams?: PaneLinkActivateParams;
+  PaneLinkRegion?: PaneLinkRegion;
   PaneListParams?: PaneListParams;
   PaneMoveDestination?: PaneMoveDestination;
   PaneMoveParams?: PaneMoveParams;
@@ -855,8 +909,11 @@ export interface HerdrApiSchema {
   PaneResizeParams?: PaneResizeParams;
   PaneResizeReason?: PaneResizeReason;
   PaneResizeResult?: PaneResizeResult;
+  PaneRightClickTarget?: PaneRightClickTarget;
   PaneScrollChangedEvent?: PaneScrollChangedEvent;
   PaneScrollInfo?: PaneScrollInfo;
+  PaneScrollParams?: PaneScrollParams;
+  PaneSelectionReadParams?: PaneSelectionReadParams;
   PaneSendInputParams?: PaneSendInputParams;
   PaneSendKeysParams?: PaneSendKeysParams;
   PaneSendTextParams?: PaneSendTextParams;
@@ -865,6 +922,8 @@ export interface HerdrApiSchema {
   PaneSwapReason?: PaneSwapReason;
   PaneSwapResult?: PaneSwapResult;
   PaneTarget?: PaneTarget;
+  PaneTextPoint?: PaneTextPoint;
+  PaneTextRange?: PaneTextRange;
   PaneWaitForOutputParams?: PaneWaitForOutputParams;
   PaneZoomMode?: PaneZoomMode;
   PaneZoomParams?: PaneZoomParams;
@@ -898,8 +957,10 @@ export interface HerdrApiSchema {
   PluginSourceKind?: PluginSourceKind;
   PluginUnlinkParams?: PluginUnlinkParams;
   PopupSize?: PopupSize;
+  ProductAnnouncementDismissParams?: ProductAnnouncementDismissParams;
   ReadFormat?: ReadFormat;
   ReadSource?: ReadSource;
+  ReleaseNotesDismissParams?: ReleaseNotesDismissParams;
   ResponseAgentExplain?: ResponseAgentExplain;
   ResponseAgentInfo?: ResponseAgentInfo;
   ResponseAgentList?: ResponseAgentList;
@@ -908,9 +969,11 @@ export interface HerdrApiSchema {
   ResponseAgentPrompted?: ResponseAgentPrompted;
   ResponseAgentStarted?: ResponseAgentStarted;
   ResponseAgentView?: ResponseAgentView;
+  ResponseClientShellSurfaceSet?: ResponseClientShellSurfaceSet;
   ResponseClientWindowTitle?: ResponseClientWindowTitle;
   ResponseConfigReload?: ResponseConfigReload;
   ResponseIntegrationInstall?: ResponseIntegrationInstall;
+  ResponseIntegrationList?: ResponseIntegrationList;
   ResponseIntegrationUninstall?: ResponseIntegrationUninstall;
   ResponseLayoutApply?: ResponseLayoutApply;
   ResponseLayoutExport?: ResponseLayoutExport;
@@ -918,18 +981,22 @@ export interface HerdrApiSchema {
   ResponseNotificationShow?: ResponseNotificationShow;
   ResponseOk?: ResponseOk;
   ResponseOutputMatched?: ResponseOutputMatched;
+  ResponsePaneCopyMotion?: ResponsePaneCopyMotion;
+  ResponsePaneCopySearch?: ResponsePaneCopySearch;
   ResponsePaneCurrent?: ResponsePaneCurrent;
   ResponsePaneEdges?: ResponsePaneEdges;
   ResponsePaneFocusDirection?: ResponsePaneFocusDirection;
-  ResponsePaneGraphicsInfo?: ResponsePaneGraphicsInfo;
   ResponsePaneInfo?: ResponsePaneInfo;
   ResponsePaneLayout?: ResponsePaneLayout;
+  ResponsePaneLinkActivated?: ResponsePaneLinkActivated;
+  ResponsePaneLinkResolved?: ResponsePaneLinkResolved;
   ResponsePaneList?: ResponsePaneList;
   ResponsePaneMove?: ResponsePaneMove;
   ResponsePaneNeighbor?: ResponsePaneNeighbor;
   ResponsePaneProcessInfo?: ResponsePaneProcessInfo;
   ResponsePaneRead?: ResponsePaneRead;
   ResponsePaneResize?: ResponsePaneResize;
+  ResponsePaneSelection?: ResponsePaneSelection;
   ResponsePaneSwap?: ResponsePaneSwap;
   ResponsePaneZoom?: ResponsePaneZoom;
   ResponsePluginActionInvoked?: ResponsePluginActionInvoked;
@@ -960,6 +1027,7 @@ export interface HerdrApiSchema {
   ResponseWorktreeRemoved?: ResponseWorktreeRemoved;
   ServerCapabilities?: ServerCapabilities;
   ServerLiveHandoffParams?: ServerLiveHandoffParams;
+  ServerSshAgentRegisterParams?: ServerSshAgentRegisterParams;
   SessionSnapshot?: SessionSnapshot;
   SplitDirection?: SplitDirection;
   Subscription?: Subscription;
@@ -972,6 +1040,7 @@ export interface HerdrApiSchema {
   TabRenameParams?: TabRenameParams;
   TabTarget?: TabTarget;
   ToastHerdrPosition?: ToastHerdrPosition;
+  WorkspaceCloseParams?: WorkspaceCloseParams;
   WorkspaceCreateParams?: WorkspaceCreateParams;
   WorkspaceInfo?: WorkspaceInfo;
   WorkspaceMoveBlockParams?: WorkspaceMoveBlockParams;
@@ -991,6 +1060,10 @@ export interface AgentInfo {
   agent?: string | null;
   agent_session?: AgentSessionInfo | null;
   agent_status: AgentStatus;
+  /**
+   * The current idle transition completed work, independently of who has viewed it.
+   */
+  completion_seq?: number | null;
   cwd?: string | null;
   display_agent?: string | null;
   focused: boolean;
@@ -1088,8 +1161,37 @@ export interface AgentWaitParams {
   timeout_ms?: number | null;
   until?: AgentStatus[];
 }
+/**
+ * Updates whether the requesting client shell receives and controls pane presentation.
+ */
+export interface ClientShellSurfaceSetParams {
+  active: boolean;
+}
 export interface ClientWindowTitleSetParams {
   title: string;
+}
+export interface CommandInvokeParams {
+  /**
+   * Opaque endpoint-issued command identifier from the client-shell projection.
+   */
+  command_id: string;
+  pane_id?: string | null;
+  /**
+   * Client-owned selection coordinates, validated against the pane's content revision.
+   */
+  selection?: PaneSelectionReadParams | null;
+  tab_id?: string | null;
+  workspace_id?: string | null;
+}
+export interface PaneSelectionReadParams {
+  anchor: PaneTextPoint;
+  content_revision?: number | null;
+  cursor: PaneTextPoint;
+  pane_id: string;
+}
+export interface PaneTextPoint {
+  col: number;
+  row: number;
 }
 export interface EmptyParams {}
 export interface ErrorBody {
@@ -1146,6 +1248,7 @@ export interface PaneInfo {
   foreground_cwd?: string | null;
   label?: string | null;
   pane_id: string;
+  restore_error?: string | null;
   revision: number;
   scroll?: PaneScrollInfo | null;
   state_labels?: {
@@ -1274,6 +1377,13 @@ export interface PluginManifestStartup {
   command: string[];
   platforms?: PluginPlatform[] | null;
 }
+export interface IntegrationInfo {
+  available: boolean;
+  command: string;
+  label: string;
+  state: IntegrationState;
+  target: IntegrationTarget;
+}
 export interface IntegrationInstallParams {
   target: IntegrationTarget;
 }
@@ -1332,6 +1442,24 @@ export interface PaneClearAgentAuthorityParams {
   seq?: number | null;
   source?: string | null;
 }
+export interface PaneCopyMotionParams {
+  content_revision?: number | null;
+  cursor: PaneTextPoint;
+  motion: PaneCopyMotion;
+  pane_id: string;
+}
+export interface PaneCopySearchParams {
+  content_revision: number;
+  cursor: PaneTextPoint;
+  direction: PaneCopySearchDirection;
+  pane_id: string;
+  previous?: PaneTextRange | null;
+  query: string;
+}
+export interface PaneTextRange {
+  end: PaneTextPoint;
+  start: PaneTextPoint;
+}
 export interface PaneCurrentParams {
   caller_pane_id?: string | null;
 }
@@ -1357,31 +1485,27 @@ export interface PaneFocusDirectionResult {
   reason?: PaneFocusDirectionReason | null;
   source_pane_id: string;
 }
-export interface PaneGraphicsClearParams {
+export interface PaneInputSetParams {
   pane_id: string;
-}
-export interface PaneGraphicsPlacementParams {
-  grid_cols?: number;
-  grid_rows?: number;
-  viewport_col?: number;
-  viewport_row?: number;
-}
-export interface PaneGraphicsSetParams {
-  data_base64?: string;
-  format: PaneGraphicsFormat;
-  image_height: number;
-  image_width: number;
-  pane_id: string;
-  placement?: PaneGraphicsPlacementParams1;
-}
-export interface PaneGraphicsPlacementParams1 {
-  grid_cols?: number;
-  grid_rows?: number;
-  viewport_col?: number;
-  viewport_row?: number;
+  right_click: PaneRightClickTarget;
 }
 export interface PaneLayoutParams {
   pane_id?: string | null;
+}
+export interface PaneLinkActivateParams {
+  col: number;
+  content_revision?: number | null;
+  offset_from_bottom?: number | null;
+  pane_id: string;
+  viewport_row: number;
+}
+/**
+ * Inclusive display-cell columns on a pane's current viewport.
+ */
+export interface PaneLinkRegion {
+  end_col: number;
+  row: number;
+  start_col: number;
 }
 export interface PaneListParams {
   workspace_id?: string | null;
@@ -1472,6 +1596,11 @@ export interface PaneReportAgentParams {
   agent_session_path?: string | null;
   message?: string | null;
   pane_id: string;
+  /**
+   * Command that resumes this agent's session after a Herdr restart. The
+   * first element must be a plain command name.
+   */
+  resume_argv?: string[] | null;
   seq?: number | null;
   source: string;
   state: PaneAgentState;
@@ -1481,6 +1610,11 @@ export interface PaneReportAgentSessionParams {
   agent_session_id?: string | null;
   agent_session_path?: string | null;
   pane_id: string;
+  /**
+   * Command that resumes this agent's session after a Herdr restart. The
+   * first element must be a plain command name.
+   */
+  resume_argv?: string[] | null;
   seq?: number | null;
   session_start_source?: string | null;
   source: string;
@@ -1521,6 +1655,10 @@ export interface PaneScrollChangedEvent {
   scroll: PaneScrollInfo;
   workspace_id: string;
 }
+export interface PaneScrollParams {
+  offset_from_bottom: number;
+  pane_id: string;
+}
 export interface PaneSendInputParams {
   keys?: string[];
   pane_id: string;
@@ -1542,6 +1680,7 @@ export interface PaneSplitParams {
   };
   focus?: boolean;
   ratio?: number | null;
+  right_click?: 'herdr' | 'pane';
   target_pane_id?: string | null;
   workspace_id?: string | null;
 }
@@ -1687,6 +1826,13 @@ export interface PluginSetEnabledParams {
 export interface PluginUnlinkParams {
   plugin_id: string;
 }
+export interface ProductAnnouncementDismissParams {
+  id: string;
+  version: string;
+}
+export interface ReleaseNotesDismissParams {
+  version: string;
+}
 export interface ResponseAgentExplain {
   explain: unknown;
   type: 'agent_explain';
@@ -1724,6 +1870,15 @@ export interface ResponseAgentView {
   source?: string | null;
   type: 'agent_view';
 }
+/**
+ * Acknowledgement for the client-shell surface interest lease. This method is new on the
+ * endpoint protocol, so its revision-bearing result can establish an activation floor.
+ */
+export interface ResponseClientShellSurfaceSet {
+  active: boolean;
+  projection_revision: number;
+  type: 'client_shell_surface_set';
+}
 export interface ResponseClientWindowTitle {
   changed: boolean;
   reason: ClientWindowTitleReason;
@@ -1738,6 +1893,10 @@ export interface ResponseIntegrationInstall {
   details: IntegrationInstallResult;
   target: IntegrationTarget;
   type: 'integration_install';
+}
+export interface ResponseIntegrationList {
+  integrations: IntegrationInfo[];
+  type: 'integration_list';
 }
 export interface ResponseIntegrationUninstall {
   details: IntegrationUninstallResult;
@@ -1771,6 +1930,21 @@ export interface ResponseOutputMatched {
   revision: number;
   type: 'output_matched';
 }
+export interface ResponsePaneCopyMotion {
+  content_revision: number;
+  cursor: PaneTextPoint;
+  pane_id: string;
+  type: 'pane_copy_motion';
+}
+export interface ResponsePaneCopySearch {
+  content_revision: number;
+  current?: number | null;
+  current_global?: number | null;
+  matches: PaneTextRange[];
+  pane_id: string;
+  total: number;
+  type: 'pane_copy_search';
+}
 export interface ResponsePaneCurrent {
   pane: PaneInfo;
   type: 'pane_current';
@@ -1783,11 +1957,6 @@ export interface ResponsePaneFocusDirection {
   focus: PaneFocusDirectionResult;
   type: 'pane_focus_direction';
 }
-export interface ResponsePaneGraphicsInfo {
-  cell_height_px: number;
-  cell_width_px: number;
-  type: 'pane_graphics_info';
-}
 export interface ResponsePaneInfo {
   pane: PaneInfo;
   type: 'pane_info';
@@ -1795,6 +1964,15 @@ export interface ResponsePaneInfo {
 export interface ResponsePaneLayout {
   layout: PaneLayoutSnapshot;
   type: 'pane_layout';
+}
+export interface ResponsePaneLinkActivated {
+  handled: boolean;
+  type: 'pane_link_activated';
+  url?: string | null;
+}
+export interface ResponsePaneLinkResolved {
+  regions: PaneLinkRegion[];
+  type: 'pane_link_resolved';
 }
 export interface ResponsePaneList {
   panes: PaneInfo[];
@@ -1819,6 +1997,11 @@ export interface ResponsePaneRead {
 export interface ResponsePaneResize {
   resize: PaneResizeResult;
   type: 'pane_resize';
+}
+export interface ResponsePaneSelection {
+  pane_id: string;
+  text: string;
+  type: 'pane_selection';
 }
 export interface ResponsePaneSwap {
   swap: PaneSwapResult;
@@ -1883,7 +2066,23 @@ export interface ResponsePong {
 }
 export interface ServerCapabilities {
   detached_server_daemon?: boolean;
+  /**
+   * Stable client-owned endpoint generation supported by this server.
+   */
+  endpoint_protocol_generation?: number | null;
+  /**
+   * Whether this server supports endpoint health probes.
+   */
+  health_check?: boolean;
   live_handoff: boolean;
+  /**
+   * Supports connection-scoped `server.ssh_agent.register` on the local JSON API.
+   */
+  ssh_agent_registration?: boolean;
+  /**
+   * Whether this server supports explicit client-shell surface interest.
+   */
+  surface_interest?: boolean;
 }
 export interface SessionSnapshot {
   agents: AgentInfo[];
@@ -1973,6 +2172,12 @@ export interface ServerLiveHandoffParams {
   expected_version?: string | null;
   import_exe?: string | null;
 }
+export interface ServerSshAgentRegisterParams {
+  /**
+   * Absolute remote-host agent socket. Registration lasts until this API connection closes.
+   */
+  socket_path: string;
+}
 export interface TabCreateParams {
   cwd?: string | null;
   env?: {
@@ -1996,6 +2201,10 @@ export interface TabRenameParams {
 export interface TabTarget {
   tab_id: string;
 }
+export interface WorkspaceCloseParams {
+  close_group?: boolean;
+  workspace_id: string;
+}
 export interface WorkspaceCreateParams {
   cwd?: string | null;
   env?: {
@@ -2003,6 +2212,10 @@ export interface WorkspaceCreateParams {
   };
   focus?: boolean;
   label?: string | null;
+  /**
+   * Workspace whose focused pane supplies the `follow` cwd policy.
+   */
+  source_workspace_id?: string | null;
 }
 export interface WorkspaceMoveBlockParams {
   before_workspace_id?: string | null;
@@ -2035,10 +2248,12 @@ export interface WorktreeCreateParams {
   focus?: boolean;
   label?: string | null;
   path?: string | null;
+  trust_repository?: boolean;
   workspace_id?: string | null;
 }
 export interface WorktreeListParams {
   cwd?: string | null;
+  trust_repository?: boolean;
   workspace_id?: string | null;
 }
 export interface WorktreeOpenParams {
@@ -2047,9 +2262,11 @@ export interface WorktreeOpenParams {
   focus?: boolean;
   label?: string | null;
   path?: string | null;
+  trust_repository?: boolean;
   workspace_id?: string | null;
 }
 export interface WorktreeRemoveParams {
   force?: boolean;
+  trust_repository?: boolean;
   workspace_id: string;
 }

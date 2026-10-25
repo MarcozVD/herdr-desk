@@ -68,9 +68,9 @@ function pascalCase(value: string): string {
 }
 
 describe('methods.gen vs schema instalado', () => {
-  it('el schema trae 90 métodos', () => {
-    expect(schemaMethods).toHaveLength(90);
-    expect(schema.protocol).toBe(19);
+  it('el schema trae 102 métodos', () => {
+    expect(schemaMethods).toHaveLength(102);
+    expect(schema.protocol).toBe(22);
   });
 
   it('METHOD_NAMES coincide exactamente con el schema', () => {
@@ -83,8 +83,8 @@ describe('methods.gen vs schema instalado', () => {
     expect(missing).toEqual([]);
   });
 
-  it('las 57 variantes de respuesta tienen tipo y nombre en runtime', () => {
-    expect(schemaResponseTypes).toHaveLength(57);
+  it('las 63 variantes de respuesta tienen tipo y nombre en runtime', () => {
+    expect(schemaResponseTypes).toHaveLength(63);
     expect([...RESPONSE_TYPE_NAMES].sort()).toEqual([...schemaResponseTypes].sort() as string[]);
     const missing = schemaResponseTypes
       .map((typeName) => `Response${pascalCase(typeName ?? '')}`)

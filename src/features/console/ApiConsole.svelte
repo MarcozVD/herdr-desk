@@ -1,4 +1,4 @@
-<!-- T4.5 — Consola API: selector de los 90 métodos (catálogo del schema real),
+<!-- T4.5 — Consola API: selector de los 102 métodos (catálogo del schema real),
      formulario generado por params (string/bool/int/enum/array/objeto),
      visor de respuesta, historial y visor de eventos en vivo (events.subscribe
      de los 24 tipos globales por el command events_watch). Cubre el 100 % del

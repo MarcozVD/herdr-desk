@@ -114,14 +114,14 @@ async fn wait_session_running(name: &str) {
 }
 
 #[tokio::test]
-async fn ping_returns_protocol_19() {
+async fn ping_returns_protocol_22() {
     let sb = Sandbox::start();
     wait_session_running(&sb.name).await;
     let client = sb.client();
     let result = client.call("ping", &json!({})).await.expect("ping");
     assert_eq!(result["type"], "pong");
-    assert_eq!(result["protocol"], 19);
-    assert_eq!(result["version"], "0.8.0-preview.2026-08-04-d78e3d3b5126");
+    assert_eq!(result["protocol"], 22);
+    assert_eq!(result["version"], "0.9.1-preview.2026-09-28-80c0c07250d2");
 }
 
 #[tokio::test]
@@ -131,7 +131,7 @@ async fn snapshot_parses() {
     let client = sb.ensure_pane().await;
     let raw = client.snapshot_raw().await.expect("snapshot_raw");
     let snap: SessionSnapshot = serde_json::from_str(&raw).expect("parse snapshot");
-    assert_eq!(snap.protocol, 19);
+    assert_eq!(snap.protocol, 22);
     assert!(!snap.workspaces.is_empty());
     assert!(!snap.panes.is_empty());
     assert!(snap.focused_pane_id.is_some());
