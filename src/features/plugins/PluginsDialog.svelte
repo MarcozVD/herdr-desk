@@ -290,7 +290,12 @@
       ui.notify(es.plugins.configDirFailed, 'error');
       return;
     }
-    await openPath(path).catch(() => ui.notify(es.plugins.configDirFailed, 'error'));
+    await openPath(path).catch((error: unknown) => {
+      // Se registra el error real (scope de `opener:allow-open-path`): el toast
+      // solo dice «falló» y sin esto el diagnóstico era invisible.
+      console.warn(`[herdr-desk] no se pudo abrir el directorio de config ${path}`, error);
+      ui.notify(es.plugins.configDirFailed, 'error');
+    });
   }
 </script>
 

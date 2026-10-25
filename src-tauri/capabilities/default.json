@@ -18,6 +18,13 @@
     "clipboard-manager:allow-read-text",
     "opener:allow-open-url",
     "opener:allow-default-urls",
-    "opener:allow-open-path"
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$TEMP/herdr-desk-*" },
+        { "path": "$DATA/herdr" },
+        { "path": "$DATA/herdr/**" }
+      ]
+    }
   ]
 }

@@ -508,7 +508,14 @@ export const flows = {
       const text = await paneApi.read(paneId, Math.max(500, settings.values.search_lines));
       const clean = paneId.replace(/[^A-Za-z0-9_-]/g, '_');
       const path = await writeScratchFile(`scrollback-${clean}`, text);
-      await openPath(path);
+      try {
+        await openPath(path);
+      } catch (error) {
+        // El scope de `opener:allow-open-path` puede denegar rutas fuera de temp/
+        // herdr: se registra el error real (el toast solo dice «falló»).
+        console.warn(`[herdr-desk] no se pudo abrir el scrollback ${path}`, error);
+        throw error;
+      }
     } catch (raw) {
       fail(raw, 'edit_scrollback');
     }
