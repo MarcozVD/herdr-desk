@@ -35,11 +35,11 @@ import {
   terminalScroll,
 } from '../herdr/client';
 import { parseApiError } from '../herdr/errors';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { settings } from '../stores/settings.svelte';
 import { es } from '../i18n/es';
 import { FrameWriter, binaryStringToBase64, decodeCloseReason, decodeFrame } from './frames';
 import { terminalOptions, type TerminalFont } from './font';
+import { openTerminalLink } from './links';
 
 export type BridgeState =
   'idle' | 'opening' | 'open' | 'closing' | 'reconnecting' | 'closed' | 'error';
@@ -437,6 +437,14 @@ export class TerminalPool {
       scrollOnUserInput: false,
       theme: readTheme(),
     });
+    // Bug 4 — links OSC 8 (los que trae la salida del pane): sin handler,
+    // xterm usa `window.open`, que en el WebView abriría una ventana interna.
+    // Se usa el mismo criterio que para los links de texto: Ctrl/Cmd+clic
+    // cuando la app del pane tiene mouse tracking (el clic normal va a la app).
+    terminal.options.linkHandler = {
+      activate: (event, text) =>
+        openTerminalLink(event, text, terminal.modes.mouseTrackingMode !== 'none'),
+    };
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     // Unicode 11 (tabla de anchos) y links se cargan en cuanto están disponibles.
@@ -446,8 +454,8 @@ export class TerminalPool {
     });
     void import('@xterm/addon-web-links').then(({ WebLinksAddon }) => {
       terminal.loadAddon(
-        new WebLinksAddon((_event, uri) => {
-          void openUrl(uri).catch(() => undefined);
+        new WebLinksAddon((event, uri) => {
+          openTerminalLink(event, uri, terminal.modes.mouseTrackingMode !== 'none');
         }),
       );
     });
