@@ -2,7 +2,7 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versión semántica.
 
-## [Unreleased]
+## [0.1.2] - 2026-10-25
 
 Arreglos de la GUI de terminal y del panel de agentes contra sesiones reales: la sidebar reparte el
 alto como la TUI, el terminal reconcilia su tamaño con el servidor al redimensionar, y los links y
@@ -35,6 +35,9 @@ el ratón llegan a donde deben.
 - **openPath con scope acotado**: `opener:allow-open-path` no tenía scope y el plugin lo negaba.
   Ahora queda limitado a `$TEMP/herdr-desk-*` y `$DATA/herdr/**`, y `PluginsDialog` y
   `edit_scrollback` registran el error real. Tests de scope y de `edit_scrollback`.
+- **La app se cerraba al refrescar la bandeja**: `lib.rs` registra `Arc<AppState>` con `manage()`
+  pero la tarea de refresco del menú de la bandeja pedía `AppState` y paniqueaba con
+  `state() called before manage()`. Ahora pide el tipo registrado.
 
 ### Cambiado
 
