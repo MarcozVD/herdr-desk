@@ -226,7 +226,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         loop {
             dirty.notified().await;
             tokio::time::sleep(Duration::from_millis(100)).await;
-            let st = app2.state::<AppState>();
+            let st = app2.state::<std::sync::Arc<AppState>>();
             let active = st.current().session.clone();
             let (sessions, agents) = {
                 let tray = st.tray.lock().unwrap();
