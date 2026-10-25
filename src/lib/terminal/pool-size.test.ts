@@ -28,6 +28,10 @@ const frameDims: Array<{ cols: number; rows: number }> = [];
 const liveByPane = new Map<string, number>();
 const paneByBridge = new Map<number, string>();
 const screenByPane = new Map<string, string>();
+/** Si está puesto, el «server» responde a cualquier resize con este tamaño (clamp). */
+let resizeClamp: { cols: number; rows: number } | null = null;
+/** Si es true, el «server» acepta el resize pero no manda ningún full. */
+let resizeMuted = false;
 let nextBridge = 700;
 let seq = 0;
 
@@ -80,10 +84,14 @@ vi.mock('../herdr/client', () => ({
   terminalInputBytes: vi.fn(async () => undefined),
   terminalResize: vi.fn(async (bridgeId: number, cols: number, rows: number) => {
     resizeCalls.push({ bridgeId, cols, rows });
-    // El server rehace el viewport con la rejilla pedida y manda un `full`.
+    if (resizeMuted) return;
+    // El server rehace el viewport con la rejilla pedida (o con la suya, si
+    // clampa) y manda un `full`.
+    const outCols = resizeClamp?.cols ?? cols;
+    const outRows = resizeClamp?.rows ?? rows;
     const paneId = paneByBridge.get(bridgeId);
     const call = openCalls.filter((item) => item.bridgeId === bridgeId).at(-1);
-    if (paneId && call) call.frame(frameWith(screenByPane.get(paneId) ?? '', cols, rows));
+    if (paneId && call) call.frame(frameWith(screenByPane.get(paneId) ?? '', outCols, outRows));
   }),
   terminalScroll: vi.fn(async () => undefined),
   configRead: vi.fn(async () => ({ ok: false, kind: 'missing' })),
@@ -92,7 +100,7 @@ vi.mock('../herdr/client', () => ({
   guiSettingsWrite: vi.fn(async () => ({ ok: false, kind: 'missing' })),
 }));
 
-const { pool } = await import('./pool');
+const { pool, MAX_RESIZE_ATTEMPTS, DEFERRED_RESIZE_MS } = await import('./pool');
 const { settings } = await import('../stores/settings.svelte');
 
 function host(): HTMLDivElement {
@@ -134,6 +142,8 @@ beforeEach(() => {
   liveByPane.clear();
   paneByBridge.clear();
   screenByPane.clear();
+  resizeClamp = null;
+  resizeMuted = false;
   vi.stubGlobal('matchMedia', (query: string) => ({
     matches: false,
     media: query,
@@ -288,21 +298,66 @@ describe('resize sin temblor (barra lateral): xterm adopta la rejilla con el ful
     expect(pool.entry('w1:p1')?.pendingSize).toBeNull();
   });
 
-  it('un full viejo (otro tamaño) no cambia la rejilla; el plazo aplica el pedido', async () => {
+  it('un full que no cuadra reintenta el pedido y no pinta a la rejilla vieja', async () => {
     await openLive('w1:p1', 80, 24);
     await vi.advanceTimersByTimeAsync(30);
     const entry = pool.entry('w1:p1');
     const terminal = entry?.view?.terminal;
     if (!entry || !terminal) throw new Error('sin vista');
-    const { terminalResize } = await import('../herdr/client');
-    vi.mocked(terminalResize).mockImplementationOnce(async () => undefined); // server mudo
+    // El server no confirma solo: simulamos que llega un `full` «viejo», de otro
+    // tamaño, mientras el resize está pendiente.
+    resizeMuted = true;
+    resizeCalls.length = 0;
 
     pool.resizeDeferred('w1:p1', 90, 30);
-    openCalls.at(-1)?.frame(frameWith('viejo', 80, 24));
-    expect(terminal.cols).toBe(80);
+    expect(resizeCalls).toHaveLength(1);
 
-    await vi.advanceTimersByTimeAsync(300);
+    openCalls.at(-1)?.frame(frameWith('viejo', 70, 20));
+
+    // No se pinta ni se adopta la rejilla vieja: se reintenta el tamaño pedido
+    // y el último frame válido sigue visible.
+    expect(resizeCalls).toHaveLength(2);
+    expect(terminal.cols).toBe(80);
+    expect(terminal.rows).toBe(24);
+    expect(entry.pendingSize).toEqual({ cols: 90, rows: 30 });
+  });
+
+  it('si el server clampa siempre, acaba adoptando SU rejilla (mejor que panel vacío)', async () => {
+    await openLive('w1:p1', 90, 30);
+    await vi.advanceTimersByTimeAsync(30);
+    const entry = pool.entry('w1:p1');
+    const terminal = entry?.view?.terminal;
+    if (!entry || !terminal) throw new Error('sin vista');
+    resizeClamp = { cols: 80, rows: 30 };
+    resizeCalls.length = 0;
+
+    pool.resizeDeferred('w1:p1', 100, 30);
+
+    // Agotados los reintentos, se adopta el tamaño del server y se confirma.
+    expect(terminal.cols).toBe(80);
+    expect(terminal.rows).toBe(30);
+    expect(entry.pendingSize).toBeNull();
+    expect(entry.lastCols).toBe(80);
+  });
+
+  it('sin full: aplica en local, reintenta y adopta el tardío del server', async () => {
+    await openLive('w1:p1', 80, 24);
+    await vi.advanceTimersByTimeAsync(30);
+    const entry = pool.entry('w1:p1');
+    const terminal = entry?.view?.terminal;
+    if (!entry || !terminal) throw new Error('sin vista');
+    resizeMuted = true;
+    resizeCalls.length = 0;
+
+    pool.resizeDeferred('w1:p1', 90, 30);
+    // Se aplica en local al vencer el plazo y se reintenta hasta el tope.
+    await vi.advanceTimersByTimeAsync(DEFERRED_RESIZE_MS * (MAX_RESIZE_ATTEMPTS + 1) + 50);
     expect(terminal.cols).toBe(90);
     expect(terminal.rows).toBe(30);
+    expect(resizeCalls).toHaveLength(1 + MAX_RESIZE_ATTEMPTS);
+    // El pedido queda sin confirmar, así que un full tardío del server se adopta.
+    openCalls.at(-1)?.frame(frameWith('clamp', 80, 30));
+    expect(terminal.cols).toBe(80);
+    expect(entry.pendingSize).toBeNull();
   });
 });

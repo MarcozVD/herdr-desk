@@ -31,6 +31,11 @@ export interface BootOptions {
   agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
   /** El primer `terminal_open` de cada panel no manda frames (canal muerto). */
   staleBridgeFirstOpen?: boolean;
+  /**
+   * El bridge responde a todo `terminal_resize` con este tamaño (clamp): la UI
+   * debe acabar adoptando la rejilla del server.
+   */
+  terminalResizeClamp?: { cols: number; rows: number } | null;
   /** Árbol de `layout.export` por tab (`{ 'w1:t1': root, ... }`). */
   layoutTrees?: Record<string, unknown>;
   /** F3: ajustes iniciales de la GUI (settings.json simulado). */
@@ -49,6 +54,7 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     layoutTrees: options.layoutTrees ?? null,
     agentKinds: options.agentKinds ?? null,
     staleBridgeFirstOpen: options.staleBridgeFirstOpen ?? null,
+    terminalResizeClamp: options.terminalResizeClamp ?? null,
     guiSettings: options.guiSettings ?? null,
     configEntries: options.configEntries ?? null,
     sessionStartError: options.sessionStartError ?? null,
@@ -125,6 +131,24 @@ export async function terminalText(page: Page, paneId?: string): Promise<string>
   }, paneId ?? null);
 }
 
+/** Rejilla actual de la terminal (cols/rows de xterm) para un panel. */
+export async function terminalGrid(
+  page: Page,
+  paneId?: string,
+): Promise<{ cols: number; rows: number }> {
+  return page.evaluate((pane) => {
+    interface Term {
+      cols: number;
+      rows: number;
+    }
+    const registry = (window as unknown as { __HD_TERMS__?: Record<string, Term> }).__HD_TERMS__;
+    if (!registry) return { cols: 0, rows: 0 };
+    const terminal = pane ? registry[pane] : Object.values(registry)[0];
+    if (!terminal) return { cols: 0, rows: 0 };
+    return { cols: terminal.cols, rows: terminal.rows };
+  }, paneId ?? null);
+}
+
 /** Pega texto en la terminal como lo haría el usuario (evento paste real). */
 export async function pasteIntoTerminal(page: Page, text: string, paneId?: string): Promise<void> {
   await page.evaluate(
@@ -167,6 +191,11 @@ export async function recordedMethodCalls(
 
 export async function openPanes(page: Page): Promise<string[]> {
   return page.evaluate(() => window.__HD_TEST__?.openPanes() ?? []);
+}
+
+/** id del bridge abierto para un panel (para filtrar sus llamadas). */
+export async function bridgeIdOf(page: Page, paneId: string): Promise<number | null> {
+  return page.evaluate((pane) => window.__HD_TEST__?.bridgeIdOf(pane) ?? null, paneId);
 }
 
 /**

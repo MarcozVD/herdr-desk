@@ -38,7 +38,9 @@
   let entry: TerminalEntry | null = null;
   let view: TerminalViewState | null = null;
   let resizeObserver: ResizeObserver | null = null;
-  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+  let fitFrame: number | null = null;
+  /** ¿El host viene de un arrastre del divisor? (para el resize final al soltar). */
+  let dragActive = false;
   let frameTotal = 0;
   let settleFrame: number | null = null;
 
@@ -98,6 +100,11 @@
     }
   }
 
+  /** ¿El host está dentro de un divisor que se está arrastrando? (SplitTree). */
+  function splitDragging(): boolean {
+    return host?.closest('.split[data-dragging="true"]') !== null;
+  }
+
   /**
    * Ajusta xterm al contenedor y avisa al bridge si el tamaño difiere del que
    * tiene el SERVIDOR (`entry.lastCols/lastRows`), no del de la vista anterior:
@@ -106,6 +113,16 @@
    */
   function syncSize(): void {
     if (!entry || !view) return;
+    // Arrastre del divisor: solo reflow LOCAL por frame (el gesto se ve fluido).
+    // No se pide resize al server aquí: cada `terminal_resize` hace que el server
+    // redibuje entero y, cambiando la rejilla cada frame, los `full` no cuadran y
+    // dispararían reintentos (más tráfico que antes). El resize al server se manda
+    // UNA vez al soltar (`onDragRelease`), con el tamaño final.
+    if (splitDragging() && host) {
+      dragActive = true;
+      applyFit();
+      return;
+    }
     // Con bridge vivo NO se redimensiona xterm aquí: se pide el tamaño al server
     // y xterm cambia de rejilla justo antes de pintar el `full` que llega con
     // ese tamaño (pool.ts). Redimensionar antes reordenaba el contenido viejo y
@@ -127,12 +144,38 @@
     pool.resizeDeferred(paneId, cols, rows);
   }
 
+  /**
+   * Un fit por frame: coalesce los `ResizeObserver` (arrastre del divisor,
+   * cambio de ventana) sin el retardo fijo de 60 ms.
+   */
   function scheduleFit(): void {
-    if (resizeTimer !== null) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      resizeTimer = null;
+    if (fitFrame !== null) return;
+    fitFrame = requestAnimationFrame(() => {
+      fitFrame = null;
       syncSize();
-    }, 60);
+    });
+  }
+
+  /**
+   * Al soltar el divisor: reajuste local con el layout ya asentado y, si hubo
+   * arrastre, UN resize al server con el tamaño final (throttle natural: uno por
+   * gesto, sin contar reintentos por frame).
+   */
+  function onDragRelease(): void {
+    const wasDragging = dragActive;
+    dragActive = false;
+    if (wasDragging && entry && view) {
+      applyFit();
+      if (entry.bridgeId !== null && entry.state === 'open') {
+        const cols = view.terminal.cols;
+        const rows = view.terminal.rows;
+        if (cols !== entry.lastCols || rows !== entry.lastRows) {
+          pool.resizeDeferred(paneId, cols, rows);
+          return;
+        }
+      }
+    }
+    settleSize();
   }
 
   /** Reajuste tras asentarse el layout (dos frames) y cuando cargan las fuentes. */
@@ -281,6 +324,10 @@
     });
 
     window.addEventListener('herdr-desk:terminal', onTerminalEvent);
+    // Ajuste final al soltar el divisor (el gesto hace fits por frame, pero la
+    // última posición necesita un sync ya con el layout asentado).
+    window.addEventListener('pointerup', onDragRelease);
+    window.addEventListener('pointercancel', onDragRelease);
     resizeObserver = new ResizeObserver(() => scheduleFit());
     resizeObserver.observe(host);
     void document.fonts?.ready.then(() => settleSize());
@@ -288,8 +335,11 @@
 
     return () => {
       window.removeEventListener('herdr-desk:terminal', onTerminalEvent);
+      window.removeEventListener('pointerup', onDragRelease);
+      window.removeEventListener('pointercancel', onDragRelease);
       unsubscribe();
-      if (resizeTimer !== null) clearTimeout(resizeTimer);
+      dragActive = false;
+      if (fitFrame !== null) cancelAnimationFrame(fitFrame);
       if (settleFrame !== null) cancelAnimationFrame(settleFrame);
       resizeObserver?.disconnect();
       unregisterTestTerminal(paneId);

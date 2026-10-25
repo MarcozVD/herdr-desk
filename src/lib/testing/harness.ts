@@ -32,6 +32,12 @@ interface HarnessConfig {
   agentKinds?: { kinds: string[]; reason: string | null; cached: boolean };
   /** El PRIMER `terminal_open` de cada panel no manda frames (canal muerto). */
   staleBridgeFirstOpen?: boolean | null;
+  /**
+   * El bridge responde a TODO `terminal_resize` con este tamaño (clamp real del
+   * backend): sirve para probar que la UI acaba adoptando la rejilla del server
+   * en vez de quedarse en blanco.
+   */
+  terminalResizeClamp?: { cols: number; rows: number } | null;
   /** F3: ajustes iniciales de la GUI (settings.json simulado). */
   guiSettings?: Record<string, unknown> | null;
   /** F3: overrides iniciales de config.toml (ruta → valor TOML). */
@@ -75,6 +81,8 @@ export interface HarnessApi {
   pushClosed(reason: string, paneId?: string, seq?: number): void;
   hasBridge(paneId?: string): boolean;
   bridgeCount(): number;
+  /** id del bridge abierto para un panel (o `null` si no hay). */
+  bridgeIdOf(paneId: string): number | null;
   /** panes con bridge abierto ahora mismo. */
   openPanes(): string[];
   setLayoutTree(tree: unknown): void;
@@ -458,8 +466,10 @@ export function installHarness(): void {
         const bridgeId = Number(payload.bridgeId);
         const bridge = bridges.get(bridgeId);
         if (bridge && !deadBridges.has(bridgeId)) {
-          const cols = Number(payload.cols) || 80;
-          const rows = Number(payload.rows) || 24;
+          const requestedCols = Number(payload.cols) || 80;
+          const requestedRows = Number(payload.rows) || 24;
+          const cols = config.terminalResizeClamp?.cols ?? requestedCols;
+          const rows = config.terminalResizeClamp?.rows ?? requestedRows;
           queueMicrotask(() => deliver(bridge.channel, serverFrame(bridge.paneId, cols, rows)));
         }
         return null;
@@ -1017,6 +1027,12 @@ export function installHarness(): void {
     },
     bridgeCount() {
       return bridges.size;
+    },
+    bridgeIdOf(paneId: string) {
+      for (const [id, bridge] of bridges) {
+        if (bridge.paneId === paneId) return id;
+      }
+      return null;
     },
     openPanes() {
       return [...bridges.values()].map((bridge) => bridge.paneId);

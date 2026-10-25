@@ -9,6 +9,7 @@ import {
   pushFrame,
   readSnapshotFixture,
   recordedCalls,
+  terminalGrid,
   terminalText,
 } from './harness';
 
@@ -93,6 +94,32 @@ test('resize: la ventana redimensiona la terminal y avisa al bridge', async ({ p
   expect(Number(last?.cols)).toBeGreaterThan(0);
   expect(Number(last?.rows)).toBeGreaterThan(0);
   expect(Number(last?.cols)).toBeLessThan(200);
+});
+
+test('resize: si el server clampa el tamaño, la terminal adopta SU rejilla (no panel en blanco)', async ({
+  page,
+}) => {
+  // El backend real puede ignorar el tamaño pedido y devolver el suyo (clamp o
+  // coalescing). La UI debe reintentar y, si el server insiste, adoptar su
+  // rejilla y pintar: mejor contenido al tamaño del server que panel vacío.
+  await bootApp(page, { terminalResizeClamp: { cols: 70, rows: 20 } });
+  await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
+
+  // Un cambio de tamaño real dispara el pedido de resize; el server responde
+  // siempre con 70x20.
+  await page.setViewportSize({ width: 900, height: 620 });
+
+  await expect
+    .poll(async () => terminalGrid(page), { timeout: 5000 })
+    .toEqual({ cols: 70, rows: 20 });
+
+  // Se pidió más de una vez (reintentos) antes de adoptar lo que manda el server.
+  const resizes = await recordedCalls(page, 'terminal_resize');
+  expect(resizes.length).toBeGreaterThanOrEqual(2);
+
+  // Y una vez confirmado, el contenido se pinta y queda visible.
+  await pushFrame(page, { text: 'contenido-clamp', width: 70, height: 20, seq: 9 });
+  await expect.poll(() => terminalText(page)).toContain('contenido-clamp');
 });
 
 test('la rueda pide el scroll a herdr (el scrollback vive en el server)', async ({ page }) => {

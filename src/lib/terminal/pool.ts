@@ -102,6 +102,8 @@ export interface TerminalEntry {
   /** Tamaño pedido al server y aún no pintado (resize sin reflujo local). */
   pendingSize: { cols: number; rows: number } | null;
   pendingTimer: ReturnType<typeof setTimeout> | null;
+  /** Reintentos del resize pendiente (ver `MAX_RESIZE_ATTEMPTS`). */
+  pendingAttempts: number;
 }
 
 export interface PoolEvents {
@@ -139,6 +141,13 @@ export const STALE_REOPEN_DELAY_MS = 3600;
 
 /** Plazo para que llegue el `full` de un resize antes de aplicarlo en local. */
 export const DEFERRED_RESIZE_MS = 250;
+
+/**
+ * Reintentos del resize pendiente cuando el `full` que llega no cuadra con el
+ * tamaño pedido. Si el server insiste en otro tamaño (clamp/coalescing) se
+ * adopta el suyo: mejor contenido a tamaño del server que panel en blanco.
+ */
+export const MAX_RESIZE_ATTEMPTS = 3;
 
 /** Reintentos de reapertura antes de contarlo como error real. */
 export const MAX_STALE_REOPENS = 2;
@@ -280,6 +289,7 @@ export class TerminalPool {
       sentClose: 0,
       pendingSize: null,
       pendingTimer: null,
+      pendingAttempts: 0,
     };
 
     entry.onFrame = (buffer: ArrayBuffer) => {
@@ -335,8 +345,11 @@ export class TerminalPool {
       // Sin vista montada no hay dónde pintar: el contenido volverá entero en el
       // repintado que pide el siguiente montaje (lo manda el servidor).
       const view = entry.view;
-      if (view && frame.full) this.#adoptFrameSize(entry, frame.width, frame.height);
-      view?.writer.push(frame.bytes, frame.full);
+      // Un `full` que no cuadra con la vista ni con el resize pedido se retiene
+      // (se deja visible el último frame válido) mientras se reintenta/adopta.
+      const paint =
+        view && frame.full ? this.#adoptFrameSize(entry, frame.width, frame.height) : true;
+      if (paint) view?.writer.push(frame.bytes, frame.full);
       for (const listener of this.#listeners) listener.onFrame?.(entry);
     };
 
@@ -375,6 +388,8 @@ export class TerminalPool {
     const view = entry.view;
     if (!view) return;
     entry.view = null;
+    // El resize pendiente es de ESTA vista: al morir no tiene sentido.
+    this.#clearPending(entry);
     if (view.webgl) {
       view.webgl = false;
       this.#openWebgl = Math.max(0, this.#openWebgl - 1);
@@ -749,45 +764,106 @@ export class TerminalPool {
   /**
    * Resize sin reflujo local: se pide el tamaño al server y xterm cambia de
    * rejilla cuando llega el `full` con ese tamaño (`#adoptFrameSize`), así el
-   * contenido viejo nunca se reordena a la rejilla nueva (evita el temblor). Si
-   * el full no llega en `DEFERRED_RESIZE_MS`, se aplica en local igualmente.
+   * contenido viejo nunca se reordena a la rejilla nueva (evita el temblor).
+   *
+   * Si el full no llega en `DEFERRED_RESIZE_MS` se aplica en local (para no dejar
+   * el panel a medias) y se reintenta el resize (`MAX_RESIZE_ATTEMPTS`). El
+   * pedido queda pendiente hasta que llegue un full que cuadre; si el server
+   * insiste en otro tamaño se adopta el suyo.
    */
   resizeDeferred(paneId: string, cols: number, rows: number): void {
     const entry = this.#entries.get(paneId);
     if (!entry || entry.bridgeId === null || !entry.view) return;
     entry.pendingSize = { cols, rows };
+    entry.pendingAttempts = 0;
     this.resize(paneId, cols, rows);
-    if (entry.pendingTimer !== null) clearTimeout(entry.pendingTimer);
-    entry.pendingTimer = setTimeout(() => {
-      entry.pendingTimer = null;
-      const pending = entry.pendingSize;
-      entry.pendingSize = null;
-      const view = entry.view;
-      if (!pending || !view) return;
-      if (view.terminal.cols !== pending.cols || view.terminal.rows !== pending.rows) {
-        view.terminal.resize(pending.cols, pending.rows);
-      }
-    }, DEFERRED_RESIZE_MS);
+    this.#armPendingTimer(entry);
   }
 
-  /** Un `full` trae el tamaño del server: xterm adopta ESA rejilla antes de pintar. */
-  #adoptFrameSize(entry: TerminalEntry, width: number, height: number): void {
-    const view = entry.view;
-    if (!view || width <= 0 || height <= 0) return;
+  /** Arranca/reinicia el plazo del resize pendiente. */
+  #armPendingTimer(entry: TerminalEntry): void {
+    if (entry.pendingTimer !== null) clearTimeout(entry.pendingTimer);
+    entry.pendingTimer = setTimeout(() => this.#pendingExpired(entry.paneId), DEFERRED_RESIZE_MS);
+  }
+
+  /**
+   * Venció el plazo sin un `full` que cuadre: se aplica el tamaño pedido en
+   * local (el panel sigue usable) y se reintenta mientras queden intentos. Si se
+   * agotan, el pedido se queda pendiente como «sin confirmar»: el próximo `full`
+   * que no cuadre se resuelve en `#adoptFrameSize` (adoptando el del server).
+   */
+  #pendingExpired(paneId: string): void {
+    const entry = this.#entries.get(paneId);
+    if (!entry) return;
+    entry.pendingTimer = null;
     const pending = entry.pendingSize;
-    // Solo se adopta el tamaño pedido: un full viejo (de antes del resize) no
-    // debe devolver la terminal a la rejilla anterior.
-    if (pending && (pending.cols !== width || pending.rows !== height)) return;
-    if (pending) {
-      entry.pendingSize = null;
-      if (entry.pendingTimer !== null) {
-        clearTimeout(entry.pendingTimer);
-        entry.pendingTimer = null;
-      }
+    const view = entry.view;
+    if (!pending || !view) return;
+    if (view.terminal.cols !== pending.cols || view.terminal.rows !== pending.rows) {
+      view.terminal.resize(pending.cols, pending.rows);
+    }
+    if (entry.pendingAttempts >= MAX_RESIZE_ATTEMPTS) return;
+    entry.pendingAttempts += 1;
+    this.#sendResize(entry, pending.cols, pending.rows);
+    this.#armPendingTimer(entry);
+  }
+
+  /**
+   * Un `full` trae el tamaño del server. Devuelve si el frame se puede pintar:
+   *
+   *   - si el tamaño cuadra con la vista o con el pedido, se confirma y se pinta;
+   *   - si no cuadra y quedan reintentos, se vuelve a pedir el tamaño de la vista
+   *     y NO se pinta (queda visible el último frame válido);
+   *   - si el server insiste en otro tamaño (clamp/coalescing), se adopta SU
+   *     rejilla y se pinta: mejor contenido a tamaño del server que panel vacío.
+   */
+  #adoptFrameSize(entry: TerminalEntry, width: number, height: number): boolean {
+    const view = entry.view;
+    if (!view || width <= 0 || height <= 0) return true;
+    const matchesView = view.terminal.cols === width && view.terminal.rows === height;
+    if (matchesView) {
+      this.#clearPending(entry);
+      entry.lastCols = Math.max(20, width);
+      entry.lastRows = Math.max(5, height);
+      return true;
+    }
+    const pending = entry.pendingSize;
+    // Sin resize pendiente es un full no solicitado (repintado): se pinta como
+    // siempre, sin tocar la rejilla (la vista manda).
+    if (!pending) return true;
+    if (pending.cols === width && pending.rows === height) {
+      this.#clearPending(entry);
+      entry.lastCols = Math.max(20, width);
+      entry.lastRows = Math.max(5, height);
       if (view.terminal.cols !== width || view.terminal.rows !== height) {
         view.terminal.resize(width, height);
       }
+      return true;
     }
+    if (entry.pendingAttempts < MAX_RESIZE_ATTEMPTS) {
+      entry.pendingAttempts += 1;
+      this.#sendResize(entry, pending.cols, pending.rows);
+      this.#armPendingTimer(entry);
+      return false;
+    }
+    // El server insiste en otro tamaño: se adopta el suyo.
+    this.#clearPending(entry);
+    entry.lastCols = Math.max(20, width);
+    entry.lastRows = Math.max(5, height);
+    if (view.terminal.cols !== width || view.terminal.rows !== height) {
+      view.terminal.resize(width, height);
+    }
+    return true;
+  }
+
+  /** Limpia el resize pendiente y su plazo. */
+  #clearPending(entry: TerminalEntry): void {
+    if (entry.pendingTimer !== null) {
+      clearTimeout(entry.pendingTimer);
+      entry.pendingTimer = null;
+    }
+    entry.pendingSize = null;
+    entry.pendingAttempts = 0;
   }
 
   resize(paneId: string, cols: number, rows: number): void {
@@ -795,6 +871,12 @@ export class TerminalPool {
     if (!entry || entry.bridgeId === null) return;
     entry.lastCols = Math.max(20, cols);
     entry.lastRows = Math.max(5, rows);
+    this.#sendResize(entry, cols, rows);
+  }
+
+  /** Manda `terminal_resize` al bridge (sin tocar el estado pendiente). */
+  #sendResize(entry: TerminalEntry, cols: number, rows: number): void {
+    if (entry.bridgeId === null) return;
     entry.sentResize += 1;
     void terminalResize(entry.bridgeId, cols, rows).catch(() => undefined);
   }
@@ -906,9 +988,14 @@ export class TerminalPool {
     }
     if (entry.bridgeId === null) return;
     if (view.terminal.cols === previous.cols && view.terminal.rows === previous.rows) return;
-    void terminalResize(entry.bridgeId, view.terminal.cols, view.terminal.rows).catch(
-      () => undefined,
-    );
+    // Mismo camino que `resizeDeferred`: el `full` que confirme el server adopta
+    // la rejilla; si el server clampa, se reintenta y se adopta la suya.
+    entry.pendingSize = { cols: view.terminal.cols, rows: view.terminal.rows };
+    entry.pendingAttempts = 0;
+    entry.lastCols = Math.max(20, view.terminal.cols);
+    entry.lastRows = Math.max(5, view.terminal.rows);
+    this.#sendResize(entry, view.terminal.cols, view.terminal.rows);
+    this.#armPendingTimer(entry);
   }
 
   scroll(paneId: string, direction: 'up' | 'down', lines: number): void {

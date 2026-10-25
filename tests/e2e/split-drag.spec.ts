@@ -7,7 +7,16 @@
 
 import { expect, test, type Page } from '@playwright/test';
 
-import { bootApp, readLayoutFixture, readSnapshotFixture, recordedMethodCalls } from './harness';
+import {
+  bootApp,
+  bridgeIdOf,
+  readLayoutFixture,
+  readSnapshotFixture,
+  recordedCalls,
+  recordedMethodCalls,
+  terminalGrid,
+  waitBridgeOpen,
+} from './harness';
 
 const splitTree = readLayoutFixture(); // split right: w1:p1 | w1:p2
 
@@ -120,6 +129,33 @@ test('con divisores anidados manda el más profundo', async ({ page }) => {
   const params = (calls[0] as { params: { path: boolean[]; ratio: number } }).params;
   expect(params.path).toEqual([true]); // el anidado, no la raíz
   expect(params.ratio).toBeGreaterThan(0.5);
+});
+
+test('arrastrar el divisor manda pocos terminal_resize y el último con el tamaño final', async ({
+  page,
+}) => {
+  await bootApp(page, { layoutTree: splitTree });
+  await expect(frame(page, 'w1:p1')).toBeVisible();
+  await waitBridgeOpen(page, 0);
+
+  const bridge = await bridgeIdOf(page, 'w1:p1');
+  if (bridge === null) throw new Error('sin bridge para w1:p1');
+  const mine = (calls: Array<Record<string, unknown>>): Array<Record<string, unknown>> =>
+    calls.filter((call) => Number(call.bridgeId) === bridge);
+
+  const before = mine(await recordedCalls(page, 'terminal_resize')).length;
+  // El gesto son varios pasos de ratón; no debe mandar un resize por paso.
+  await dragDivider(page, 'root', 160);
+  await expect.poll(async () => terminalGrid(page, 'w1:p1')).not.toEqual({ cols: 0, rows: 0 });
+
+  const after = mine(await recordedCalls(page, 'terminal_resize'));
+  expect(after.length - before).toBeLessThanOrEqual(3);
+
+  // El último resize de este panel va con su rejilla final.
+  const grid = await terminalGrid(page, 'w1:p1');
+  const last = after[after.length - 1];
+  expect(Number(last?.cols)).toBe(grid.cols);
+  expect(Number(last?.rows)).toBe(grid.rows);
 });
 
 test('el ratio se queda entre 0,05 y 0,95 aunque se arrastre de más', async ({ page }) => {
