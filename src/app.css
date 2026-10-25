@@ -403,7 +403,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  min-block-size: 0;
+  /* Sin encogerse: el scroll vertical es del sidebar entero. Con el
+     flex-shrink por defecto (1) la sección bajaba de su alto de contenido y
+     las filas se dibujaban encima de la sección siguiente. */
+  flex: 0 0 auto;
 }
 
 .workspace-row {
