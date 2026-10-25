@@ -1001,6 +1001,11 @@ export class TerminalPool {
   scroll(paneId: string, direction: 'up' | 'down', lines: number): void {
     const entry = this.#entries.get(paneId);
     if (!entry || entry.bridgeId === null) return;
+    // El scroll lo resuelve el server reemplazando el viewport (el scrollback no
+    // vive en xterm): la selección local quedaría apuntando a otras líneas y se
+    // vería resaltado texto que ya no está seleccionado. Se limpia antes de pedir
+    // el scroll para que la selección nunca «quede mal».
+    entry.view?.terminal.clearSelection();
     void terminalScroll(entry.bridgeId, direction, lines).catch(() => undefined);
   }
 

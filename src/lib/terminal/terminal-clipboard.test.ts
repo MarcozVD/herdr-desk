@@ -12,6 +12,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import type { SessionSnapshot } from '../herdr/types';
 
 const inputCalls: Array<{ bridgeId: number; data: string }> = [];
+const scrollCalls: Array<{ bridgeId: number; direction: string; lines: number }> = [];
 let clipboard = 'texto-del-portapapeles\nlinea 2';
 const written: string[] = [];
 
@@ -40,7 +41,9 @@ vi.mock('../herdr/client', () => ({
   }),
   terminalInputBytes: vi.fn(async () => undefined),
   terminalResize: vi.fn(async () => undefined),
-  terminalScroll: vi.fn(async () => undefined),
+  terminalScroll: vi.fn(async (bridgeId: number, direction: string, lines: number) => {
+    scrollCalls.push({ bridgeId, direction, lines });
+  }),
   configRead: vi.fn(async () => ({ ok: false, kind: 'missing' })),
   configWrite: vi.fn(async () => ({ ok: false, kind: 'missing' })),
   guiSettingsRead: vi.fn(async () => ({ ok: false, kind: 'missing' })),
@@ -156,6 +159,7 @@ function write(
 
 beforeEach(() => {
   inputCalls.length = 0;
+  scrollCalls.length = 0;
   written.length = 0;
   clipboard = 'texto-del-portapapeles\nlinea 2';
   settings.values.copy_on_select = false;
@@ -222,6 +226,28 @@ describe('portapapeles de la terminal', () => {
 
     expect(event.defaultPrevented).toBe(false);
     expect(written).toEqual([]);
+  });
+
+  it('la rueda limpia la selección y pide el scroll al server (viewport nuevo)', async () => {
+    await mountView();
+    const view = pool.entry('w1:p1')?.view;
+    if (!view) throw new Error('la vista no se montó');
+    await write(view.terminal, 'linea para seleccionar');
+    view.terminal.select(0, 0, 5);
+    expect(view.terminal.hasSelection()).toBe(true);
+
+    const element = view.terminal.element;
+    if (!element) throw new Error('xterm no montó su elemento');
+    element.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: -120, bubbles: true, cancelable: true }),
+    );
+
+    // La selección local no sobrevive al scroll: el server reemplaza el
+    // viewport y las coordenadas apuntarían a otras líneas.
+    expect(view.terminal.hasSelection()).toBe(false);
+    expect(scrollCalls).toEqual([
+      { bridgeId: 901, direction: 'up', lines: settings.values.mouse_scroll_lines },
+    ]);
   });
 
   it('las demás teclas no se tocan', async () => {
