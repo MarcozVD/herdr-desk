@@ -2,6 +2,51 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versión semántica.
 
+## [Unreleased]
+
+Arreglos de la GUI de terminal y del panel de agentes contra sesiones reales: la sidebar reparte el
+alto como la TUI, el terminal reconcilia su tamaño con el servidor al redimensionar, y los links y
+el ratón llegan a donde deben.
+
+### Corregido
+
+- **Sidebar sin solapes**: con muchos espacios o agentes, `.sidebar__section` (item flex con
+  `flex-shrink: 1` y `min-block-size: 0`) bajaba del alto de su contenido y las filas se dibujaban
+  encima de la sección siguiente. Ahora usa `flex: 0 0 auto`, el scroll vertical queda en el
+  sidebar entero y hay un e2e de regresión (`sidebar-overflow.spec.ts`).
+- **Terminal al redimensionar**: con la sidebar expandida o al arrastrar divisores, el panel quedaba
+  en blanco o redimensionaba a saltos: el pool daba por confirmado un resize antes del `full` del
+  servidor y no reconciliaba. El `full` ahora se compara contra la rejilla real, reintenta hasta 3
+  veces y si el servidor clampa adopta su tamaño; el fit corre por `requestAnimationFrame`
+  (durante el arrastre solo reflow local y un único `terminal_resize` al soltar) y `#refit` usa el
+  mismo camino. Cubierto por tests de clamp y de throttle.
+- **Scroll de la terminal**: el scrollback vive en el servidor y cada scroll reemplaza el viewport;
+  la selección de xterm quedaba en coordenadas viejas y resaltaba líneas que ya no estaban
+  seleccionadas. Ahora se limpia antes de pedir el scroll, con test nuevo.
+- **Links abiertos en el navegador**: faltaba el scope `opener:allow-default-urls` del plugin
+  opener, así que `openUrl` siempre rechazaba, y el error se tragaba (ahora se registra). Se usa
+  `linkHandler` para los OSC 8 en vez de `window.open`, y en panes con agente los links se abren
+  con Ctrl/Cmd+clic. Nuevos `src/lib/terminal/links.ts` y su test.
+- **Panel activo unificado**: el panel de agentes, la status bar y los avisos usan `visible.paneId`
+  como única fuente de verdad. Se poda la memoria de tabs muertos, la adopción del foco del
+  servidor se rearma por sesión y el foco local se reconcilia con el snapshot sin bucle de
+  `effect`; `resetSessionState` limpia menús, toasts y resuelve `confirm`/`prompt`/`form`
+  pendientes; `isKnownId`/`pickKnownId` compartidos en `stores/ids.ts`. Con tests unitarios y e2e.
+- **openPath con scope acotado**: `opener:allow-open-path` no tenía scope y el plugin lo negaba.
+  Ahora queda limitado a `$TEMP/herdr-desk-*` y `$DATA/herdr/**`, y `PluginsDialog` y
+  `edit_scrollback` registran el error real. Tests de scope y de `edit_scrollback`.
+
+### Cambiado
+
+- **Reparto 50/50 de la sidebar**: la sidebar reparte el alto 50/50 entre espacios y agentes, como
+  la TUI; cada sección con scroll propio, y cabeceras y botón de nuevo espacio fijos. El caso
+  compacto (muchos datos) queda cubierto por el e2e.
+- **Ratón en panes con agente**: los frames del bridge no traen los DECSET de ratón, así que en
+  panes con agente se sintetiza SGR 1006 (`press`/`release`/`drag`) igual que ya ocurría con la
+  rueda; Shift+arrastre selecciona en local y allí los links requieren Ctrl/Cmd+clic. Además, el
+  pool recrea la vista si el `terminal_id` de un pane cambia (el servidor recicló el id para otra
+  terminal). e2e de input que enfoca por teclado.
+
 ## [0.1.1] - 2026-09-28
 
 Parche de la GUI de terminal y del arranque contra servidores más nuevos.
