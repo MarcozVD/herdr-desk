@@ -1,10 +1,12 @@
 // Apertura de links del terminal. xterm llama a este handler al activar un link
 // (clic normal del provider de URLs y `linkHandler` para los OSC 8).
 //
-// Si la app del panel tiene mouse tracking activo, el clic normal va a la app
-// (xterm le reporta el ratón); para no robarle el gesto, el link se abre con
-// Ctrl+clic (o Cmd+clic), como en la mayoría de terminales. Sin mouse tracking,
-// el clic normal abre el link.
+// `appGrabsMouse` lo decide el pool con el MISMO gating que la rueda y el ratón
+// sintético (`agentPane`): en un pane con agente detectado el clic normal va a
+// la app (la GUI le reenvía el ratón como SGR), así que el link se abre con
+// Ctrl+clic (o Cmd+clic), como en la mayoría de terminales. En un pane normal el
+// clic abre el link. NO se usa `terminal.modes.mouseTrackingMode`: los DECSET de
+// ratón no llegan en los frames del bridge, así que ahí siempre sería 'none'.
 
 import { openUrl } from '@tauri-apps/plugin-opener';
 
@@ -21,9 +23,9 @@ export function linkModifierPressed(event: { ctrlKey: boolean; metaKey: boolean 
 export function openTerminalLink(
   event: { ctrlKey: boolean; metaKey: boolean },
   uri: string,
-  mouseTracking: boolean,
+  appGrabsMouse: boolean,
 ): void {
-  if (mouseTracking && !linkModifierPressed(event)) return;
+  if (appGrabsMouse && !linkModifierPressed(event)) return;
   void openUrl(uri).catch((error: unknown) => {
     console.warn(`[herdr-desk] no se pudo abrir el link ${uri}`, error);
   });

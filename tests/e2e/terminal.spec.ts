@@ -38,7 +38,9 @@ test('R3: el input se reenvía byte a byte (flechas de PSReadLine, Ctrl+C, Enter
 }) => {
   await bootApp(page);
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');
-  await page.getByTestId('terminal-host').click();
+  // Foco por teclado, no clic: en un panel con agente (BUG 5) el clic se
+  // reenvía como SGR de ratón a la app y ensuciaría el `terminal_input`.
+  await page.getByTestId('terminal-host').locator('textarea').focus();
 
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowDown');
@@ -66,7 +68,9 @@ test('R3: el pegado multilínea llega completo en un solo input', async ({ page 
 
 test('R3: las teclas previas a la apertura del bridge no se pierden', async ({ page }) => {
   await bootApp(page, { terminalOpenDelayMs: 400 });
-  await page.getByTestId('terminal-host').click();
+  // Foco por teclado, no clic: en un panel con agente (BUG 5) el clic se
+  // reenvía como SGR de ratón a la app y ensuciaría el `terminal_input`.
+  await page.getByTestId('terminal-host').locator('textarea').focus();
   await page.keyboard.type('abc');
 
   await expect(page.getByTestId('terminal-host')).toHaveAttribute('data-bridge', 'open');

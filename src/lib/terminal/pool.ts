@@ -35,11 +35,13 @@ import {
   terminalScroll,
 } from '../herdr/client';
 import { parseApiError } from '../herdr/errors';
+import { session } from '../stores/session.svelte';
 import { settings } from '../stores/settings.svelte';
 import { es } from '../i18n/es';
 import { FrameWriter, binaryStringToBase64, decodeCloseReason, decodeFrame } from './frames';
 import { terminalOptions, type TerminalFont } from './font';
 import { openTerminalLink } from './links';
+import { agentPane } from './mouse';
 
 export type BridgeState =
   'idle' | 'opening' | 'open' | 'closing' | 'reconnecting' | 'closed' | 'error';
@@ -65,6 +67,11 @@ export interface TerminalViewState {
 
 export interface TerminalEntry {
   paneId: string;
+  /**
+   * `terminal_id` del snapshot con el que se abrió la entrada (punto 8, BUG 6).
+   * Sirve para detectar que el servidor recicló el `pane_id` para otra terminal.
+   */
+  terminalId: string | null;
   /** Vista xterm actual, o `null` si su componente no está montado. */
   view: TerminalViewState | null;
   bridgeId: number | null;
@@ -267,6 +274,7 @@ export class TerminalPool {
 
     const entry: TerminalEntry = {
       paneId,
+      terminalId: null,
       view: null,
       bridgeId: null,
       state: 'idle',
@@ -367,7 +375,19 @@ export class TerminalPool {
    * para que, al mostrarse, se le pida al servidor el repintado completo.
    */
   mountView(paneId: string, host: HTMLDivElement): TerminalEntry {
-    const entry = this.ensure(paneId);
+    const pane = session.panes.find((item) => item.pane_id === paneId);
+    const terminalId = pane?.terminal_id ?? null;
+    let entry = this.ensure(paneId);
+    // Punto 8 (BUG 6) — Los ids de pane se asumen estables. Si el servidor
+    // recicló un `pane_id` para OTRA terminal (`terminal_id` distinto), la
+    // entrada vieja (bridge + vista) es de otra terminal: se suelta y se recrea,
+    // para no mostrar el contenido de la anterior (el `{#key}` de SplitTree solo
+    // cubre el cambio de pane_id, no la reutilización del mismo id).
+    if (entry.terminalId !== null && terminalId !== null && entry.terminalId !== terminalId) {
+      this.dispose(paneId);
+      entry = this.ensure(paneId);
+    }
+    if (entry.terminalId === null) entry.terminalId = terminalId;
     if (entry.view) {
       // Guarda: JAMÁS dos `open()` sobre la misma instancia. xterm no lo soporta
       // (deja el render y el buffer sin pintar: era el bug de los paneles negros).
@@ -378,7 +398,7 @@ export class TerminalPool {
       this.#touch(paneId);
       return entry;
     }
-    entry.view = this.#createView(host);
+    entry.view = this.#createView(paneId, host);
     this.#touch(paneId);
     return entry;
   }
@@ -419,7 +439,7 @@ export class TerminalPool {
   }
 
   /** Crea una vista nueva (instancia de xterm + fit + writer + addons). */
-  #createView(host: HTMLDivElement): TerminalViewState {
+  #createView(paneId: string, host: HTMLDivElement): TerminalViewState {
     const terminal = new Terminal({
       // herdr manda el viewport ya renderizado: el scrollback vive en el server.
       scrollback: 0,
@@ -439,11 +459,17 @@ export class TerminalPool {
     });
     // Bug 4 — links OSC 8 (los que trae la salida del pane): sin handler,
     // xterm usa `window.open`, que en el WebView abriría una ventana interna.
-    // Se usa el mismo criterio que para los links de texto: Ctrl/Cmd+clic
-    // cuando la app del pane tiene mouse tracking (el clic normal va a la app).
+    // Bug 5 — el gating es el mismo que el de la rueda/ratón sintético: en un
+    // pane con agente el clic normal va a la app, así que el link se abre con
+    // Ctrl/Cmd+clic. NO se usa `terminal.modes.mouseTrackingMode`: los DECSET de
+    // ratón no llegan en los frames del bridge, así que siempre es 'none'.
+    const grabsMouse = (): boolean =>
+      agentPane(
+        session.panes.find((item) => item.pane_id === paneId),
+        terminal,
+      );
     terminal.options.linkHandler = {
-      activate: (event, text) =>
-        openTerminalLink(event, text, terminal.modes.mouseTrackingMode !== 'none'),
+      activate: (event, text) => openTerminalLink(event, text, grabsMouse()),
     };
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -455,7 +481,7 @@ export class TerminalPool {
     void import('@xterm/addon-web-links').then(({ WebLinksAddon }) => {
       terminal.loadAddon(
         new WebLinksAddon((event, uri) => {
-          openTerminalLink(event, uri, terminal.modes.mouseTrackingMode !== 'none');
+          openTerminalLink(event, uri, grabsMouse());
         }),
       );
     });

@@ -15,6 +15,15 @@
   import { session } from '../stores/session.svelte';
   import { settings } from '../stores/settings.svelte';
   import { ui } from '../stores/ui.svelte';
+  import {
+    agentPane,
+    cellAt,
+    isLinkClick,
+    mouseSequence,
+    sgrButton,
+    sgrModifiers,
+    wantsLocalSelection,
+  } from './mouse';
   import { pool } from './pool';
   import type { BridgeState, TerminalEntry, TerminalViewState } from './pool';
 
@@ -189,25 +198,89 @@
     });
   }
 
+  /** Celda 1-based del puntero sobre la rejilla de la vista (o 1,1 sin host). */
+  function pointerCell(event: MouseEvent | WheelEvent): { col: number; row: number } {
+    const terminal = view?.terminal;
+    if (!terminal || !host) return { col: 1, row: 1 };
+    return cellAt(
+      host.getBoundingClientRect(),
+      terminal.cols,
+      terminal.rows,
+      event.clientX,
+      event.clientY,
+    );
+  }
+
   /** Secuencia SGR de rueda del ratón (botones 64/65) en la celda del puntero. */
   function wheelSequence(event: WheelEvent, up: boolean): string {
-    const terminal = view?.terminal;
-    let col = 1;
-    let row = 1;
-    if (terminal && host) {
-      const rect = host.getBoundingClientRect();
-      const cellW = rect.width / Math.max(1, terminal.cols);
-      const cellH = rect.height / Math.max(1, terminal.rows);
-      col = Math.min(
-        terminal.cols,
-        Math.max(1, Math.floor((event.clientX - rect.left) / cellW) + 1),
-      );
-      row = Math.min(
-        terminal.rows,
-        Math.max(1, Math.floor((event.clientY - rect.top) / cellH) + 1),
-      );
-    }
+    const { col, row } = pointerCell(event);
     return `\x1b[<${up ? 64 : 65};${col};${row}M`;
+  }
+
+  /** Botón del ratón que se está reenviando a la app (null si no hay arrastre). */
+  let dragButton: number | null = null;
+  /** Última celda reenviada durante el arrastre (para no spamear motion). */
+  let lastDragCell = '';
+
+  /**
+   * ¿La GUI debe reenviar el ratón a la app en vez de que xterm seleccione?
+   * Solo en panes con agente, sin mouse tracking nativo y sin los modificadores
+   * que la GUI se reserva (Shift = selección local, Ctrl/Cmd = link).
+   */
+  function forwardsMouse(event: MouseEvent): boolean {
+    if (!view) return false;
+    const terminal = view.terminal;
+    if (terminal.modes.mouseTrackingMode !== 'none') return false; // xterm ya lo reporta
+    if (!agentPane(pane, terminal)) return false;
+    if (wantsLocalSelection(event)) return false;
+    if (isLinkClick(event)) return false;
+    return event.button === 0 || event.button === 1 || event.button === 2;
+  }
+
+  function onSurfaceMouseDown(event: MouseEvent): void {
+    if (!forwardsMouse(event)) return;
+    const terminal = view?.terminal;
+    if (!terminal) return;
+    // Se corta la propagación para que xterm no arranque una selección con este
+    // gesto: el clic es para la app. El foco de teclado se le da a mano.
+    event.preventDefault();
+    event.stopPropagation();
+    terminal.focus();
+    dragButton = event.button;
+    lastDragCell = '';
+    const { col, row } = pointerCell(event);
+    pool.send(
+      paneId,
+      mouseSequence({ button: sgrButton(event.button), col, row, modifiers: sgrModifiers(event) }),
+    );
+    window.addEventListener('mousemove', onWindowMouseMove);
+    window.addEventListener('mouseup', onWindowMouseUp);
+  }
+
+  function onWindowMouseMove(event: MouseEvent): void {
+    if (dragButton === null) return;
+    const { col, row } = pointerCell(event);
+    const key = `${col}:${row}`;
+    if (key === lastDragCell) return; // sin cambio de celda no hay motion que mandar
+    lastDragCell = key;
+    pool.send(paneId, mouseSequence({ button: sgrButton(dragButton), col, row, motion: true }));
+  }
+
+  function onWindowMouseUp(event: MouseEvent): void {
+    const button = dragButton;
+    dragButton = null;
+    window.removeEventListener('mousemove', onWindowMouseMove);
+    window.removeEventListener('mouseup', onWindowMouseUp);
+    if (button === null) return;
+    const { col, row } = pointerCell(event);
+    pool.send(paneId, mouseSequence({ button: sgrButton(button), col, row, release: true }));
+  }
+
+  function stopForwardingMouse(): void {
+    dragButton = null;
+    lastDragCell = '';
+    window.removeEventListener('mousemove', onWindowMouseMove);
+    window.removeEventListener('mouseup', onWindowMouseUp);
   }
 
   // T2.7 — El foco de teclado sigue al panel enfocado: al saltar a un panel
@@ -294,7 +367,7 @@
       const lines = Math.max(1, Math.round(settings.values.mouse_scroll_lines));
       const current = pane;
       const hasScrollback = (current?.scroll?.max_offset_from_bottom ?? 0) > 0;
-      const agentTui = Boolean(current?.agent) || terminal?.buffer.active.type === 'alternate';
+      const agentTui = agentPane(current, terminal);
       if (agentTui && !hasScrollback) {
         event.preventDefault();
         pool.send(paneId, wheelSequence(event, up).repeat(Math.min(lines, 5)));
@@ -330,6 +403,9 @@
     window.addEventListener('pointercancel', onDragRelease);
     resizeObserver = new ResizeObserver(() => scheduleFit());
     resizeObserver.observe(host);
+    // BUG 5 — ratón sintético para los agentes: en fase de captura para poder
+    // cortar el gesto antes de que xterm lo tome como selección.
+    host.addEventListener('mousedown', onSurfaceMouseDown, true);
     void document.fonts?.ready.then(() => settleSize());
     ready = true;
 
@@ -339,6 +415,8 @@
       window.removeEventListener('pointercancel', onDragRelease);
       unsubscribe();
       dragActive = false;
+      stopForwardingMouse();
+      host?.removeEventListener('mousedown', onSurfaceMouseDown, true);
       if (fitFrame !== null) cancelAnimationFrame(fitFrame);
       if (settleFrame !== null) cancelAnimationFrame(settleFrame);
       resizeObserver?.disconnect();
