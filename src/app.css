@@ -322,11 +322,10 @@ body {
   gap: var(--space-3);
   min-block-size: 0;
   padding: var(--space-3);
-  /* Solo scroll vertical y hueco reservado: al aparecer la barra no se come
-     ancho ni aparece scroll horizontal (la sidebar «saltaba»). */
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  /* Sin scroll propio: las dos secciones se reparten el alto (50/50, como la
+     TUI) y cada una gestiona su scroll vertical. Así ninguna fila se dibuja
+     encima de la otra sección. */
+  overflow: hidden;
   border-radius: var(--radius);
 }
 
@@ -403,10 +402,27 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  /* Sin encogerse: el scroll vertical es del sidebar entero. Con el
-     flex-shrink por defecto (1) la sección bajaba de su alto de contenido y
-     las filas se dibujaban encima de la sección siguiente. */
-  flex: 0 0 auto;
+  /* Cincuenta por ciento para espacios y otro tanto para agentes: es el
+     `sidebar_section_split` (0.5) de la TUI. `min-block-size: 0` deja que
+     cada sección encoja con la ventana, pero el contenido va en su propio
+     scroller para que no desborde sobre la sección vecina. */
+  flex: 1 1 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+/* Cuerpo desplazable de la lista de espacios. La cabecera y el botón de nuevo
+   espacio son fijos (como en la TUI). */
+.sidebar__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Hueco reservado: al aparecer la barra no se come ancho ni salta la lista. */
+  scrollbar-gutter: stable;
 }
 
 .workspace-row {

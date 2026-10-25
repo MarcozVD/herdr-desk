@@ -126,66 +126,90 @@
     </p>
   {/if}
 
-  {#if sections.length === 0}
-    <p class="empty-note" data-testid="agents-empty">
-      {filtering ? es.sidebar.noAgentsMatch : es.sidebar.noAgents}
-    </p>
-  {:else}
-    {#each sections as section (section.id)}
-      <div class="agent-panel__section" data-testid="agent-section" data-workspace-id={section.id}>
-        {#if section.title.length > 0}
-          <p class="agent-panel__section-title" data-testid="agent-section-title">
-            {section.title}
-          </p>
-        {/if}
-        {#each section.agents as agent (agent.pane_id)}
-          <button
-            type="button"
-            class="agent-row"
-            data-testid="agent-row"
-            data-pane-id={agent.pane_id}
-            data-status={agent.agent_status}
-            data-agent={agent.agent ?? ''}
-            aria-current={agent.pane_id === session.focusedPaneId}
-            onclick={() => flows.focusAgent(agent.pane_id)}
-            oncontextmenu={(event) => flows.openAgentMenu(event, agent.pane_id)}
-            title={es.agents.rowHint}
-          >
-            {#each agentRowsFor(agent, rowsConfig) as row, rowIndex (rowIndex)}
-              <span class="agent-row__line">
-                {#each row as token, tokenIndex (tokenIndex)}
-                  {@const resolved = resolveAgentToken(token, {
-                    agent,
-                    workspace: workspaceFor(agent),
-                    tab: tabFor(agent),
-                    stateLabels: es.agentStatus,
-                  })}
-                  {#if resolved?.kind === 'icon'}
-                    <AgentDot
-                      status={resolved.status ?? 'unknown'}
-                      label={es.agentStatus[resolved.status ?? 'unknown']}
-                    />
-                  {:else if resolved}
-                    <span
-                      class="agent-row__token"
-                      data-token={resolved.id}
-                      style={tokenStyle(resolved.style)}>{resolved.text}</span
-                    >
-                  {/if}
-                {/each}
-              </span>
-            {/each}
-            {#each gaps as gapIndex (gapIndex)}
-              <span class="agent-row__gap" data-testid="agent-row-gap"></span>
-            {/each}
-          </button>
-        {/each}
-      </div>
-    {/each}
-  {/if}
+  <div class="agent-panel__body" data-testid="agent-panel-body">
+    {#if sections.length === 0}
+      <p class="empty-note" data-testid="agents-empty">
+        {filtering ? es.sidebar.noAgentsMatch : es.sidebar.noAgents}
+      </p>
+    {:else}
+      {#each sections as section (section.id)}
+        <div
+          class="agent-panel__section"
+          data-testid="agent-section"
+          data-workspace-id={section.id}
+        >
+          {#if section.title.length > 0}
+            <p class="agent-panel__section-title" data-testid="agent-section-title">
+              {section.title}
+            </p>
+          {/if}
+          {#each section.agents as agent (agent.pane_id)}
+            <button
+              type="button"
+              class="agent-row"
+              data-testid="agent-row"
+              data-pane-id={agent.pane_id}
+              data-status={agent.agent_status}
+              data-agent={agent.agent ?? ''}
+              aria-current={agent.pane_id === session.focusedPaneId}
+              onclick={() => flows.focusAgent(agent.pane_id)}
+              oncontextmenu={(event) => flows.openAgentMenu(event, agent.pane_id)}
+              title={es.agents.rowHint}
+            >
+              {#each agentRowsFor(agent, rowsConfig) as row, rowIndex (rowIndex)}
+                <span class="agent-row__line">
+                  {#each row as token, tokenIndex (tokenIndex)}
+                    {@const resolved = resolveAgentToken(token, {
+                      agent,
+                      workspace: workspaceFor(agent),
+                      tab: tabFor(agent),
+                      stateLabels: es.agentStatus,
+                    })}
+                    {#if resolved?.kind === 'icon'}
+                      <AgentDot
+                        status={resolved.status ?? 'unknown'}
+                        label={es.agentStatus[resolved.status ?? 'unknown']}
+                      />
+                    {:else if resolved}
+                      <span
+                        class="agent-row__token"
+                        data-token={resolved.id}
+                        style={tokenStyle(resolved.style)}>{resolved.text}</span
+                      >
+                    {/if}
+                  {/each}
+                </span>
+              {/each}
+              {#each gaps as gapIndex (gapIndex)}
+                <span class="agent-row__gap" data-testid="agent-row-gap"></span>
+              {/each}
+            </button>
+          {/each}
+        </div>
+      {/each}
+    {/if}
+  </div>
 </section>
 
 <style>
+  /* La cabecera (título, herramientas y aviso) queda fija; solo la lista de
+     agentes hace scroll, como el panel de agentes de la TUI. */
+  .agent-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow: hidden;
+  }
+
+  .agent-panel__body {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
   .agent-panel__tools {
     display: flex;
     gap: var(--space-1);

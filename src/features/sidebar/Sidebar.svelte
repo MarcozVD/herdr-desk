@@ -46,64 +46,69 @@
   data-collapsed-mode={collapsedMode}
   aria-label={es.sidebar.workspaces}
 >
-  <div class="sidebar__section">
+  <!-- TUI: la lista de espacios y el panel de agentes se reparten el alto a
+       partes iguales y cada uno hace su propio scroll; la cabecera y el botón
+       de nuevo espacio quedan fijos. -->
+  <div class="sidebar__section sidebar__section--workspaces">
     <h2 class="sidebar__title">
       <span>{es.sidebar.workspaces}</span>
       <span class="sidebar__count" data-testid="workspaces-count">{session.workspaces.length}</span>
     </h2>
-    {#if session.workspaces.length === 0}
-      <p class="empty-note" data-testid="workspaces-empty">
-        {session.connection === 'online' ? es.sidebar.noWorkspaces : es.sidebar.emptyState}
-      </p>
-    {:else}
-      {#each session.workspaces as workspace (workspace.workspace_id)}
-        {@const git = gitStatuses.infoOf(workspace.workspace_id)}
-        <button
-          type="button"
-          class="workspace-row"
-          class:drop-active={dropId === workspace.workspace_id}
-          data-testid="workspace-row"
-          data-workspace-id={workspace.workspace_id}
-          data-status={workspace.agent_status}
-          draggable="true"
-          title={es.workspace.reorderHint}
-          aria-current={visible.workspaceId === workspace.workspace_id}
-          onclick={() => flows.focusWorkspace(workspace.workspace_id)}
-          ondblclick={() => void flows.renameWorkspace(workspace.workspace_id)}
-          ondragstart={(event) => onRowDragStart(event, workspace.workspace_id)}
-          ondragover={(event) => onRowDragOver(event, workspace.workspace_id)}
-          ondragleave={() => (dropId = null)}
-          ondrop={(event) => onRowDrop(event, workspace.workspace_id)}
-          oncontextmenu={(event) => flows.openWorkspaceMenu(event, workspace.workspace_id)}
-        >
-          <span class="workspace-row__number">{workspace.number}</span>
-          <AgentRollup
-            agents={agentsOfWorkspace(session.agents, workspace.workspace_id)}
-            status={workspace.agent_status}
-          />
-          <span class="workspace-row__label">{workspace.label}</span>
-          {#if git?.branch}
-            <span
-              class="workspace-row__git"
-              data-testid="workspace-branch"
-              title={es.sidebar.gitBranch.replace('{branch}', git.branch)}>{git.branch}</span
-            >
-          {/if}
-          {#if git && git.dirty > 0}
-            <span
-              class="workspace-row__dirty"
-              data-testid="workspace-dirty"
-              title={es.sidebar.gitDirty.replace('{n}', String(git.dirty))}>●{git.dirty}</span
-            >
-          {/if}
-          <span
-            class="workspace-row__count"
-            title={es.sidebar.panesCount.replace('{n}', String(workspace.pane_count))}
-            >{workspace.pane_count}</span
+    <div class="sidebar__rows" data-testid="workspace-rows">
+      {#if session.workspaces.length === 0}
+        <p class="empty-note" data-testid="workspaces-empty">
+          {session.connection === 'online' ? es.sidebar.noWorkspaces : es.sidebar.emptyState}
+        </p>
+      {:else}
+        {#each session.workspaces as workspace (workspace.workspace_id)}
+          {@const git = gitStatuses.infoOf(workspace.workspace_id)}
+          <button
+            type="button"
+            class="workspace-row"
+            class:drop-active={dropId === workspace.workspace_id}
+            data-testid="workspace-row"
+            data-workspace-id={workspace.workspace_id}
+            data-status={workspace.agent_status}
+            draggable="true"
+            title={es.workspace.reorderHint}
+            aria-current={visible.workspaceId === workspace.workspace_id}
+            onclick={() => flows.focusWorkspace(workspace.workspace_id)}
+            ondblclick={() => void flows.renameWorkspace(workspace.workspace_id)}
+            ondragstart={(event) => onRowDragStart(event, workspace.workspace_id)}
+            ondragover={(event) => onRowDragOver(event, workspace.workspace_id)}
+            ondragleave={() => (dropId = null)}
+            ondrop={(event) => onRowDrop(event, workspace.workspace_id)}
+            oncontextmenu={(event) => flows.openWorkspaceMenu(event, workspace.workspace_id)}
           >
-        </button>
-      {/each}
-    {/if}
+            <span class="workspace-row__number">{workspace.number}</span>
+            <AgentRollup
+              agents={agentsOfWorkspace(session.agents, workspace.workspace_id)}
+              status={workspace.agent_status}
+            />
+            <span class="workspace-row__label">{workspace.label}</span>
+            {#if git?.branch}
+              <span
+                class="workspace-row__git"
+                data-testid="workspace-branch"
+                title={es.sidebar.gitBranch.replace('{branch}', git.branch)}>{git.branch}</span
+              >
+            {/if}
+            {#if git && git.dirty > 0}
+              <span
+                class="workspace-row__dirty"
+                data-testid="workspace-dirty"
+                title={es.sidebar.gitDirty.replace('{n}', String(git.dirty))}>●{git.dirty}</span
+              >
+            {/if}
+            <span
+              class="workspace-row__count"
+              title={es.sidebar.panesCount.replace('{n}', String(workspace.pane_count))}
+              >{workspace.pane_count}</span
+            >
+          </button>
+        {/each}
+      {/if}
+    </div>
     <button
       type="button"
       class="sidebar__action"
@@ -114,7 +119,7 @@
     </button>
   </div>
 
-  <div class="sidebar__section">
+  <div class="sidebar__section sidebar__section--agents">
     <AgentPanel />
   </div>
 </aside>
