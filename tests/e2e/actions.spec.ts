@@ -136,6 +136,14 @@ test('renombrar panel llama a pane.rename', async ({ page }) => {
   expect(call).toMatchObject({ params: { pane_id: 'w1:p1', label: 'servidor' } });
 });
 
+test('limpiar panel desde el menú llama a pane.clear', async ({ page }) => {
+  await bootApp(page);
+  await openContextItem(page, 'pane-menu', 'Limpiar panel');
+  await expect.poll(async () => (await recordedMethodCalls(page, 'pane.clear')).length).toBe(1);
+  const [call] = await recordedMethodCalls(page, 'pane.clear');
+  expect(call).toMatchObject({ params: { pane_id: 'w1:p1' } });
+});
+
 test('el botón «…» del panel abre el menú con un clic izquierdo y se queda abierto', async ({
   page,
 }) => {
@@ -144,9 +152,9 @@ test('el botón «…» del panel abre el menú con un clic izquierdo y se queda
 
   const menu = page.getByTestId('context-menu');
   await expect(menu).toBeVisible();
-  // 5 acciones del panel + 2 de arrancar agente (T2.3) + 3 de scrollback (T3.9)
-  // + modo resize y 2 destinos de pane.move (T3.1).
-  await expect(page.getByTestId('context-item')).toHaveCount(13);
+  // 6 acciones del panel + 2 de arrancar agente (T2.3) + 3 de scrollback (T3.9)
+  // + modo resize y 2 destinos de pane.move (T3.1). `Limpiar panel` es de T2.
+  await expect(page.getByTestId('context-item')).toHaveCount(14);
 
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);

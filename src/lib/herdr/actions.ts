@@ -94,6 +94,11 @@ export const paneApi = {
     await call('pane.rename', { pane_id: paneId, label });
   },
 
+  /** `pane.clear`: limpia la pantalla/scrollback del panel (T2). */
+  async clear(paneId: string): Promise<void> {
+    await call('pane.clear', { pane_id: paneId });
+  },
+
   async focus(paneId: string): Promise<void> {
     await call('pane.focus', { pane_id: paneId });
   },

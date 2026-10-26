@@ -103,7 +103,7 @@ export const COVERAGE: Record<MethodName, Coverage> = {
   // El editor nativo abre un pane de herdr (con editor del sistema); la GUI no lo
   // muestra por defecto en Windows -> se vuelve al camino a mano de v0.1.2.
   'pane.edit_scrollback': 'console',
-  'pane.clear': 'console',
+  'pane.clear': 'curated:panes',
   'pane.scroll': 'console',
   'pane.selection.read': 'console',
   'pane.copy_motion': 'console',
@@ -130,7 +130,12 @@ export const COVERAGE: Record<MethodName, Coverage> = {
   'events.wait': 'console',
 
   // Integraciones
-  'integration.list': 'curated:integrations',
+  // `integration.list` (RPC, protocolo 22) devuelve una lista estructurada de 17
+  // targets (available/command/label/state/target), pero NO el detalle de la CLI
+  // `herdr integration status` (versión «v7 < v10», ruta de instalación y el
+  // target extra `letta`): no es equivalente, así que el diálogo sigue con el
+  // comando local y el método queda solo en la consola (T2).
+  'integration.list': 'console',
   'integration.install': 'curated:integrations',
   'integration.uninstall': 'curated:integrations',
 

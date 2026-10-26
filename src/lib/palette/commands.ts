@@ -280,6 +280,15 @@ function curatedCommands(context: PaletteContext): PaletteCommand[] {
         run: () => runAction('rename_pane'),
       },
       {
+        id: 'panes.clear',
+        label: ACTION_LABELS['clear_pane'] ?? 'clear_pane',
+        group: 'panes',
+        hint: pane,
+        keywords: 'limpiar clear pantalla panel',
+        action: 'clear_pane',
+        run: () => runAction('clear_pane'),
+      },
+      {
         id: 'panes.start_agent',
         label: es.agents.start,
         group: 'panes',

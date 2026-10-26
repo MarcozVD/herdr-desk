@@ -201,6 +201,15 @@ describe('catálogo (T2.6)', () => {
     const split = commands.find((command) => command.id === 'panes.split_right');
     expect(split?.shortcut).toBe(keymap.labelOf('split_vertical'));
   });
+
+  it('el panel ofrece «Limpiar panel» con su acción (T2)', () => {
+    const commands = buildCommands(context);
+    const clear = commands.find((command) => command.id === 'panes.clear');
+    expect(clear?.group).toBe('panes');
+    expect(clear?.action).toBe('clear_pane');
+    expect(clear?.label).toBe(ACTION_LABELS['clear_pane']);
+    expect(clear?.hint).toBe('w1:p1');
+  });
 });
 
 describe('orden y búsqueda (T2.6)', () => {

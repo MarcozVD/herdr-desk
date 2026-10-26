@@ -33,7 +33,7 @@ describe('cobertura de métodos', () => {
         'client_shell.surface.set',
         'command.invoke',
         'events.wait',
-        'pane.clear',
+        'integration.list',
         'pane.copy_motion',
         'pane.copy_search',
         'pane.current',

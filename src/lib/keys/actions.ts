@@ -37,6 +37,7 @@ export const ACTION_LABELS: Record<string, string> = {
   close_tab: 'Cerrar pestaña',
   rename_pane: 'Renombrar panel',
   edit_scrollback: 'Editar scrollback',
+  clear_pane: 'Limpiar panel',
   focus_pane_left: 'Panel a la izquierda',
   focus_pane_down: 'Panel abajo',
   focus_pane_up: 'Panel arriba',
@@ -129,6 +130,9 @@ export async function runAction(action: string): Promise<void> {
       break;
     case 'edit_scrollback':
       if (focusedPane) await flows.editScrollback(focusedPane);
+      break;
+    case 'clear_pane':
+      if (focusedPane) await flows.clearPane(focusedPane);
       break;
     case 'detach':
       void getCurrentWindow().close();

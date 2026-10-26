@@ -137,6 +137,7 @@ export const es = {
     closeConfirm: '¿Cerrar el panel «{label}»?',
     zoom: 'Alternar zoom',
     rename: 'Renombrar panel',
+    clear: 'Limpiar panel',
     focus: 'Enfocar panel',
     newPane: 'Nuevo panel',
     noPanes: 'Sin paneles en esta pestaña.',

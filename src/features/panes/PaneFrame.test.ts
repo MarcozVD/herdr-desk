@@ -242,6 +242,8 @@ describe('PaneFrame: los botones del header responden', () => {
       'split-down',
       'zoom',
       'rename',
+      // T2: limpiar la salida del panel.
+      'clear-pane',
       // T3.9: buscar en la salida, editar el scrollback y esperar salida.
       'search-output',
       'edit-scrollback',

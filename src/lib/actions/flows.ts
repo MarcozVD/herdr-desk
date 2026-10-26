@@ -387,6 +387,15 @@ export const flows = {
     }
   },
 
+  /** `pane.clear`: limpia la pantalla del panel (T2). */
+  async clearPane(paneId: string): Promise<void> {
+    try {
+      await paneApi.clear(paneId);
+    } catch (raw) {
+      fail(raw, 'pane.clear');
+    }
+  },
+
   /** Foco de panel: local por defecto; con sincronización también en herdr. */
   focusPane(paneId: string): void {
     const pane = session.panes.find((item) => item.pane_id === paneId);
@@ -1052,6 +1061,7 @@ export const flows = {
         { id: 'split-down', label: es.panes.splitDown, run: () => this.splitPane('down', paneId) },
         { id: 'zoom', label: es.panes.zoom, run: () => this.toggleZoom(paneId) },
         { id: 'rename', label: es.panes.rename, run: () => this.renamePane(paneId) },
+        { id: 'clear-pane', label: es.panes.clear, run: () => this.clearPane(paneId) },
         { id: 'search-output', label: es.search.search, run: () => this.searchPaneOutput(paneId) },
         { id: 'edit-scrollback', label: es.search.edit, run: () => this.editScrollback(paneId) },
         { id: 'wait-output', label: es.search.wait, run: () => this.waitPaneOutput(paneId) },
