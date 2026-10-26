@@ -2,6 +2,23 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). Versión semántica.
 
+## [0.2.0-beta] - 2026-10-26
+
+Prerelease de la rama `v1-cierre` camino de la v1.0: la GUI habla el protocolo 22 de herdr y se
+distribuye también como MSI.
+
+### Añadido
+
+- **Protocolo 22 de herdr** (102 métodos): schema y tipos regenerados, cobertura de los 15 métodos
+  nuevos (`curated` o consola) y aviso de compatibilidad aceptando el servidor 22.
+- **Limpiar panel** (`pane.clear`) desde el menú del panel y la paleta de comandos; sin atajo por
+  defecto, igual que la TUI.
+- **Instalador MSI** (WiX, es-ES y en-US) además del NSIS.
+
+### Eliminado
+
+- Superficie de `pane.graphics.*`, que el servidor quitó en el protocolo 22.
+
 ## [0.1.2] - 2026-10-25
 
 Arreglos de la GUI de terminal y del panel de agentes contra sesiones reales: la sidebar reparte el

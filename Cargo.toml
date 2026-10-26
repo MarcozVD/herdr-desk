@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/herdr-core", "src-tauri"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0-beta"
 edition = "2024"
 publish = false
 
