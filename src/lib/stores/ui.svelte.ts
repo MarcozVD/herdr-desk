@@ -86,6 +86,8 @@ class UiStore {
   prefixActive = $state(false);
   /** Modo redimensionar (T3.1): las flechas cambian el tamaño del panel. */
   resizeMode = $state(false);
+  /** T4a — Modo navegar (`goto`): las teclas mueven foco sin tocar la terminal. */
+  navigateMode = $state(false);
   /** Chip con el último atajo resuelto, para feedback visual. */
   lastAction = $state<string | null>(null);
 
@@ -324,6 +326,7 @@ class UiStore {
     this.paneHistory = [];
     this.tabByWorkspace = {};
     this.resizeMode = false;
+    this.navigateMode = false;
     this.prefixActive = false;
     this.lastAction = null;
     // Punto 6 (BUG 6) — El estado efímero también es de la sesión vieja: menús,

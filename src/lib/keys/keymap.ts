@@ -300,6 +300,17 @@ export class Keymap {
     return null;
   }
 
+  /** Atajo del modo navegar para esta tecla (sin prefijo). */
+  resolveNavigate(event: KeyboardEvent): string | null {
+    const chord = chordFromEvent(event);
+    if (!chord) return null;
+    const id = chordId(chord);
+    return (
+      this.entries.find((entry) => entry.scope === 'navigate' && entry.chordId === id)?.action ??
+      null
+    );
+  }
+
   isPrefixKey(event: KeyboardEvent): boolean {
     const parsed = parseBinding(this.prefixKey);
     if (!parsed) return false;

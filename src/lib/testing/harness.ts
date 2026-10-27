@@ -10,6 +10,7 @@
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 
 import type { Channel } from '@tauri-apps/api/core';
+import { COVERAGE } from '../herdr/coverage';
 
 interface HarnessConfig {
   snapshot?: unknown;
@@ -43,6 +44,8 @@ interface HarnessConfig {
   guiSettings?: Record<string, unknown> | null;
   /** F3: overrides iniciales de config.toml (ruta → valor TOML). */
   configEntries?: Record<string, string> | null;
+  /** T4d — el primer `worktree_remove` falla para probar el reintento con force. */
+  worktreeRemoveFailsOnce?: boolean;
 }
 
 /** Claves de localStorage donde el arnés persiste config y ajustes GUI. */
@@ -87,6 +90,8 @@ export interface HarnessApi {
   /** panes con bridge abierto ahora mismo. */
   openPanes(): string[];
   setLayoutTree(tree: unknown): void;
+  /** T4b/T4e — empuja un evento global a los `events_watch` abiertos. */
+  pushEvent(event: unknown): void;
 }
 
 type Internals = {
@@ -217,6 +222,12 @@ function defaultResponse(method: string, config: HarnessConfig, params?: unknown
           truncated: false,
         },
       };
+    case 'pane.selection.read':
+      return {
+        type: 'pane_selection',
+        pane_id: String((params as { pane_id?: string } | undefined)?.pane_id ?? 'w1:p1'),
+        text: 'selección extendida del server',
+      };
     case 'agent.start':
       return {
         type: 'agent_started',
@@ -279,6 +290,9 @@ export function installHarness(): void {
   let config = (window.__HD_HARNESS__ ?? {}) as HarnessConfig;
   const calls: RecordedCall[] = [];
   const storeChannels = new Map<string, Channel<unknown>>();
+  /** T4e — suscripciones `events_watch` abiertas (id → canal). */
+  const eventWatches = new Map<number, Channel<unknown>>();
+  let eventWatchSeq = 0;
   /** bridgeId → { paneId, channel } de los bridges abiertos. */
   const bridges = new Map<
     number,
@@ -299,6 +313,8 @@ export function installHarness(): void {
   let frameSeq = 0;
   const channelIndex = new Map<number, number>();
   let bridgeSeq = 1000;
+  let worktreeRemoveAttempts = 0;
+  let pluginPaneSeq = 0;
 
   const internals = (): Internals => window.__TAURI_INTERNALS__ as unknown as Internals;
 
@@ -483,6 +499,15 @@ export function installHarness(): void {
         deadBridges.delete(released);
         return null;
       }
+      case 'terminal_scroll': {
+        // T4k — el server repinta el viewport al hacer scroll: el harness manda
+        // un frame full para que el autoscroll de selección tenga contenido nuevo.
+        const bridge = bridges.get(Number(payload.bridgeId));
+        if (bridge) {
+          setTimeout(() => deliver(bridge.channel, serverFrame(bridge.paneId)), 0);
+        }
+        return null;
+      }
       case 'terminal_close': {
         const closed = Number(payload.bridgeId);
         bridges.delete(closed);
@@ -520,6 +545,16 @@ export function installHarness(): void {
                 id: 'main',
                 title: 'Panel demo',
                 command: ['demo'],
+                description: null,
+                placement: 'split',
+                width: null,
+                height: null,
+                platforms: null,
+              },
+              {
+                id: 'logs',
+                title: 'Logs demo',
+                command: ['demo', '--logs'],
                 description: null,
                 placement: 'split',
                 width: null,
@@ -660,7 +695,8 @@ export function installHarness(): void {
           },
         ];
       case 'plugin_pane_open':
-        return { pane_id: 'w9:p1' };
+        pluginPaneSeq += 1;
+        return { pane_id: `w9:p${pluginPaneSeq}` };
       case 'plugin_pane_focus':
       case 'plugin_pane_close':
         return { pane_id: String(payload.paneId) };
@@ -764,33 +800,42 @@ export function installHarness(): void {
         };
       // F4/T4.5 — catálogo de la consola.
       case 'api_catalog':
+        // T4e — catálogo completo (102 métodos), no los 2 de antes. Los params
+        // reales de workspace.list se mantienen para probar el formulario bool.
         return {
-          protocol: 19,
+          protocol: 22,
           schema_version: 1,
-          total: 2,
-          methods: [
-            { method: 'ping', group: 'server', description: 'ping', params: [] },
-            {
-              method: 'workspace.list',
-              group: 'workspace',
-              description: 'lista espacios',
-              params: [
-                {
-                  name: 'include_archived',
-                  kind: 'bool',
-                  required: false,
-                  nullable: false,
-                  default: null,
-                  enum_values: null,
-                  item: null,
-                  properties: null,
-                  ref_name: null,
-                },
-              ],
-            },
-          ],
+          total: Object.keys(COVERAGE).length,
+          methods: Object.keys(COVERAGE).map((method) => ({
+            method,
+            group: method.includes('.') ? method.split('.')[0] : 'core',
+            description: method === 'workspace.list' ? 'lista espacios' : null,
+            params:
+              method === 'workspace.list'
+                ? [
+                    {
+                      name: 'include_archived',
+                      kind: 'bool',
+                      required: false,
+                      nullable: false,
+                      default: null,
+                      enum_values: null,
+                      item: null,
+                      properties: null,
+                      ref_name: null,
+                    },
+                  ]
+                : [],
+          })),
         };
-      case 'events_watch':
+      case 'events_watch': {
+        eventWatchSeq += 1;
+        const watchId = eventWatchSeq;
+        eventWatches.set(watchId, payload.onEvt as Channel<unknown>);
+        return watchId;
+      }
+      case 'events_unwatch':
+        eventWatches.delete(Number(payload.watchId));
         return null;
       case 'notification_show':
         return { delivered: true, reason: null };
@@ -953,6 +998,10 @@ export function installHarness(): void {
           root_pane: {},
         };
       case 'worktree_remove':
+        worktreeRemoveAttempts += 1;
+        if (config.worktreeRemoveFailsOnce && worktreeRemoveAttempts === 1) {
+          throw { code: 'worktree_dirty', message: 'el worktree tiene cambios sin commitear' };
+        }
         return {
           workspace_id: 'w1',
           path: 'C:/wt/dev',
@@ -996,6 +1045,10 @@ export function installHarness(): void {
       const channel = storeChannel();
       if (!channel) throw new Error('store_subscribe no se llamó todavía');
       deliver(channel, JSON.stringify({ type: 'session_snapshot', snapshot }));
+    },
+    pushEvent(event: unknown) {
+      const line = JSON.stringify(event);
+      for (const channel of eventWatches.values()) deliver(channel, line);
     },
     pushState(state) {
       const channel = storeChannel();

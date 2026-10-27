@@ -75,12 +75,15 @@ pub async fn events_forward(
 
 /// T4.5 — Visor de eventos de la consola: suscripción temporal a los tipos
 /// globales elegidos, reenviada por el canal mientras el frontend la mantenga.
+///
+/// T4e — Devuelve un id para cerrarla explícitamente con `events_unwatch`; antes
+/// el backend solo cortaba cuando fallaba `on_evt.send()`.
 #[tauri::command]
 pub async fn events_watch(
     state: State<'_, std::sync::Arc<AppState>>,
     types: Vec<String>,
     on_evt: Channel<InvokeResponseBody>,
-) -> Result<(), ApiError> {
+) -> Result<u64, ApiError> {
     if types.is_empty() {
         return Err(ApiError {
             code: "invalid_params".to_string(),
@@ -92,18 +95,37 @@ pub async fn events_watch(
         herdr_core::events::open_event_subscription(pipe, types)
             .await
             .map_err(|e| e.api())?;
+    let (watch_id, cancel) = state.event_watches.lock().unwrap().open();
+    let state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
-        // `close` vive con la tarea: al caer el canal del frontend se suelta y la
-        // conexión de eventos se cierra sola.
         let _close = close;
         let mut rx = rx;
-        while let Some(event) = rx.recv().await {
-            let line = serde_json::to_string(&event).unwrap_or_default();
-            if on_evt.send(InvokeResponseBody::Json(line)).is_err() {
-                break;
+        let mut cancel = std::pin::pin!(cancel);
+        loop {
+            tokio::select! {
+                maybe = rx.recv() => {
+                    let Some(event) = maybe else { break };
+                    let line = serde_json::to_string(&event).unwrap_or_default();
+                    if on_evt.send(InvokeResponseBody::Json(line)).is_err() {
+                        break;
+                    }
+                }
+                _ = &mut cancel => break,
             }
         }
+        state.event_watches.lock().unwrap().finish(watch_id);
     });
+    Ok(watch_id)
+}
+
+/// T4e — Cierra una suscripción de `events_watch` por id. Es idempotente: un id
+/// ya cerrado no es error.
+#[tauri::command]
+pub async fn events_unwatch(
+    state: State<'_, std::sync::Arc<AppState>>,
+    watch_id: u64,
+) -> Result<(), ApiError> {
+    state.event_watches.lock().unwrap().close(watch_id);
     Ok(())
 }
 

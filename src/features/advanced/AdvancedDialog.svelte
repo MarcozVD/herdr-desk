@@ -7,6 +7,7 @@
 
   import { callRaw } from '../../lib/herdr/client';
   import { errorText } from '../../lib/herdr/errors';
+  import { confirmDestructive } from '../../lib/actions/destructive';
   import { cliRun, notificationShow } from '../../lib/herdr/f4';
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
@@ -191,11 +192,10 @@
   }
 
   async function liveHandoff(): Promise<void> {
-    const accepted = await ui.confirm({
+    const accepted = await confirmDestructive({
       title: es.advanced.liveHandoff,
       message: es.server.stopConfirmAgain,
       confirmLabel: es.advanced.liveHandoff,
-      danger: true,
     });
     if (!accepted) return;
     await run(es.advanced.liveHandoff, 'server.live_handoff', {});

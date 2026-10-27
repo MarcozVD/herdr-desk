@@ -42,6 +42,8 @@ export interface BootOptions {
   guiSettings?: Record<string, unknown> | null;
   /** F3: overrides iniciales de config.toml (ruta → valor TOML). */
   configEntries?: Record<string, string> | null;
+  /** T4d — primer `worktree_remove` falla para probar el reintento con force. */
+  worktreeRemoveFailsOnce?: boolean;
 }
 
 export async function bootApp(page: Page, options: BootOptions = {}): Promise<void> {
@@ -59,6 +61,7 @@ export async function bootApp(page: Page, options: BootOptions = {}): Promise<vo
     configEntries: options.configEntries ?? null,
     sessionStartError: options.sessionStartError ?? null,
     sessionCurrentMissing: options.sessionCurrentMissing ?? false,
+    worktreeRemoveFailsOnce: options.worktreeRemoveFailsOnce ?? false,
   };
   await page.addInitScript((value) => {
     window.__HD_HARNESS__ = value;

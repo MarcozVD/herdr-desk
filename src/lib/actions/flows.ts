@@ -30,6 +30,7 @@ import { settings } from '../stores/settings.svelte';
 import { ui } from '../stores/ui.svelte';
 import { layout } from '../stores/layout.svelte';
 import { pool } from '../terminal/pool';
+import { trackCustomPane } from './customPanes';
 
 export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 
@@ -582,6 +583,8 @@ export const flows = {
         focus: true,
       });
       if (!created) return;
+      // T4b — el panel es temporal: `pane_exited` lo cierra solo (ver customPanes).
+      trackCustomPane(created.pane_id);
       await paneApi.sendInput(created.pane_id, command.command, ['enter']);
       if (kind === 'popup') await paneApi.zoom(created.pane_id, 'on');
       await layout.refreshNow();

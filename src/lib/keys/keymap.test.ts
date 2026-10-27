@@ -57,6 +57,17 @@ describe('Keymap', () => {
     expect(map.activeEntries.some((entry) => entry.scope === 'navigate')).toBe(false);
   });
 
+  it('T4a: resolveNavigate solo devuelve acciones del ámbito navigate', () => {
+    expect(map.resolveNavigate(fakeEvent({ key: 'ArrowUp' }))).toBe('navigate_workspace_up');
+    expect(map.resolveNavigate(fakeEvent({ key: 'ArrowDown' }))).toBe('navigate_workspace_down');
+    expect(map.resolveNavigate(fakeEvent({ key: 'h' }))).toBe('navigate_pane_left');
+    expect(map.resolveNavigate(fakeEvent({ key: 'j' }))).toBe('navigate_pane_down');
+    expect(map.resolveNavigate(fakeEvent({ key: 'k' }))).toBe('navigate_pane_up');
+    expect(map.resolveNavigate(fakeEvent({ key: 'l' }))).toBe('navigate_pane_right');
+    // Una acción de prefix no entra en el modo navegar.
+    expect(map.resolveNavigate(fakeEvent({ key: 'c' }))).toBeNull();
+  });
+
   it('remote_image_paste (solo --remote) tampoco se captura', () => {
     expect(map.resolveForEvent(fakeEvent({ key: 'v', ctrlKey: true }), false)).toBeNull();
     expect(map.bindingOf('remote_image_paste')).toBe('ctrl+v');

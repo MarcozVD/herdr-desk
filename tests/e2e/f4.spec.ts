@@ -51,6 +51,37 @@ test('plugins: lista, toggle, acciones, logs y desvincular', async ({ page }) =>
   expect(JSON.stringify(unlinks.at(-1))).toContain('"confirm":true');
 });
 
+test('plugins: cada pane se enfoca y cierra por su id, no por el último abierto', async ({
+  page,
+}) => {
+  await bootApp(page);
+  await paletteRun(page, 'plugins');
+  await page.getByTestId('plugin-row').first().getByTestId('plugin-details').click();
+  const rows = page.locator('[data-testid="plugin-pane-row"]');
+  await expect(rows).toHaveCount(2);
+
+  await rows.nth(0).getByTestId('plugin-pane-open').click();
+  await rows.nth(1).getByTestId('plugin-pane-open').click();
+  await expect(page.getByTestId('plugin-pane-focus')).toHaveCount(2);
+
+  // El primer pane abierto recibió w9:p1; el segundo w9:p2. El botón de la
+  // primera fila debe usar SU id aunque el último abierto sea el otro.
+  await page
+    .locator('[data-testid="plugin-pane-row"][data-pane-key="p1:main"]')
+    .getByTestId('plugin-pane-focus')
+    .click();
+  await expect.poll(async () => (await recordedCalls(page, 'plugin_pane_focus')).length).toBe(1);
+  expect((await recordedCalls(page, 'plugin_pane_focus'))[0]).toMatchObject({ paneId: 'w9:p1' });
+
+  await page
+    .locator('[data-testid="plugin-pane-row"][data-pane-key="p1:main"]')
+    .getByTestId('plugin-pane-close')
+    .click();
+  await expect.poll(async () => (await recordedCalls(page, 'plugin_pane_close')).length).toBe(1);
+  expect((await recordedCalls(page, 'plugin_pane_close'))[0]).toMatchObject({ paneId: 'w9:p1' });
+  await expect(page.getByTestId('plugin-pane-focus')).toHaveCount(1);
+});
+
 test('integraciones: instala y desinstala con confirmación', async ({ page }) => {
   await bootApp(page);
   await paletteRun(page, 'integraciones');
@@ -118,7 +149,9 @@ test('consola API: catálogo, formulario y eventos en vivo', async ({ page }) =>
   await bootApp(page);
   await paletteRun(page, 'consola api');
   await expect(page.getByTestId('console-dialog')).toBeVisible();
-  await expect(page.getByTestId('console-method')).toHaveCount(2);
+  // T4e: el e2e usa el catálogo completo del contrato (102 métodos), no un mock de 2.
+  await expect(page.getByTestId('console-method')).toHaveCount(102);
+  await expect(page.getByTestId('console-total')).toContainText('102 · protocol 22');
 
   // Selecciona workspace.list (tiene un bool) y ejecuta.
   await page.locator('[data-testid="console-method"][data-method="workspace.list"]').click();
@@ -136,6 +169,13 @@ test('consola API: catálogo, formulario y eventos en vivo', async ({ page }) =>
     .toBeGreaterThan(0);
   const watch = (await recordedCalls(page, 'events_watch')).at(-1);
   expect((watch?.types as string[]).length).toBe(24);
+
+  // T4e — apagar el visor cierra la suscripción de forma explícita.
+  await page.getByTestId('console-events-toggle').click();
+  await expect
+    .poll(async () => (await recordedCalls(page, 'events_unwatch')).length)
+    .toBeGreaterThan(0);
+  expect((await recordedCalls(page, 'events_unwatch')).at(-1)).toMatchObject({ watchId: 1 });
 });
 
 test('avanzado: notificación de prueba y skill', async ({ page }) => {

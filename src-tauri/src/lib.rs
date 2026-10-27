@@ -256,6 +256,7 @@ pub fn run() {
             commands::api::store_subscribe,
             commands::api::events_forward,
             commands::api::events_watch,
+            commands::api::events_unwatch,
             commands::api::ui_ready,
             commands::session::session_list,
             commands::session::session_current,

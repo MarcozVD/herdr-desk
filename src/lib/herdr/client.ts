@@ -172,6 +172,56 @@ export async function storeSubscribe(onMessage: (message: StoreMessage) => void)
   }
 }
 
+/* ---- Eventos globales (T4b/T4e) ---- */
+
+export interface EventWatch {
+  /** Cierra la suscripción de forma explícita (idempotente). */
+  close(): void;
+}
+
+/**
+ * Suscribe a tipos globales (`pane.exited`, …) por el command `events_watch`.
+ * Devuelve un handle con cierre explícito (`events_unwatch`); si el backend es
+ * viejo y no devuelve id, el `close` solo suelta el callback del `Channel`.
+ */
+export async function watchEvents(
+  types: readonly string[],
+  onEvent: (event: Api.EventEnvelope) => void,
+): Promise<EventWatch> {
+  const channel = new Channel<ArrayBuffer | string>();
+  let closed = false;
+  channel.onmessage = (raw) => {
+    if (closed) return;
+    const text = toText(raw);
+    if (text === null) return;
+    try {
+      onEvent(JSON.parse(text) as Api.EventEnvelope);
+    } catch {
+      // Una línea ilegible no debe tumbar el watcher.
+    }
+  };
+  let watchId: number | null = null;
+  try {
+    const returned = await invoke<number | null>('events_watch', {
+      types: [...types],
+      onEvt: channel,
+    });
+    watchId = typeof returned === 'number' ? returned : null;
+  } catch (raw) {
+    throw parseApiError(raw);
+  }
+  return {
+    close() {
+      if (closed) return;
+      closed = true;
+      channel.onmessage = () => undefined;
+      if (watchId !== null) {
+        void invoke('events_unwatch', { watchId }).catch(() => undefined);
+      }
+    },
+  };
+}
+
 /* ---- Sesiones ---- */
 
 /** `session list --json` (CLI). El backend lo corre con CREATE_NO_WINDOW. */

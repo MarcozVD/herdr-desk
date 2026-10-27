@@ -7,6 +7,7 @@
   import { openPath } from '@tauri-apps/plugin-opener';
 
   import { errorText } from '../../lib/herdr/errors';
+  import { confirmDestructive } from '../../lib/actions/destructive';
   import {
     cliRun,
     pluginActionInvoke,
@@ -39,7 +40,8 @@
   let busy = $state(false);
   let expanded = $state<string | null>(null);
   let actions = $state<PluginActionInfo[]>([]);
-  let lastPluginPane = $state<string | null>(null);
+  /** T4f — pane_id abierto por clave `plugin_id:pane_id` (no "el último"). */
+  let openPanes = $state<Record<string, string>>({});
   let installing = $state(false);
 
   async function load(): Promise<void> {
@@ -87,11 +89,10 @@
   }
 
   async function unlink(plugin: PluginInfo): Promise<void> {
-    const accepted = await ui.confirm({
+    const accepted = await confirmDestructive({
       title: es.plugins.unlink,
       message: es.plugins.unlinkConfirm.replace('{name}', plugin.name),
       confirmLabel: es.plugins.unlink,
-      danger: true,
     });
     if (!accepted) return;
     busy = true;
@@ -235,6 +236,11 @@
     return null;
   }
 
+  /** Clave estable de un pane del manifiesto dentro del diálogo. */
+  function paneKey(plugin: PluginInfo, pane: PluginManifestPane): string {
+    return `${plugin.plugin_id}:${pane.id}`;
+  }
+
   async function openPluginPane(plugin: PluginInfo, pane: PluginManifestPane): Promise<void> {
     const popup = pane.placement === 'popup';
     busy = true;
@@ -253,30 +259,35 @@
       error = errorText(outcome.error);
       return;
     }
-    lastPluginPane = extractPaneId(outcome.value);
+    const id = extractPaneId(outcome.value);
+    if (id) openPanes = { ...openPanes, [paneKey(plugin, pane)]: id };
     ui.notify(popup ? es.plugins.popupFallback : es.plugins.paneOpened, 'info');
   }
 
-  async function focusPluginPane(): Promise<void> {
-    if (!lastPluginPane) {
+  async function focusPluginPane(key: string): Promise<void> {
+    const id = openPanes[key];
+    if (!id) {
       ui.notify(es.plugins.noPluginPane, 'warn');
       return;
     }
-    const outcome = await pluginPaneFocus(lastPluginPane);
+    const outcome = await pluginPaneFocus(id);
     if (!outcome.ok) error = errorText(outcome.error);
   }
 
-  async function closePluginPane(): Promise<void> {
-    if (!lastPluginPane) {
+  async function closePluginPane(key: string): Promise<void> {
+    const id = openPanes[key];
+    if (!id) {
       ui.notify(es.plugins.noPluginPane, 'warn');
       return;
     }
-    const outcome = await pluginPaneClose(lastPluginPane);
+    const outcome = await pluginPaneClose(id);
     if (!outcome.ok) {
       error = errorText(outcome.error);
       return;
     }
-    lastPluginPane = null;
+    const next = { ...openPanes };
+    delete next[key];
+    openPanes = next;
   }
 
   async function configDir(): Promise<void> {
@@ -403,7 +414,8 @@
                 {#if plugin.panes.length > 0}
                   <p class="plugins__doc">{es.plugins.panes}</p>
                   {#each plugin.panes as pane (pane.id)}
-                    <div class="plugins__action">
+                    {@const key = paneKey(plugin, pane)}
+                    <div class="plugins__action" data-testid="plugin-pane-row" data-pane-key={key}>
                       <span>{pane.title}</span>
                       <code>{pane.placement ?? 'split'}</code>
                       <button
@@ -415,26 +427,28 @@
                       >
                         {es.plugins.openPane.replace('{title}', pane.title)}
                       </button>
+                      {#if openPanes[key]}
+                        <button
+                          type="button"
+                          class="btn btn--small"
+                          data-testid="plugin-pane-focus"
+                          data-pane-key={key}
+                          onclick={() => void focusPluginPane(key)}
+                        >
+                          {es.plugins.focusPane}
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn--small"
+                          data-testid="plugin-pane-close"
+                          data-pane-key={key}
+                          onclick={() => void closePluginPane(key)}
+                        >
+                          {es.plugins.closePane}
+                        </button>
+                      {/if}
                     </div>
                   {/each}
-                  <div class="plugins__actions">
-                    <button
-                      type="button"
-                      class="btn btn--small"
-                      data-testid="plugin-pane-focus"
-                      onclick={() => void focusPluginPane()}
-                    >
-                      {es.plugins.focusPane}
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn--small"
-                      data-testid="plugin-pane-close"
-                      onclick={() => void closePluginPane()}
-                    >
-                      {es.plugins.closePane}
-                    </button>
-                  </div>
                 {/if}
               </div>
             {/if}

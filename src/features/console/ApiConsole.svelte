@@ -5,10 +5,8 @@
      API por diseño: todo método sin UI dedicada sale de aquí (T4.7). -->
 <script lang="ts">
   import { writeText } from '@tauri-apps/plugin-clipboard-manager';
-  import { Channel } from '@tauri-apps/api/core';
-  import { invoke } from '@tauri-apps/api/core';
 
-  import { callRaw } from '../../lib/herdr/client';
+  import { callRaw, watchEvents, type EventWatch } from '../../lib/herdr/client';
   import { errorText } from '../../lib/herdr/errors';
   import {
     apiCatalog,
@@ -66,7 +64,9 @@
   let history = $state<HistoryEntry[]>([]);
   let eventsOn = $state(false);
   let eventsText = $state('');
-  let eventsChannel: Channel<string> | null = null;
+  let eventsWatch: EventWatch | null = null;
+  /** T4e — generación del visor: una apertura que termina tarde se cierra sola. */
+  let eventsSeq = 0;
 
   const filtered = $derived(
     (catalog?.methods ?? []).filter((method) => {
@@ -194,27 +194,45 @@
 
   async function toggleEvents(): Promise<void> {
     if (eventsOn) {
-      // Soltar el callback deja de pintar; el backend cierra al fallar el envío.
-      if (eventsChannel) eventsChannel.onmessage = () => undefined;
-      eventsChannel = null;
+      // T4e — cierre explícito de la suscripción (events_unwatch), no esperar a
+      // que falle el envío por el Channel.
+      eventsSeq += 1;
+      eventsWatch?.close();
+      eventsWatch = null;
       eventsOn = false;
       return;
     }
-    const channel = new Channel<string>();
-    eventsChannel = channel;
-    channel.onmessage = (line) => {
-      if (!eventsOn) return;
-      eventsText = `${eventsText}${line}\n`.split('\n').slice(-200).join('\n');
-    };
     eventsOn = true;
     eventsText = '';
+    const seq = (eventsSeq += 1);
     try {
-      await invoke('events_watch', { types: [...GLOBAL_EVENTS], onEvt: channel });
+      const watch = await watchEvents(GLOBAL_EVENTS, (event) => {
+        if (!eventsOn) return;
+        eventsText = `${eventsText}${JSON.stringify(event)}\n`.split('\n').slice(-200).join('\n');
+      });
+      // El diálogo (o el propio botón) se cerró mientras se abría la
+      // suscripción: se cierra en cuanto llega el id, sin dejarla huérfana.
+      if (seq !== eventsSeq || !eventsOn) {
+        watch.close();
+        return;
+      }
+      eventsWatch = watch;
     } catch (raw) {
+      if (seq !== eventsSeq) return;
       eventsOn = false;
+      eventsWatch = null;
       error = errorText(raw as never);
     }
   }
+
+  // Cerrar el diálogo también cierra su suscripción de eventos.
+  $effect(() => {
+    if (ui.consoleOpen) return;
+    eventsSeq += 1;
+    eventsWatch?.close();
+    eventsWatch = null;
+    eventsOn = false;
+  });
 
   const paramHint = (param: ApiParamSpec): string =>
     `${param.name}: ${param.kind}${param.required ? ` · ${es.apiConsole.required}` : ''}${param.nullable ? ' · null' : ''}`;
@@ -236,7 +254,7 @@
           bind:value={query}
           data-testid="console-search"
         />
-        <div class="console__count">
+        <div class="console__count" data-testid="console-total">
           {catalog ? `${catalog.total} · protocol ${catalog.protocol}` : '—'}
         </div>
         <ul class="console__methods" data-testid="console-methods">

@@ -63,13 +63,6 @@ export const ACTION_LABELS: Record<string, string> = {
 const LATER: Record<string, string> = {
   open_notification_target: 'Las notificaciones llegan en F2.',
   workspace_picker: 'El selector fuzzy llega en F2.',
-  goto: 'El modo navegar llega en F3.',
-  navigate_workspace_up: 'El modo navegar llega en F3.',
-  navigate_workspace_down: 'El modo navegar llega en F3.',
-  navigate_pane_left: 'El modo navegar llega en F3.',
-  navigate_pane_down: 'El modo navegar llega en F3.',
-  navigate_pane_up: 'El modo navegar llega en F3.',
-  navigate_pane_right: 'El modo navegar llega en F3.',
 };
 
 /** Avisa al TerminalView del panel enfocado (atajo literal o portapapeles). */
@@ -120,8 +113,35 @@ export async function runAction(action: string): Promise<void> {
     case 'settings':
       ui.openSettings();
       break;
+    case 'goto':
+      // T4a — Modo navegar; se sale con Esc, Enter o una tecla sin acción.
+      ui.navigateMode = !ui.navigateMode;
+      if (ui.navigateMode) {
+        ui.resizeMode = false;
+        ui.prefixActive = false;
+      }
+      break;
+    case 'navigate_workspace_up':
+      await flows.nextWorkspace(-1);
+      break;
+    case 'navigate_workspace_down':
+      await flows.nextWorkspace(1);
+      break;
+    case 'navigate_pane_left':
+      await flows.focusPaneDirection('left');
+      break;
+    case 'navigate_pane_down':
+      await flows.focusPaneDirection('down');
+      break;
+    case 'navigate_pane_up':
+      await flows.focusPaneDirection('up');
+      break;
+    case 'navigate_pane_right':
+      await flows.focusPaneDirection('right');
+      break;
     case 'resize_mode':
       ui.resizeMode = !ui.resizeMode;
+      if (ui.resizeMode) ui.navigateMode = false;
       break;
     case 'new_worktree':
     case 'open_worktree':

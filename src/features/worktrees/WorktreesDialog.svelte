@@ -11,6 +11,7 @@
     type WorktreeListResult,
   } from '../../lib/herdr/client';
   import { errorText } from '../../lib/herdr/errors';
+  import { confirmDestructive } from '../../lib/actions/destructive';
   import { es } from '../../lib/i18n/es';
   import { session } from '../../lib/stores/session.svelte';
   import { ui } from '../../lib/stores/ui.svelte';
@@ -102,22 +103,20 @@
   async function remove(item: WorktreeInfo): Promise<void> {
     const workspaceId = item.open_workspace_id;
     if (!workspaceId) return;
-    const accepted = await ui.confirm({
+    const accepted = await confirmDestructive({
       title: es.worktrees.removeAction,
       message: es.worktrees.removeConfirm.replace('{label}', item.label),
       confirmLabel: es.worktrees.removeAction,
-      danger: true,
     });
     if (!accepted) return;
     busy = true;
     let outcome = await worktreeRemove(workspaceId, false);
     busy = false;
     if (!outcome.ok) {
-      const forced = await ui.confirm({
+      const forced = await confirmDestructive({
         title: es.worktrees.removeAction,
         message: es.worktrees.removeConfirmForce,
         confirmLabel: es.worktrees.removeAction,
-        danger: true,
       });
       if (!forced) return;
       busy = true;

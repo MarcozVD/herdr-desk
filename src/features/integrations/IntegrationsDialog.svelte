@@ -2,6 +2,7 @@
      instalar y desinstalar cada target con confirmación. -->
 <script lang="ts">
   import { errorText } from '../../lib/herdr/errors';
+  import { confirmDestructive } from '../../lib/actions/destructive';
   import {
     integrationInstall,
     integrationStatus,
@@ -66,11 +67,10 @@
   }
 
   async function uninstall(entry: IntegrationStatusEntry): Promise<void> {
-    const accepted = await ui.confirm({
+    const accepted = await confirmDestructive({
       title: es.integrations.uninstall,
       message: es.integrations.uninstallConfirm.replace('{name}', entry.name),
       confirmLabel: es.integrations.uninstall,
-      danger: true,
     });
     if (!accepted) return;
     busy = entry.name;

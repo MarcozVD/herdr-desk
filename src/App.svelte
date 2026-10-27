@@ -25,7 +25,9 @@
   import { es } from './lib/i18n/es';
   import { runAction } from './lib/keys/actions';
   import { flows } from './lib/actions/flows';
+  import { stopCustomPaneWatch } from './lib/actions/customPanes';
   import Cheatsheet from './lib/keys/Cheatsheet.svelte';
+  import Hint from './lib/keys/Hint.svelte';
   import { keymap } from './lib/keys/keymap';
   import SplitTree from './lib/layout/SplitTree.svelte';
   import { zoomedTree } from './lib/layout/tree';
@@ -209,6 +211,33 @@
     ArrowDown: 'down',
   };
 
+  /** T4a — Teclas del modo navegar. Devuelve si la tecla quedó consumida. */
+  function handleNavigateKey(event: KeyboardEvent): boolean {
+    if (event.key === 'Escape' || event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      ui.navigateMode = false;
+      return true;
+    }
+    if (/^[1-9]$/.test(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      void flows.switchTabNumber(Number(event.key));
+      return true;
+    }
+    const action = keymap.resolveNavigate(event);
+    if (action) {
+      event.preventDefault();
+      event.stopPropagation();
+      void runAction(action);
+      return true;
+    }
+    // Tecla sin acción en este modo: se sale y la tecla sigue su camino normal
+    // (así escribir en la terminal no se queda atrapado en el modo navegar).
+    ui.navigateMode = false;
+    return false;
+  }
+
   function onKeydown(event: KeyboardEvent): void {
     // Las teclas modificadoras solas no son un atajo: si se procesaran, el
     // Control de «Ctrl+B» consumiría el modo prefix antes de la «b».
@@ -222,12 +251,17 @@
       // Un atajo de la GUI sale del modo prefix: si no, la siguiente tecla se
       // interpretaría como combinación con prefijo (y ejecutaría otra acción).
       ui.prefixActive = false;
+      ui.navigateMode = false;
       void runAction(gui);
       return;
     }
 
     // Mientras se escribe en un campo, solo Escape sale del modo.
     if (isTypingTarget(event.target)) return;
+
+    // T4a — Modo navegar: las teclas de `navigate_*` mueven el foco y no llegan
+    // a la terminal; Esc/Enter salen y una tecla desconocida también sale.
+    if (ui.navigateMode && handleNavigateKey(event)) return;
 
     // T3.1 — Modo redimensionar: las flechas mueven el divisor; Esc (o cualquier
     // otra tecla) sale. Va antes que el resto para que las flechas no lleguen a
@@ -345,6 +379,7 @@
       window.removeEventListener('keydown', onKeydown, true);
       scheme.removeEventListener('change', onScheme);
       unsuppress();
+      stopCustomPaneWatch();
     };
   });
 </script>
@@ -377,6 +412,8 @@
 
   <StatusBar />
 </div>
+
+<Hint />
 
 <AgentPromptDialog />
 <StartAgentDialog />

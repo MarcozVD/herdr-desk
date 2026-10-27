@@ -6,6 +6,7 @@
 
   import { call } from '../../lib/herdr/client';
   import { describeApiError, errorText, parseApiError } from '../../lib/herdr/errors';
+  import { confirmDestructive } from '../../lib/actions/destructive';
   import {
     agentManifests,
     agentManifestsReload,
@@ -72,20 +73,19 @@
   /** Detener server: doble confirmación (mata los procesos de los panes). */
   async function stopServer(): Promise<void> {
     const sessionName = session.sessionName ?? es.app.sessionUnknown;
-    const first = await ui.confirm({
-      title: es.server.stop,
-      message: es.server.stopConfirm.replace('{session}', sessionName),
-      confirmLabel: es.server.stop,
-      danger: true,
-    });
-    if (!first) return;
-    const second = await ui.confirm({
-      title: es.server.stop,
-      message: es.server.stopConfirmAgain,
-      confirmLabel: es.server.stop,
-      danger: true,
-    });
-    if (!second) return;
+    const accepted = await confirmDestructive([
+      {
+        title: es.server.stop,
+        message: es.server.stopConfirm.replace('{session}', sessionName),
+        confirmLabel: es.server.stop,
+      },
+      {
+        title: es.server.stop,
+        message: es.server.stopConfirmAgain,
+        confirmLabel: es.server.stop,
+      },
+    ]);
+    if (!accepted) return;
     try {
       await call('server.stop', {});
       ui.notify(es.server.stopped, 'info');

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -22,6 +22,9 @@ pub struct AppState {
     /// Suscripción al store activa (solo la última vive; el re-suscribir cancela la
     /// anterior de verdad: la tarea termina y sus mensajes se descartan).
     pub store_subs: Mutex<StoreSubs>,
+    /// T4e — Suscripciones `events_watch` de la consola, con su cierre explícito
+    /// (`events_unwatch`). La clave es el id que devuelve `events_watch`.
+    pub event_watches: Mutex<EventWatches>,
     /// Estado del tray (sesiones + agentes), actualizado por el frontend y los eventos.
     pub tray: Mutex<crate::tray::TrayState>,
     /// C1 — Última compatibilidad cliente/servidor conocida de una sesión.
@@ -66,6 +69,51 @@ impl Default for StoreSubs {
     }
 }
 
+/// T4e — Registro de suscripciones temporales de eventos.
+///
+/// `events_watch` devuelve un id y guarda aquí su `oneshot` de cancelación; el
+/// frontend lo cierra con `events_unwatch`. Sin este registro el cierre dependía
+/// de que fallara el envío por el `Channel` (la deuda que documentaba §6octies).
+#[derive(Default)]
+pub struct EventWatches {
+    next_id: AtomicU64,
+    cancels: HashMap<u64, tokio::sync::oneshot::Sender<()>>,
+}
+
+impl EventWatches {
+    /// Reserva una suscripción y devuelve su id y el receptor de cancelación.
+    pub fn open(&mut self) -> (u64, tokio::sync::oneshot::Receiver<()>) {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        let (cancel, rx) = tokio::sync::oneshot::channel();
+        self.cancels.insert(id, cancel);
+        (id, rx)
+    }
+
+    /// Cierra una suscripción; `false` si ya no existía (doble cierre).
+    pub fn close(&mut self, id: u64) -> bool {
+        match self.cancels.remove(&id) {
+            Some(cancel) => {
+                let _ = cancel.send(());
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// La tarea terminó sola (fin del stream): se quita sin volver a cancelar.
+    pub fn finish(&mut self, id: u64) {
+        self.cancels.remove(&id);
+    }
+
+    pub fn len(&self) -> usize {
+        self.cancels.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.cancels.is_empty()
+    }
+}
+
 impl AppState {
     pub fn new(runtime: Runtime) -> Self {
         Self {
@@ -73,6 +121,7 @@ impl AppState {
             bridges: Mutex::new(BridgeRegistry::new()),
             event_channels: Mutex::new(Vec::new()),
             store_subs: Mutex::new(StoreSubs::new()),
+            event_watches: Mutex::new(EventWatches::default()),
             tray: Mutex::new(crate::tray::TrayState::default()),
             compat: Mutex::new(None),
         }
@@ -343,5 +392,26 @@ mod compat_cache_tests {
         let state = state_with("dev");
         state.set_compat("dev", compat(false));
         assert!(!state.session_incompatible());
+    }
+
+    #[test]
+    fn t4e_watch_se_cierra_con_su_id_y_no_acepta_doble_cierre() {
+        let mut watches = EventWatches::default();
+        let (id, mut rx) = watches.open();
+        assert_eq!(watches.len(), 1);
+        assert!(watches.close(id));
+        assert!(matches!(rx.try_recv(), Ok(())));
+        assert!(!watches.close(id));
+        assert!(watches.is_empty());
+    }
+
+    #[test]
+    fn t4e_watch_terminado_solo_se_quita_del_registro() {
+        let mut watches = EventWatches::default();
+        let (id, mut rx) = watches.open();
+        watches.finish(id);
+        assert!(watches.is_empty());
+        // El oneshot se dropea sin enviar: el receptor ve el cierre de la tarea.
+        assert!(rx.try_recv().is_err());
     }
 }
