@@ -16,6 +16,7 @@ import {
 import type { AgentTokenSpec } from '../agents/agentPanel';
 import { DEFAULT_AGENT_ROWS, DEFAULT_AGENT_ROW_GAP } from '../agents/agentPanel';
 import type { ConfigEntry } from '../settings/spec';
+import { toTomlScalar } from '../settings/spec';
 import { applyThemeToDocument } from '../theme/apply';
 import { applyGlassLevel, GLASS_LEVEL_DEFAULT } from '../theme/glass';
 
@@ -187,6 +188,38 @@ class SettingsStore {
     this.values[key] = value;
     if (GUI_KEY_SET.includes(key)) this.#schedulePersistGui();
     else this.#persistHerdr(key, value);
+  }
+
+  /**
+   * T4i — Edita una clave de `[theme.custom]` (o la quita con `null`). No cabe
+   * en `set('theme_custom', …)` porque es una tabla TOML: cada token se escribe
+   * como su propia clave `theme.custom.<token>` y se reaplica el tema en vivo.
+   */
+  setThemeCustom(token: string, value: string | null): void {
+    const next = { ...this.values.theme_custom };
+    if (value === null) delete next[token];
+    else next[token] = value;
+    this.values.theme_custom = next;
+    this.applyTheme();
+    void configWrite([
+      {
+        path: `theme.custom.${token}`,
+        value: value === null ? null : toTomlScalar(value),
+      },
+    ]).then((outcome) => {
+      if (!outcome.ok) {
+        if (outcome.kind === 'error') this.#report(outcome.error.message);
+        return;
+      }
+      const result = outcome.value;
+      if (!result) return;
+      if (result.rejected || result.rolled_back) {
+        const detail = result.diagnostics.map((item) => item.message).join('\n');
+        this.#report(detail || 'herdr rechazó el cambio de configuración.');
+      } else if (result.reload?.status === 'failed') {
+        this.#report(result.reload.diagnostics.join('\n') || 'la recarga de configuración falló.');
+      }
+    });
   }
 
   reset(): void {

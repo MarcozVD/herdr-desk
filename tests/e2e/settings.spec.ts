@@ -80,4 +80,36 @@ test('el nivel de cristal (1-100) cambia la opacidad en vivo', async ({ page }) 
   await expect.poll(alpha).toBe('0.12');
   await slider.fill('1');
   await expect.poll(alpha).toBe('0.9');
+  // T4j — el piso del tema claro está anotado en la propia UI.
+  await expect(page.getByTestId('settings-glass-floor-hint')).toContainText('nivel 7');
+});
+
+test('theme.custom se edita, aplica en vivo y se quita', async ({ page }) => {
+  await bootApp(page);
+  await page.getByTestId('settings-button').click();
+
+  await page.getByTestId('settings-theme-custom-key').selectOption('accent');
+  await page.getByTestId('settings-theme-custom-value').fill('#ff0000');
+  await page.getByTestId('settings-theme-custom-add').click();
+
+  await expect
+    .poll(async () => (await recordedCalls(page, 'config_write')).at(-1))
+    .toMatchObject({ changes: [{ path: 'theme.custom.accent', value: '"#ff0000"' }] });
+  await expect(
+    page.locator('[data-testid="settings-theme-custom-row"][data-token="accent"]'),
+  ).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--accent')))
+    .toBe('#ff0000');
+
+  await page
+    .locator('[data-testid="settings-theme-custom-row"][data-token="accent"]')
+    .getByTestId('settings-theme-custom-remove')
+    .click();
+  await expect
+    .poll(async () => (await recordedCalls(page, 'config_write')).at(-1))
+    .toMatchObject({ changes: [{ path: 'theme.custom.accent', value: null }] });
+  await expect(
+    page.locator('[data-testid="settings-theme-custom-row"][data-token="accent"]'),
+  ).toHaveCount(0);
 });

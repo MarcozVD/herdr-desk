@@ -82,6 +82,9 @@ const TOKEN_BY_CONFIG: Record<string, keyof ThemeTokens> = {
   peach: 'peach',
 };
 
+/** Tokens que admite `[theme.custom]` (los muestra el formulario de ajustes). */
+export const CUSTOM_THEME_KEYS = Object.keys(TOKEN_BY_CONFIG) as string[];
+
 /** Tokens del tema con los `[theme.custom]` de config.toml superpuestos. */
 export function themeTokensFor(values: UiSettings, dark: boolean): ThemeTokens {
   const base = THEME_TOKENS[resolveThemeName(values, dark)];

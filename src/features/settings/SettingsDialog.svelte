@@ -26,6 +26,7 @@
   } from '../../lib/settings/settings.gen';
   import { settings, type BackdropMode, type GlassMode } from '../../lib/stores/settings.svelte';
   import { ui } from '../../lib/stores/ui.svelte';
+  import { CUSTOM_THEME_KEYS, parseCssColor } from '../../lib/theme/apply';
   import { THEME_NAMES } from '../../lib/theme/themes';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import KeymapEditor from './KeymapEditor.svelte';
@@ -41,6 +42,32 @@
   let saving = $state(false);
   let diagnostics = $state<ConfigDiagnostic[]>([]);
   let notice = $state<string | null>(null);
+  /** T4i — editor de [theme.custom] (token → color TOML). */
+  let customKey = $state(CUSTOM_THEME_KEYS[0] ?? 'accent');
+  let customValue = $state('');
+  let customError = $state<string | null>(null);
+
+  function saveThemeCustom(): void {
+    const value = customValue.trim();
+    if (value.length === 0) {
+      customError = es.settings.themeCustomInvalid;
+      return;
+    }
+    const normalized = value.toLowerCase();
+    const removable = normalized === 'reset' || normalized === 'default';
+    if (!removable && parseCssColor(value) === null) {
+      customError = es.settings.themeCustomInvalid;
+      return;
+    }
+    customError = null;
+    settings.setThemeCustom(customKey, value);
+    customValue = '';
+  }
+
+  function removeThemeCustom(token: string): void {
+    customError = null;
+    settings.setThemeCustom(token, null);
+  }
 
   const entries = $derived(read ? entriesByPath(read.entries) : new Map());
   const knownPaths = $derived(
@@ -292,6 +319,66 @@
               )}
             </p>
           {/if}
+          <div class="row">
+            <div class="row__info">
+              <code>[theme.custom]</code>
+              <p class="row__doc">{es.settings.themeCustomHint}</p>
+            </div>
+            <div class="row__editor">
+              <select
+                class="row__input row__input--token"
+                data-testid="settings-theme-custom-key"
+                aria-label={es.settings.themeCustomKey}
+                bind:value={customKey}
+              >
+                {#each CUSTOM_THEME_KEYS as token (token)}
+                  <option value={token}>{token}</option>
+                {/each}
+              </select>
+              <input
+                class="row__input"
+                data-testid="settings-theme-custom-value"
+                aria-label={es.settings.themeCustomValue}
+                placeholder="#rrggbb"
+                spellcheck="false"
+                bind:value={customValue}
+                onkeydown={(event) => {
+                  if (event.key === 'Enter') saveThemeCustom();
+                }}
+              />
+              <button
+                type="button"
+                class="btn btn--small"
+                data-testid="settings-theme-custom-add"
+                onclick={saveThemeCustom}>{es.settings.themeCustomAdd}</button
+              >
+            </div>
+          </div>
+          {#if customError}
+            <p class="settings__error" data-testid="settings-theme-custom-error">{customError}</p>
+          {/if}
+          {#if Object.keys(settings.values.theme_custom).length === 0}
+            <p class="group__doc" data-testid="settings-theme-custom-empty">
+              {es.settings.themeCustomEmpty}
+            </p>
+          {:else}
+            {#each Object.entries(settings.values.theme_custom) as [token, color] (token)}
+              <div class="row" data-testid="settings-theme-custom-row" data-token={token}>
+                <div class="row__info">
+                  <code>{token}</code>
+                  <span class="row__value">{color}</span>
+                </div>
+                <div class="row__editor">
+                  <button
+                    type="button"
+                    class="btn btn--small"
+                    data-testid="settings-theme-custom-remove"
+                    onclick={() => removeThemeCustom(token)}>{es.dialog.remove}</button
+                  >
+                </div>
+              </div>
+            {/each}
+          {/if}
         </section>
 
         <section class="group" data-testid="settings-gui">
@@ -350,6 +437,9 @@
               >
             </div>
           </div>
+          <p class="group__doc" data-testid="settings-glass-floor-hint">
+            {es.settings.glassFloorHint}
+          </p>
           <div class="row">
             <div class="row__info">
               <code>{es.settings.syncFocus}</code>
@@ -771,6 +861,10 @@
 
   .row__input--num {
     inline-size: 6rem;
+  }
+
+  .row__input--token {
+    inline-size: 9rem;
   }
 
   .row__input--code {
