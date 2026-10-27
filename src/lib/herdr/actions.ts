@@ -151,6 +151,20 @@ export const paneApi = {
     });
   },
 
+  /** `pane.selection.read`: texto entre dos puntos absolutos del buffer (T4k). */
+  async selectionText(
+    paneId: string,
+    anchor: { row: number; col: number },
+    cursor: { row: number; col: number },
+  ): Promise<string> {
+    const result = await call('pane.selection.read', {
+      pane_id: paneId,
+      anchor,
+      cursor,
+    });
+    return result.type === 'pane_selection' ? result.text : '';
+  },
+
   async read(paneId: string, lines = 200): Promise<string> {
     const result = await call('pane.read', {
       pane_id: paneId,

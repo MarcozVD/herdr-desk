@@ -220,9 +220,16 @@ export class TerminalPool {
   }
 
   /**
-   * Si el respawn del backend no manda frames en `bridge_reopen_grace_ms`, la UI
-   * se reengancha sola (un `terminal_open` nuevo). Si los frames llegan antes, el
-   * panel vuelve a «open» y el timer se cancela: nunca hay dos attaches peleando.
+   * T4h — Se MANTIENE como red de seguridad, no como mecanismo principal.
+   *
+   * El camino normal es el respawn del backend, que reusa el mismo `bridge_id`
+   * y el mismo `Channel`: cuando llega el primer frame, `entry.onFrame` vuelve a
+   * «open» y cancela este timer. El timer solo actúa si el respawn no manda
+   * frames en `bridge_reopen_grace_ms`; sin él, un fallo del backend dejaba el
+   * panel en «reconectando» para siempre. Se conserva aunque el backend asuma el
+   * respawn porque cuesta un `setTimeout` por panel y evita ese punto de no
+   * retorno; el e2e `reconnect.spec.ts` fija que no se reabre si los frames
+   * llegan y que sí se reabre cuando no llegan.
    */
   #scheduleReopen(paneId: string): void {
     this.#clearReopen(paneId);
@@ -1032,14 +1039,15 @@ export class TerminalPool {
     this.#armPendingTimer(entry);
   }
 
-  scroll(paneId: string, direction: 'up' | 'down', lines: number): void {
+  scroll(paneId: string, direction: 'up' | 'down', lines: number, preserveSelection = false): void {
     const entry = this.#entries.get(paneId);
     if (!entry || entry.bridgeId === null) return;
     // El scroll lo resuelve el server reemplazando el viewport (el scrollback no
     // vive en xterm): la selección local quedaría apuntando a otras líneas y se
     // vería resaltado texto que ya no está seleccionado. Se limpia antes de pedir
-    // el scroll para que la selección nunca «quede mal».
-    entry.view?.terminal.clearSelection();
+    // el scroll para que la selección nunca «quede mal». T4k la conserva cuando
+    // la selección la gobierna el server (autoscroll al arrastrar fuera).
+    if (!preserveSelection) entry.view?.terminal.clearSelection();
     void terminalScroll(entry.bridgeId, direction, lines).catch(() => undefined);
   }
 

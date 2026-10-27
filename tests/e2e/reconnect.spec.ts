@@ -195,10 +195,22 @@ test('si el servidor se cae, la UI lo nota y reabre los paneles al volver', asyn
   await expect(page.getByTestId('reconnect-banner')).toHaveCount(0);
 
   // La caída real la confirman el store, el watchdog del snapshot o el latido
-  // (`session.ping`): aquí se simula la señal del store.
-  await page.evaluate(() => window.__HD_TEST__?.pushState('offline'));
-  await expect(page.getByTestId('reconnect-banner')).toBeVisible({ timeout: 5000 });
-  await expect(page.getByTestId('reconnect-error')).toContainText('sin conexión');
+  // (`session.ping`): aquí se simula la señal del store. El reintento con
+  // backoff (250 ms) puede volver a dejar la sesión en línea antes de que
+  // Playwright alcance a mirar, así que la franja se comprueba en la misma
+  // evaluación, tras el flush de Svelte y antes del temporizador.
+  const offlineUi = await page.evaluate(async () => {
+    window.__HD_TEST__?.pushState('offline');
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    return {
+      banner: document.querySelector('[data-testid="reconnect-banner"]') !== null,
+      error: document.querySelector('[data-testid="reconnect-error"]')?.textContent?.trim() ?? '',
+    };
+  });
+  expect(offlineUi.banner).toBe(true);
+  expect(offlineUi.error).toContain('sin conexión');
 
   // Vuelve el server: el backend respawnea con el mismo bridge/Channel y los
   // frames devuelven el panel a «open» sin volver a atachar (evita «taken over»).

@@ -12,6 +12,7 @@
   import '@xterm/xterm/css/xterm.css';
 
   import { es } from '../i18n/es';
+  import { paneApi } from '../herdr/actions';
   import { session } from '../stores/session.svelte';
   import { settings } from '../stores/settings.svelte';
   import { ui } from '../stores/ui.svelte';
@@ -26,6 +27,13 @@
   } from './mouse';
   import { pool } from './pool';
   import type { BridgeState, TerminalEntry, TerminalViewState } from './pool';
+  import {
+    absolutePoint,
+    topAbsoluteRow,
+    visibleSelection,
+    type ScrollInfo,
+    type TextPoint,
+  } from './selection';
 
   interface Props {
     paneId: string;
@@ -76,6 +84,9 @@
   }
 
   async function copySelection(): Promise<void> {
+    // T4k — durante un arrastre con autoscroll la copia la decide el mouseup
+    // (con la selección del server); copiar el trozo local pisaría el portapapeles.
+    if (selectionDrag) return;
     const text = view?.terminal.getSelection() ?? '';
     if (text.length === 0) return;
     try {
@@ -226,6 +237,193 @@
   let lastDragCell = '';
 
   /**
+   * T4k — Arrastre de selección que puede salir del panel. El scrollback vive en
+   * el server, así que al cruzar el borde se pide scroll y se lee la selección
+   * con `pane.selection.read` en puntos absolutos.
+   */
+  interface SelectionDrag {
+    anchor: TextPoint;
+    cursor: TextPoint;
+    col: number;
+    offset: number;
+    maxOffset: number;
+    viewportRows: number;
+    direction: 'up' | 'down' | null;
+    timer: ReturnType<typeof setInterval> | null;
+    readTimer: ReturnType<typeof setTimeout> | null;
+    text: string;
+    readSeq: number;
+    scrolled: boolean;
+  }
+  let selectionDrag: SelectionDrag | null = null;
+
+  function scrollInfoOf(drag: SelectionDrag): ScrollInfo {
+    return {
+      offset_from_bottom: drag.offset,
+      max_offset_from_bottom: drag.maxOffset,
+      viewport_rows: drag.viewportRows,
+    };
+  }
+
+  function stopSelectionAutoscroll(drag: SelectionDrag): void {
+    if (drag.timer !== null) clearInterval(drag.timer);
+    drag.timer = null;
+    drag.direction = null;
+  }
+
+  function clearSelectionReadTimer(drag: SelectionDrag): void {
+    if (drag.readTimer !== null) clearTimeout(drag.readTimer);
+    drag.readTimer = null;
+  }
+
+  /** Aplica a xterm el trozo visible de la selección absoluta (solo tras scroll). */
+  function paintServerSelection(drag: SelectionDrag): void {
+    const terminal = view?.terminal;
+    if (!terminal) return;
+    const range = visibleSelection(drag.anchor, drag.cursor, scrollInfoOf(drag), terminal.cols);
+    if (!range) return;
+    terminal.select(range.column, range.row, range.length);
+  }
+
+  async function readServerSelection(drag: SelectionDrag): Promise<void> {
+    const seq = (drag.readSeq += 1);
+    try {
+      const text = await paneApi.selectionText(paneId, drag.anchor, drag.cursor);
+      // Una respuesta vieja no puede pisar a la nueva ni a un arrastre cerrado.
+      if (selectionDrag === drag && drag.readSeq === seq) drag.text = text;
+    } catch {
+      // Si el server no soporta la lectura, queda la selección local de xterm.
+    }
+  }
+
+  function scheduleSelectionRead(drag: SelectionDrag): void {
+    clearSelectionReadTimer(drag);
+    // El frame del scroll y la respuesta del RPC van por canales distintos: se
+    // espera un tick corto para leer el viewport ya movido, no el anterior.
+    drag.readTimer = setTimeout(() => {
+      drag.readTimer = null;
+      if (selectionDrag === drag) void readServerSelection(drag);
+    }, 30);
+  }
+
+  function stepSelectionScroll(drag: SelectionDrag): void {
+    if (selectionDrag !== drag || drag.direction === null) return;
+    const direction = drag.direction;
+    if (direction === 'up' ? drag.offset >= drag.maxOffset : drag.offset <= 0) {
+      stopSelectionAutoscroll(drag);
+      return;
+    }
+    drag.offset += direction === 'up' ? 1 : -1;
+    drag.scrolled = true;
+    pool.scroll(paneId, direction, 1, true);
+    const top = topAbsoluteRow(scrollInfoOf(drag));
+    // El punto sigue a la fila visible del borde: al subir, la que acaba de
+    // entrar arriba; al bajar, la última visible (no la siguiente, que aún no
+    // se ha pintado). Si no, la selección copiada incluía una fila de más.
+    drag.cursor = {
+      row: direction === 'up' ? top : top + drag.viewportRows - 1,
+      col: drag.col,
+    };
+    scheduleSelectionRead(drag);
+  }
+
+  function startSelectionAutoscroll(drag: SelectionDrag, direction: 'up' | 'down'): void {
+    drag.direction = direction;
+    if (drag.timer !== null) return;
+    stepSelectionScroll(drag);
+    if (drag.timer === null && drag.direction !== null) {
+      drag.timer = setInterval(() => stepSelectionScroll(drag), 90);
+    }
+  }
+
+  function onSelectionMouseDown(event: MouseEvent): void {
+    if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey) return;
+    if (forwardsMouse(event)) return;
+    const scroll = pane?.scroll;
+    if (!scroll || scroll.viewport_rows <= 0) return;
+    const cell = pointerCell(event);
+    const anchor = absolutePoint(scroll, cell.row - 1, cell.col - 1);
+    selectionDrag = {
+      anchor,
+      cursor: anchor,
+      col: anchor.col,
+      offset: scroll.offset_from_bottom,
+      maxOffset: scroll.max_offset_from_bottom,
+      viewportRows: scroll.viewport_rows,
+      direction: null,
+      timer: null,
+      readTimer: null,
+      text: '',
+      readSeq: 0,
+      scrolled: false,
+    };
+    window.addEventListener('mousemove', onSelectionMouseMove, true);
+    window.addEventListener('mouseup', onSelectionMouseUp, true);
+  }
+
+  function onSelectionMouseMove(event: MouseEvent): void {
+    const drag = selectionDrag;
+    if (!drag || !host) return;
+    const rect = host.getBoundingClientRect();
+    const cell = pointerCell(event);
+    drag.col = cell.col - 1;
+    if (event.clientY < rect.top - 4) {
+      startSelectionAutoscroll(drag, 'up');
+      return;
+    }
+    if (event.clientY > rect.bottom + 4) {
+      startSelectionAutoscroll(drag, 'down');
+      return;
+    }
+    stopSelectionAutoscroll(drag);
+    const top = topAbsoluteRow(scrollInfoOf(drag));
+    const row = Math.min(drag.viewportRows - 1, Math.max(0, cell.row - 1));
+    drag.cursor = { row: top + row, col: drag.col };
+    if (drag.scrolled) {
+      paintServerSelection(drag);
+      scheduleSelectionRead(drag);
+    }
+  }
+
+  async function copyText(text: string): Promise<void> {
+    if (text.length === 0) return;
+    try {
+      await writeText(text);
+    } catch {
+      ui.notify(es.terminal.clipboardUnavailable, 'warn');
+    }
+  }
+
+  async function onSelectionMouseUp(): Promise<void> {
+    const drag = selectionDrag;
+    if (!drag) return;
+    stopSelectionAutoscroll(drag);
+    clearSelectionReadTimer(drag);
+    window.removeEventListener('mousemove', onSelectionMouseMove, true);
+    window.removeEventListener('mouseup', onSelectionMouseUp, true);
+    // La selección que cruzó el borde solo existe en el server: se lee una vez
+    // más con el punto final (el último `mousemove` pudo quedar sin respuesta) y
+    // se copia al soltar. La local de xterm sigue el camino de copy_on_select.
+    if (drag.scrolled) {
+      await readServerSelection(drag);
+      clearSelectionReadTimer(drag);
+      selectionDrag = null;
+      if (drag.text.length > 0) {
+        await copyText(drag.text);
+        return;
+      }
+    } else {
+      selectionDrag = null;
+    }
+    if (settings.values.copy_on_select) {
+      queueMicrotask(() => {
+        const text = view?.terminal.getSelection() ?? '';
+        if (text.length > 0) void copyText(text);
+      });
+    }
+  }
+
+  /**
    * ¿La GUI debe reenviar el ratón a la app en vez de que xterm seleccione?
    * Solo en panes con agente, sin mouse tracking nativo y sin los modificadores
    * que la GUI se reserva (Shift = selección local, Ctrl/Cmd = link).
@@ -351,6 +549,12 @@
         if (changed.paneId !== paneId) return;
         frameTotal += 1;
         if (frameTotal % 16 === 0 && host) host.dataset.frames = String(frameTotal);
+        // T4k — el viewport ya trae el scroll pedido: se repinta el trozo visible
+        // de la selección absoluta y se relee el texto del server.
+        if (selectionDrag?.scrolled) {
+          paintServerSelection(selectionDrag);
+          scheduleSelectionRead(selectionDrag);
+        }
       },
     });
 
@@ -415,6 +619,7 @@
     // BUG 5 — ratón sintético para los agentes: en fase de captura para poder
     // cortar el gesto antes de que xterm lo tome como selección.
     host.addEventListener('mousedown', onSurfaceMouseDown, true);
+    host.addEventListener('mousedown', onSelectionMouseDown, true);
     void document.fonts?.ready.then(() => settleSize());
     ready = true;
 
@@ -426,6 +631,14 @@
       dragActive = false;
       stopForwardingMouse();
       host?.removeEventListener('mousedown', onSurfaceMouseDown, true);
+      host?.removeEventListener('mousedown', onSelectionMouseDown, true);
+      if (selectionDrag) {
+        stopSelectionAutoscroll(selectionDrag);
+        clearSelectionReadTimer(selectionDrag);
+        selectionDrag = null;
+        window.removeEventListener('mousemove', onSelectionMouseMove, true);
+        window.removeEventListener('mouseup', onSelectionMouseUp, true);
+      }
       if (fitFrame !== null) cancelAnimationFrame(fitFrame);
       if (settleFrame !== null) cancelAnimationFrame(settleFrame);
       resizeObserver?.disconnect();

@@ -9,6 +9,7 @@ import {
   pushFrame,
   readSnapshotFixture,
   recordedCalls,
+  recordedMethodCalls,
   terminalGrid,
   terminalText,
 } from './harness';
@@ -161,6 +162,47 @@ test('en un agente TUI sin scrollback la rueda va a la app (scroll de opencode)'
     )
     .toContain('\x1b[<64;');
   expect(await recordedCalls(page, 'terminal_scroll')).toEqual([]);
+});
+
+test('T4k: arrastrar la selección fuera del borde hace scroll y lee el server', async ({
+  page,
+}) => {
+  const snapshot = readSnapshotFixture() as {
+    panes: Array<Record<string, unknown>>;
+  };
+  for (const pane of snapshot.panes) {
+    if (pane.pane_id === 'w1:p1') {
+      pane.agent = null;
+      pane.scroll = { offset_from_bottom: 20, max_offset_from_bottom: 20, viewport_rows: 23 };
+    }
+  }
+  await bootApp(page, { snapshot });
+  const host = page.getByTestId('terminal-host');
+  await expect(host).toHaveAttribute('data-bridge', 'open');
+  const box = await host.boundingBox();
+  if (!box) throw new Error('sin caja de terminal');
+
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // Salir por abajo dispara el autoscroll (server) y la lectura absoluta.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height + 40, { steps: 4 });
+
+  await expect
+    .poll(async () => (await recordedCalls(page, 'terminal_scroll')).length, { timeout: 5000 })
+    .toBeGreaterThan(0);
+  await expect
+    .poll(async () => (await recordedMethodCalls(page, 'pane.selection.read')).length, {
+      timeout: 5000,
+    })
+    .toBeGreaterThan(0);
+
+  await page.mouse.up();
+  const reads = await recordedMethodCalls(page, 'pane.selection.read');
+  expect(reads.at(-1)?.params).toMatchObject({
+    pane_id: 'w1:p1',
+    anchor: expect.objectContaining({ row: expect.any(Number), col: expect.any(Number) }),
+    cursor: expect.objectContaining({ row: expect.any(Number), col: expect.any(Number) }),
+  });
 });
 
 test('un terminal.closed muestra el motivo, sin botón manual', async ({ page }) => {
