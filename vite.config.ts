@@ -11,7 +11,16 @@ export default defineConfig({
     strictPort: true,
     watch: {
       // El workspace Rust no debe disparar recargas del frontend.
-      ignored: ['**/src-tauri/**', '**/crates/**', '**/target/**', '**/.hermes/**'],
+      ignored: [
+        '**/src-tauri/**',
+        '**/crates/**',
+        '**/target/**',
+        '**/.hermes/**',
+        // Artefactos de Playwright: si el dev server los vigila, un trace
+        // escrito por un worker recarga la página de otro a media prueba.
+        '**/test-results/**',
+        '**/playwright-report/**',
+      ],
     },
   },
   build: {

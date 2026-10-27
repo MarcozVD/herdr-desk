@@ -11,6 +11,9 @@ test.use({ viewport: { width: 1280, height: 800 } });
 async function openPalette(page: Page): Promise<void> {
   await page.keyboard.press('Control+Shift+P');
   await expect(page.getByTestId('palette')).toBeVisible();
+  // El foco tiene que quedarse en el campo (el bridge de la terminal abre en
+  // paralelo y antes le robaba el foco a media búsqueda).
+  await expect(page.getByTestId('palette-input')).toBeFocused();
 }
 
 async function itemIds(page: Page): Promise<string[]> {

@@ -59,15 +59,18 @@
     errorText = source.errorText;
   }
 
+  // Registro para los e2e (mismo gancho en dev y en el build `--mode e2e`).
+  const TEST_HOOKS = import.meta.env.DEV || import.meta.env.MODE === 'e2e';
+
   function registerTestTerminal(id: string, term: TerminalViewState['terminal']): void {
-    if (!import.meta.env.DEV) return;
+    if (!TEST_HOOKS) return;
     const registry = window as unknown as { __HD_TERMS__?: Record<string, unknown> };
     registry.__HD_TERMS__ ??= {};
     registry.__HD_TERMS__[id] = term;
   }
 
   function unregisterTestTerminal(id: string): void {
-    if (!import.meta.env.DEV) return;
+    if (!TEST_HOOKS) return;
     const registry = window as unknown as { __HD_TERMS__?: Record<string, unknown> };
     if (registry.__HD_TERMS__) delete registry.__HD_TERMS__[id];
   }
@@ -283,11 +286,9 @@
     window.removeEventListener('mouseup', onWindowMouseUp);
   }
 
-  // T2.7 — El foco de teclado sigue al panel enfocado: al saltar a un panel
-  // desde la paleta o la sidebar, sus teclas van a esa terminal (si el bridge ya
-  // estaba abierto no hubo cambio de estado que lo enfocara).
-  $effect(() => {
-    if (ui.localFocusedPaneId !== paneId) return;
+  /** Enfoca la terminal salvo que el usuario esté escribiendo en un campo
+   *  (paleta, diálogo, prompt): abrir un bridge no puede robarle el foco. */
+  function focusTerminalIfIdle(): void {
     const active = document.activeElement;
     if (
       active instanceof HTMLElement &&
@@ -298,6 +299,14 @@
     const current = pool.entry(paneId);
     if (!current || current.state !== 'open') return;
     current.view?.terminal.focus();
+  }
+
+  // T2.7 — El foco de teclado sigue al panel enfocado: al saltar a un panel
+  // desde la paleta o la sidebar, sus teclas van a esa terminal (si el bridge ya
+  // estaba abierto no hubo cambio de estado que lo enfocara).
+  $effect(() => {
+    if (ui.localFocusedPaneId !== paneId) return;
+    focusTerminalIfIdle();
   });
 
   function onTerminalEvent(event: Event): void {
@@ -336,7 +345,7 @@
       onStateChange: (changed) => {
         if (changed.paneId !== paneId) return;
         syncFromEntry(changed);
-        if (changed.state === 'open') changed.view?.terminal.focus();
+        if (changed.state === 'open') focusTerminalIfIdle();
       },
       onFrame: (changed) => {
         if (changed.paneId !== paneId) return;

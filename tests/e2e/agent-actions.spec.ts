@@ -4,7 +4,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { bootApp, recordedMethodCalls } from './harness';
+import { bootApp, recordedCalls, recordedMethodCalls } from './harness';
 
 /** Parámetros de cada llamada hecha a `method`, en orden de llegada. */
 async function paramsOf(page: import('@playwright/test').Page, method: string): Promise<unknown[]> {
@@ -154,18 +154,15 @@ test('soltar agente: confirma y llama a pane.release_agent', async ({ page }) =>
 });
 
 test('atajos: next_agent y focus_agent:N enfocan por la cola de atención', async ({ page }) => {
-  await bootApp(page);
   // Los atajos de agente vienen sin asignar en la config por defecto de herdr:
-  // se asignan aquí para poder pulsarlos (el motor de atajos es el de la app).
-  await page.evaluate(async () => {
-    // Ruta construida para que el import sea dinámico de verdad (el módulo lo
-    // sirve Vite en desarrollo y ya está cargado por la app).
-    const modulePath = `${'/src/lib/keys/keymap'}.ts`;
-    const mod = (await import(/* @vite-ignore */ modulePath)) as {
-      keymap: { load: (overrides: { bindings: Record<string, string> }) => void };
-    };
-    mod.keymap.load({ bindings: { next_agent: 'ctrl+shift+ArrowDown' } });
-  });
+  // se asignan por `config.toml` ([keys]) como haría el usuario. Así el test
+  // también vale contra el build de preview (no hay módulos /src que importar).
+  await bootApp(page, { configEntries: { 'keys.next_agent': '"ctrl+shift+ArrowDown"' } });
+  // `settings.init()` aplica la config después del primer render; el atajo ya
+  // está cargado cuando `config_read` quedó registrado.
+  await expect
+    .poll(async () => (await recordedCalls(page, 'config_read')).length)
+    .toBeGreaterThan(0);
   await page.locator('body').press('Control+Shift+ArrowDown');
 
   // La cola de atención empieza por el bloqueado (w2:p1).

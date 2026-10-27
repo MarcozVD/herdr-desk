@@ -4,7 +4,8 @@
 // Playwright.
 //
 // Se activa cuando la página define `window.__HD_HARNESS__` (lo hace
-// tests/e2e/harness.ts con addInitScript) y main.ts lo importa en dev.
+// tests/e2e/harness.ts con addInitScript) y main.ts lo importa en dev y en el
+// build de e2e (`vite build --mode e2e`).
 
 import { mockIPC, mockWindows } from '@tauri-apps/api/mocks';
 
@@ -851,13 +852,26 @@ export function installHarness(): void {
           path: 'C:/fake/config.toml',
           exists: Object.keys(configStore).length > 0,
           diagnostics: [],
-          entries: HARNESS_CONFIG_BASE.map(([path, fallback]) => ({
-            path,
-            value: configStore[path] ?? fallback,
-            origin: path in configStore ? 'file' : 'default',
-            description: null,
-            in_defaults: true,
-          })),
+          entries: [
+            ...HARNESS_CONFIG_BASE.map(([path, fallback]) => ({
+              path,
+              value: configStore[path] ?? fallback,
+              origin: path in configStore ? 'file' : 'default',
+              description: null,
+              in_defaults: true,
+            })),
+            // Entradas extra pedidas por un test (`configEntries`), p. ej.
+            // `keys.next_agent`: igual que una clave añadida por el usuario.
+            ...Object.entries(configStore)
+              .filter(([path]) => !HARNESS_CONFIG_BASE.some(([base]) => base === path))
+              .map(([path, value]) => ({
+                path,
+                value,
+                origin: 'file',
+                description: null,
+                in_defaults: false,
+              })),
+          ],
         };
       case 'config_write': {
         const changes = (payload.changes ?? []) as Array<{ path: string; value: string | null }>;

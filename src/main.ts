@@ -16,7 +16,7 @@ import { pool } from './lib/terminal/pool';
 
 declare global {
   interface Window {
-    /** Config del arnés e2e (tests/e2e/harness.ts). Solo en dev. */
+    /** Config del arnés e2e (tests/e2e/harness.ts). Solo en dev/build e2e. */
     __HD_HARNESS__?: { snapshot?: unknown; sessionName?: string | null };
   }
 }
@@ -24,8 +24,9 @@ declare global {
 async function boot(): Promise<void> {
   // Arnés de Playwright: se instala antes de montar para que el mock del IPC
   // exista cuando la app haga su primera llamada. En el build de producción
-  // `import.meta.env.DEV` es false y el import dinámico se elimina.
-  if (import.meta.env.DEV && window.__HD_HARNESS__) {
+  // (`mode` distinto de e2e) el import dinámico se elimina. `pnpm e2e` usa
+  // `vite build --mode e2e` para que los e2e prueben el build real.
+  if ((import.meta.env.DEV || import.meta.env.MODE === 'e2e') && window.__HD_HARNESS__) {
     const { installHarness } = await import('./lib/testing/harness');
     installHarness();
   }

@@ -1,7 +1,7 @@
 // Verificación en vivo (navegador real) de la tipografía de las terminales y de
 // la supresión del menú de contexto nativo:
-//   - la instancia real de xterm (registro `__HD_TERMS__`, solo en dev) usa una
-//     pila de familias resuelta, nunca `var(--font-mono)`;
+//   - la instancia real de xterm (registro `__HD_TERMS__`, solo en dev/build
+//     e2e) usa una pila de familias resuelta, nunca `var(--font-mono)`;
 //   - el tamaño de celda que xterm mide coincide con la primera familia
 //     disponible de la pila (prueba de que la fuente se aplicó de verdad);
 //   - un contextmenu en una zona sin menú propio queda cancelado;
