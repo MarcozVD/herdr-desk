@@ -84,7 +84,17 @@ mod tests {
     use super::*;
 
     fn temp_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
+        // Bajo `target/`, no en `%TEMP%`: el sandbox de los agentes puede negar
+        // la escritura en el temp del sistema y el test fallaría sin ser código.
+        let exe = std::env::current_exe().expect("exe del test");
+        let target = exe
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::parent)
+            .expect("target");
+        let dir = target.join("hd-test-tmp");
+        std::fs::create_dir_all(&dir).expect("dir de test");
+        dir.join(format!(
             "hd-gui-settings-{}-{name}.json",
             std::process::id()
         ))

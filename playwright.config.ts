@@ -25,7 +25,10 @@ export default defineConfig({
   workers: process.env.CI ? 1 : 2,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:1420',
+    // IPv4 explícito: `localhost` resuelve a ::1 y 127.0.0.1, y Edge elegía a
+    // veces IPv4 mientras `vite preview` solo escuchaba en IPv6 (un asset caía
+    // con ERR_CONNECTION_REFUSED y la app no arrancaba).
+    baseURL: 'http://127.0.0.1:1420',
     trace: 'retain-on-failure',
   },
   projects: [
@@ -37,7 +40,7 @@ export default defineConfig({
   webServer: {
     // `build:e2e` incluye el arnés (modo e2e) una sola vez; preview sirve dist/.
     command: 'pnpm e2e:serve',
-    url: 'http://localhost:1420',
+    url: 'http://127.0.0.1:1420',
     // Nunca reutilizar un dev server: serviría otro build (o ninguno) y vuelve
     // la carrera. Si el puerto está ocupado, es mejor fallar que medir otra app.
     reuseExistingServer: false,
